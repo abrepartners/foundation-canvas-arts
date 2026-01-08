@@ -270,46 +270,46 @@ serve(async (req) => {
 function parseContent(raw: string): Record<string, string> {
   const sections: Record<string, string> = {};
   
-  // Define section markers
+  // Define section markers - patterns without ## since AI might not include them
   const markers = [
-    { key: "script", pattern: /^##?\s*Script\s*$/im },
-    { key: "thumbnail", pattern: /^##?\s*Thumbnail Prompt \(Light\)\s*$/im },
-    { key: "caption", pattern: /^##?\s*Caption\s*$/im },
-    { key: "part2Hook", pattern: /^##?\s*Part 2 Hook\s*$/im },
-    { key: "scriptVisuals", pattern: /^##?\s*Script Visuals\s*$/im },
+    { key: "script", pattern: /^(?:##?\s*)?Script\s*$/im },
+    { key: "thumbnail", pattern: /^(?:##?\s*)?Thumbnail Prompt \(Light\)\s*$/im },
+    { key: "caption", pattern: /^(?:##?\s*)?Caption\s*$/im },
+    { key: "part2Hook", pattern: /^(?:##?\s*)?Part 2 Hook\s*$/im },
+    { key: "scriptVisuals", pattern: /^(?:##?\s*)?Script Visuals\s*$/im },
   ];
 
-  // Find positions
-  const positions: { key: string; start: number }[] = [];
+  // Find positions of each marker
+  const positions: { key: string; start: number; headerEnd: number }[] = [];
   for (const marker of markers) {
     const match = raw.match(marker.pattern);
     if (match && match.index !== undefined) {
       positions.push({ 
         key: marker.key, 
-        start: match.index + match[0].length 
+        start: match.index,
+        headerEnd: match.index + match[0].length 
       });
     }
   }
 
-  // Sort by position
+  // Sort by position in the text
   positions.sort((a, b) => a.start - b.start);
 
   // Extract content between markers
   for (let i = 0; i < positions.length; i++) {
     const current = positions[i];
-    const next = positions[i + 1];
-    const end = next ? next.start - (raw.slice(0, next.start).match(/##?\s*[A-Z]/g)?.length ? 20 : 0) : raw.length;
+    const nextStart = positions[i + 1]?.start ?? raw.length;
     
-    let content = raw.slice(current.start, next ? raw.lastIndexOf('\n##', next.start) : raw.length).trim();
-    
-    // Clean up the content
-    content = content.replace(/^##?\s*.*$/m, '').trim();
-    
+    // Get content after the header, up to the next section
+    const content = raw.slice(current.headerEnd, nextStart).trim();
     sections[current.key] = content;
   }
 
+  console.log("Parsed sections:", Object.keys(sections));
+
   // Fallback: if parsing failed, return raw
   if (Object.keys(sections).length === 0) {
+    console.log("Parsing failed, returning raw content");
     sections.raw = raw;
   }
 
