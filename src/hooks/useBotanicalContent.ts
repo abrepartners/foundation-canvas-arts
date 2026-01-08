@@ -20,6 +20,7 @@ export interface ThumbnailPrompt {
 export interface FacelessVisual {
   moment: "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
   prompt: string;
+  image_url?: string | null;
 }
 
 export interface BotanicalContent {
@@ -60,26 +61,9 @@ export function useBotanicalContent() {
         throw new Error(data.error || "Failed to generate content");
       }
 
+      // Content is now saved by the edge function (with image URLs)
       const generatedContent: BotanicalContent = data.content;
       setContent(generatedContent);
-
-      // Save to database with JSON stringified fields
-      const { error: insertError } = await supabase
-        .from("botanical_content")
-        .insert({
-          plant_name: generatedContent.plant_name,
-          verified_fact: generatedContent.verified_fact,
-          script: JSON.stringify(generatedContent.script),
-          thumbnail: JSON.stringify(generatedContent.thumbnail_prompt),
-          caption: generatedContent.caption,
-          part2_hook: generatedContent.part2_hook,
-          script_visuals: JSON.stringify(generatedContent.faceless_visuals),
-          raw_content: data.raw || "",
-        });
-
-      if (insertError) {
-        console.error("Failed to save content:", insertError);
-      }
 
       toast({
         title: "Content generated",
