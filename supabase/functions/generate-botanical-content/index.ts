@@ -1,12 +1,17 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `You are a zero-memory botanical discovery engine.
+const EXCLUDE_COUNT = 5;
+
+const buildSystemPrompt = (noveltyBlock: string) => `You are a zero-memory botanical discovery engine.
+
+${noveltyBlock}
 
 You MUST return valid JSON.
 Do NOT include markdown.
@@ -83,9 +88,61 @@ serve(async (req) => {
 
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY not configured");
     }
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error("Supabase credentials not configured");
+    }
+
+    // Create Supabase client and fetch recent plants
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    
+    const { data: recentPlants, error: fetchError } = await supabase
+      .from("botanical_content")
+      .select("plant_name")
+      .not("plant_name", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(EXCLUDE_COUNT);
+
+    if (fetchError) {
+      console.error("Failed to fetch recent plants:", fetchError);
+    }
+
+    const recentPlantList = (recentPlants ?? [])
+      .map((row) => `- ${row.plant_name}`)
+      .join("\n");
+
+    console.log("Recent plants to exclude:", recentPlantList || "(none)");
+
+    const PLANT_NOVELTY_BLOCK = `
+PLANT SELECTION CONSTRAINT (MANDATORY):
+
+You must select a real plant that has NOT been used recently.
+
+You are STRICTLY FORBIDDEN from selecting any plant in the list below.
+
+Recently used plants:
+${recentPlantList || "- (none)"}
+
+Rules:
+- You MUST choose a different real plant not listed above.
+- Do NOT repeat, rephrase, or choose closely related variants.
+- Do NOT choose cultivars, subspecies, or alternate names.
+- If uncertain, choose a different plant.
+
+Failure conditions:
+- Selecting a forbidden plant makes the output invalid.
+- Selecting a synonymous or related plant makes the output invalid.
+
+Novelty is REQUIRED.
+Repetition is NOT allowed.
+`;
+
+    const systemPrompt = buildSystemPrompt(PLANT_NOVELTY_BLOCK);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -96,7 +153,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: "Generate a complete botanical content package now." }
         ],
         temperature: 0.8,
@@ -146,6 +203,14 @@ serve(async (req) => {
     if (!parsed.plant_name || !parsed.script || !parsed.thumbnail_prompt) {
       console.error("Missing required fields in parsed content");
       throw new Error("AI response missing required fields");
+    }
+
+    // Post-parse novelty guard (belt-and-suspenders)
+    if (recentPlants?.some(p => 
+      p.plant_name?.toLowerCase() === parsed.plant_name?.toLowerCase()
+    )) {
+      console.error("Novelty violation: AI selected recently used plant:", parsed.plant_name);
+      throw new Error("Novelty violation: repeated plant");
     }
 
     return new Response(JSON.stringify({ 
