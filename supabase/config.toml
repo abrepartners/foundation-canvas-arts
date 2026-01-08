@@ -1,1 +1,7 @@
 project_id = "pswlaczoevrclemhjjpw"
+
+[functions.generate-botanical-content]
+verify_jwt = false
+
+[functions.regenerate-visual]
+verify_jwt = false
