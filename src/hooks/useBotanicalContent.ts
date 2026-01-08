@@ -17,6 +17,11 @@ export interface ThumbnailPrompt {
   prompt: string;
 }
 
+export interface FacelessVisual {
+  moment: "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
+  prompt: string;
+}
+
 export interface BotanicalContent {
   plant_name: string;
   verified_fact: string;
@@ -24,6 +29,7 @@ export interface BotanicalContent {
   thumbnail_prompt: ThumbnailPrompt;
   caption: string;
   part2_hook: string;
+  faceless_visuals: FacelessVisual[];
 }
 
 export interface SavedContent extends BotanicalContent {
@@ -67,6 +73,7 @@ export function useBotanicalContent() {
           thumbnail: JSON.stringify(generatedContent.thumbnail_prompt),
           caption: generatedContent.caption,
           part2_hook: generatedContent.part2_hook,
+          script_visuals: JSON.stringify(generatedContent.faceless_visuals),
           raw_content: data.raw || "",
         });
 
@@ -104,6 +111,7 @@ export function useBotanicalContent() {
       thumbnail_prompt: saved.thumbnail_prompt,
       caption: saved.caption,
       part2_hook: saved.part2_hook,
+      faceless_visuals: saved.faceless_visuals,
     });
   };
 
@@ -152,6 +160,17 @@ export function useContentHistory() {
             thumbnail_prompt = { mode: "light", prompt: item.thumbnail || "" };
           }
 
+          let faceless_visuals: FacelessVisual[] = [];
+          try {
+            if (item.script_visuals) {
+              faceless_visuals = typeof item.script_visuals === 'string' 
+                ? JSON.parse(item.script_visuals) 
+                : item.script_visuals;
+            }
+          } catch {
+            faceless_visuals = [];
+          }
+
           return {
             id: item.id,
             plant_name: item.plant_name || "Unknown Plant",
@@ -160,6 +179,7 @@ export function useContentHistory() {
             thumbnail_prompt,
             caption: item.caption || "",
             part2_hook: item.part2_hook || "",
+            faceless_visuals,
             created_at: item.created_at,
           };
         })

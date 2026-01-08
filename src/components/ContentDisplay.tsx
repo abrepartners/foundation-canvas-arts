@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { RotateCcw, Copy, Check } from "lucide-react";
 import { useState } from "react";
-import type { BotanicalContent } from "@/hooks/useBotanicalContent";
+import type { BotanicalContent, FacelessVisual } from "@/hooks/useBotanicalContent";
 
 interface ContentDisplayProps {
   content: BotanicalContent;
@@ -58,6 +58,48 @@ function ScriptSection({ script }: { script: BotanicalContent["script"] }) {
   );
 }
 
+const momentLabels: Record<string, string> = {
+  hook: "Hook",
+  dangle_1: "Dangle 1",
+  rehook: "Re-hook",
+  dangle_2: "Dangle 2",
+  verified_truth: "Verified Truth",
+  close: "Close"
+};
+
+function FacelessVisualsSection({ visuals }: { visuals: FacelessVisual[] }) {
+  const allPrompts = visuals
+    .map((v) => `[${momentLabels[v.moment]}]\n${v.prompt}`)
+    .join("\n\n---\n\n");
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-serif text-lg text-foreground">Faceless Visuals</h3>
+        <CopyButton text={allPrompts} />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {visuals.length} unique moments • Zero-memory prompts
+      </p>
+      <div className="space-y-4">
+        {visuals.map((visual, idx) => (
+          <div key={idx} className="border-l-2 border-primary/30 pl-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-primary">
+                {momentLabels[visual.moment]}
+              </span>
+              <CopyButton text={visual.prompt} />
+            </div>
+            <p className="text-sm text-foreground/90 font-body whitespace-pre-wrap">
+              {visual.prompt}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ContentCard({ title, children, copyText }: { title: string; children: React.ReactNode; copyText?: string }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -86,6 +128,10 @@ export function ContentDisplay({ content, onReset }: ContentDisplayProps) {
 
       <div className="space-y-4">
         <ScriptSection script={content.script} />
+
+        {content.faceless_visuals?.length > 0 && (
+          <FacelessVisualsSection visuals={content.faceless_visuals} />
+        )}
 
         <ContentCard 
           title={`Thumbnail Prompt (${content.thumbnail_prompt.mode})`} 
