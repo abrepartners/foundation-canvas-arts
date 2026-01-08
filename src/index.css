@@ -2,101 +2,95 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Inter:wght@300;400;500&display=swap');
-
-/* Warm Academic Design System
-   Colors: Aged paper, sepia, charcoal, botanical greens
-   Typography: Serif display + clean sans-serif body
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
 */
 
 @layer base {
   :root {
-    /* Warm ivory/cream background */
-    --background: 40 33% 97%;
-    --foreground: 30 10% 15%;
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
 
-    /* Slightly warmer card */
-    --card: 40 25% 95%;
-    --card-foreground: 30 10% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
 
-    --popover: 40 25% 95%;
-    --popover-foreground: 30 10% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
 
-    /* Muted botanical olive-brown */
-    --primary: 35 25% 25%;
-    --primary-foreground: 40 33% 97%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
 
-    /* Warm neutral secondary */
-    --secondary: 35 15% 90%;
-    --secondary-foreground: 30 10% 20%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
 
-    /* Aged paper muted */
-    --muted: 35 12% 88%;
-    --muted-foreground: 30 8% 45%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-    /* Subtle warm accent */
-    --accent: 35 18% 92%;
-    --accent-foreground: 30 10% 20%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
 
-    --destructive: 0 65% 50%;
-    --destructive-foreground: 40 33% 97%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
 
-    /* Warm sepia borders */
-    --border: 35 15% 82%;
-    --input: 35 15% 85%;
-    --ring: 35 25% 25%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
 
-    --radius: 0.375rem;
+    --radius: 0.5rem;
 
-    --sidebar-background: 40 20% 96%;
-    --sidebar-foreground: 30 10% 25%;
-    --sidebar-primary: 35 25% 20%;
-    --sidebar-primary-foreground: 40 33% 97%;
-    --sidebar-accent: 35 15% 92%;
-    --sidebar-accent-foreground: 30 10% 20%;
-    --sidebar-border: 35 12% 85%;
-    --sidebar-ring: 35 25% 25%;
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
-    /* Deep charcoal/umber background */
-    --background: 30 15% 8%;
-    --foreground: 35 20% 90%;
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
 
-    --card: 30 12% 12%;
-    --card-foreground: 35 20% 90%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
 
-    --popover: 30 12% 12%;
-    --popover-foreground: 35 20% 90%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
 
-    /* Warm cream primary in dark mode */
-    --primary: 35 25% 85%;
-    --primary-foreground: 30 15% 10%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
 
-    --secondary: 30 10% 18%;
-    --secondary-foreground: 35 20% 85%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
 
-    --muted: 30 10% 18%;
-    --muted-foreground: 35 12% 55%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
 
-    --accent: 30 10% 20%;
-    --accent-foreground: 35 20% 85%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 50% 40%;
-    --destructive-foreground: 35 20% 90%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
 
-    --border: 30 10% 20%;
-    --input: 30 10% 20%;
-    --ring: 35 20% 70%;
-
-    --sidebar-background: 30 15% 6%;
-    --sidebar-foreground: 35 15% 80%;
-    --sidebar-primary: 35 25% 80%;
-    --sidebar-primary-foreground: 30 15% 10%;
-    --sidebar-accent: 30 10% 15%;
-    --sidebar-accent-foreground: 35 15% 80%;
-    --sidebar-border: 30 10% 18%;
-    --sidebar-ring: 35 20% 70%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 }
 
@@ -106,11 +100,6 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', sans-serif;
-  }
-
-  .font-serif {
-    font-family: 'Crimson Pro', Georgia, serif;
+    @apply bg-background text-foreground;
   }
 }
