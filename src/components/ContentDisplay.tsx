@@ -1,11 +1,12 @@
 import { Button } from "@/components/ui/button";
-import { RotateCcw, Copy, Check } from "lucide-react";
+import { RotateCcw, Copy, Check, RefreshCw, Loader2 } from "lucide-react";
 import { useState } from "react";
-import type { BotanicalContent, FacelessVisual } from "@/hooks/useBotanicalContent";
+import type { ContentWithId, FacelessVisual } from "@/hooks/useBotanicalContent";
 
 interface ContentDisplayProps {
-  content: BotanicalContent;
+  content: ContentWithId;
   onReset: () => void;
+  onRegenerateVisual?: (moment: string, prompt: string) => Promise<string | null>;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -24,7 +25,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function ScriptSection({ script }: { script: BotanicalContent["script"] }) {
+function ScriptSection({ script }: { script: ContentWithId["script"] }) {
   const sections = [
     { label: "Hook", timing: "0-4s", content: script.hook },
     { label: "Dangle 1", timing: "4-9s", content: script.dangle_1 },
@@ -69,8 +70,15 @@ const momentLabels: Record<string, string> = {
 
 const momentOrder = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
 
-function FacelessVisualsSection({ visuals }: { visuals: FacelessVisual[] }) {
+function FacelessVisualsSection({ 
+  visuals, 
+  onRegenerate 
+}: { 
+  visuals: FacelessVisual[];
+  onRegenerate?: (moment: string, prompt: string) => Promise<string | null>;
+}) {
   const [expandedPrompts, setExpandedPrompts] = useState<Set<number>>(new Set());
+  const [regenerating, setRegenerating] = useState<string | null>(null);
   
   // Sort visuals by script flow order
   const sortedVisuals = [...visuals].sort(
@@ -93,6 +101,16 @@ function FacelessVisualsSection({ visuals }: { visuals: FacelessVisual[] }) {
     });
   };
 
+  const handleRegenerate = async (moment: string, prompt: string) => {
+    if (!onRegenerate || regenerating) return;
+    setRegenerating(moment);
+    try {
+      await onRegenerate(moment, prompt);
+    } finally {
+      setRegenerating(null);
+    }
+  };
+
   const imagesGenerated = sortedVisuals.filter(v => v.image_url).length;
 
   return (
@@ -105,49 +123,98 @@ function FacelessVisualsSection({ visuals }: { visuals: FacelessVisual[] }) {
         {visuals.length} unique moments • {imagesGenerated} images generated
       </p>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {sortedVisuals.map((visual, idx) => (
-          <div key={idx} className="space-y-2">
-            {/* Image or placeholder */}
-            <div className="aspect-[9/16] rounded-lg overflow-hidden bg-muted/50 border border-border">
-              {visual.image_url ? (
-                <img 
-                  src={visual.image_url} 
-                  alt={`${momentLabels[visual.moment]} visual`}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
-                  No image
+        {sortedVisuals.map((visual, idx) => {
+          const isRegenerating = regenerating === visual.moment;
+          
+          return (
+            <div key={idx} className="space-y-2">
+              {/* Image or placeholder */}
+              <div className="aspect-[9/16] rounded-lg overflow-hidden bg-muted/50 border border-border relative group">
+                {visual.image_url ? (
+                  <>
+                    <img 
+                      src={visual.image_url} 
+                      alt={`${momentLabels[visual.moment]} visual`}
+                      className="w-full h-full object-cover"
+                    />
+                    {/* Regenerate overlay on hover */}
+                    {onRegenerate && (
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleRegenerate(visual.moment, visual.prompt)}
+                          disabled={isRegenerating}
+                          className="text-xs"
+                        >
+                          {isRegenerating ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <RefreshCw className="h-3 w-3 mr-1" />
+                          )}
+                          Regenerate
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                    {onRegenerate ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRegenerate(visual.moment, visual.prompt)}
+                        disabled={isRegenerating}
+                        className="text-xs"
+                      >
+                        {isRegenerating ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                        )}
+                        Generate
+                      </Button>
+                    ) : (
+                      <span className="text-xs">No image</span>
+                    )}
+                  </div>
+                )}
+                
+                {/* Loading overlay */}
+                {isRegenerating && (
+                  <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                )}
+              </div>
+              
+              {/* Moment label and actions */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-primary">
+                  {momentLabels[visual.moment]}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => togglePrompt(idx)}
+                    className="h-6 px-2 text-xs"
+                  >
+                    {expandedPrompts.has(idx) ? "Hide" : "Prompt"}
+                  </Button>
+                  <CopyButton text={visual.prompt} />
                 </div>
+              </div>
+
+              {/* Collapsible prompt */}
+              {expandedPrompts.has(idx) && (
+                <p className="text-xs text-foreground/80 font-body whitespace-pre-wrap bg-muted/30 rounded p-2">
+                  {visual.prompt}
+                </p>
               )}
             </div>
-            
-            {/* Moment label and actions */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-primary">
-                {momentLabels[visual.moment]}
-              </span>
-              <div className="flex items-center gap-1">
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => togglePrompt(idx)}
-                  className="h-6 px-2 text-xs"
-                >
-                  {expandedPrompts.has(idx) ? "Hide" : "Prompt"}
-                </Button>
-                <CopyButton text={visual.prompt} />
-              </div>
-            </div>
-
-            {/* Collapsible prompt */}
-            {expandedPrompts.has(idx) && (
-              <p className="text-xs text-foreground/80 font-body whitespace-pre-wrap bg-muted/30 rounded p-2">
-                {visual.prompt}
-              </p>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -165,7 +232,7 @@ function ContentCard({ title, children, copyText }: { title: string; children: R
   );
 }
 
-export function ContentDisplay({ content, onReset }: ContentDisplayProps) {
+export function ContentDisplay({ content, onReset, onRegenerateVisual }: ContentDisplayProps) {
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -183,7 +250,10 @@ export function ContentDisplay({ content, onReset }: ContentDisplayProps) {
         <ScriptSection script={content.script} />
 
         {content.faceless_visuals?.length > 0 && (
-          <FacelessVisualsSection visuals={content.faceless_visuals} />
+          <FacelessVisualsSection 
+            visuals={content.faceless_visuals} 
+            onRegenerate={onRegenerateVisual}
+          />
         )}
 
         <ContentCard 

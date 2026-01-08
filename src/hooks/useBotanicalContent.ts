@@ -38,8 +38,12 @@ export interface SavedContent extends BotanicalContent {
   created_at: string;
 }
 
+export interface ContentWithId extends BotanicalContent {
+  id: string;
+}
+
 export function useBotanicalContent() {
-  const [content, setContent] = useState<BotanicalContent | null>(null);
+  const [content, setContent] = useState<ContentWithId | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -62,7 +66,10 @@ export function useBotanicalContent() {
       }
 
       // Content is now saved by the edge function (with image URLs)
-      const generatedContent: BotanicalContent = data.content;
+      const generatedContent: ContentWithId = {
+        ...data.content,
+        id: data.content_id,
+      };
       setContent(generatedContent);
 
       toast({
@@ -82,6 +89,64 @@ export function useBotanicalContent() {
     }
   };
 
+  const regenerateVisual = async (moment: string, prompt: string) => {
+    if (!content?.id) {
+      toast({
+        title: "Cannot regenerate",
+        description: "No content ID available",
+        variant: "destructive",
+      });
+      return null;
+    }
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke(
+        "regenerate-visual",
+        {
+          body: {
+            content_id: content.id,
+            moment,
+            prompt,
+          },
+        }
+      );
+
+      if (fnError) {
+        throw new Error(fnError.message);
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || "Failed to regenerate image");
+      }
+
+      // Update local state with new image URL
+      setContent((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          faceless_visuals: prev.faceless_visuals.map((v) =>
+            v.moment === moment ? { ...v, image_url: data.image_url } : v
+          ),
+        };
+      });
+
+      toast({
+        title: "Image regenerated",
+        description: `${moment} visual updated.`,
+      });
+
+      return data.image_url;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      toast({
+        title: "Regeneration failed",
+        description: message,
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
   const reset = () => {
     setContent(null);
     setError(null);
@@ -89,6 +154,7 @@ export function useBotanicalContent() {
 
   const loadFromHistory = (saved: SavedContent) => {
     setContent({
+      id: saved.id,
       plant_name: saved.plant_name,
       verified_fact: saved.verified_fact,
       script: saved.script,
@@ -99,7 +165,7 @@ export function useBotanicalContent() {
     });
   };
 
-  return { content, isLoading, error, generate, reset, loadFromHistory };
+  return { content, isLoading, error, generate, reset, loadFromHistory, regenerateVisual };
 }
 
 export function useContentHistory() {
