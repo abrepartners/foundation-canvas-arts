@@ -14,7 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      botanical_content: {
+        Row: {
+          caption: string | null
+          created_at: string
+          id: string
+          part2_hook: string | null
+          plant_name: string | null
+          raw_content: string | null
+          script: string
+          script_visuals: string | null
+          thumbnail: string | null
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          part2_hook?: string | null
+          plant_name?: string | null
+          raw_content?: string | null
+          script: string
+          script_visuals?: string | null
+          thumbnail?: string | null
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          part2_hook?: string | null
+          plant_name?: string | null
+          raw_content?: string | null
+          script?: string
+          script_visuals?: string | null
+          thumbnail?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
