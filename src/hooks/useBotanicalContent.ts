@@ -2,18 +2,32 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+export interface ScriptStructure {
+  hook: string;
+  dangle_1: string;
+  rehook: string;
+  dangle_2: string;
+  payoff: string;
+  verified_truth: string;
+  close: string;
+}
+
+export interface ThumbnailPrompt {
+  mode: "light" | "dark";
+  prompt: string;
+}
+
 export interface BotanicalContent {
-  script: string;
-  thumbnail: string;
+  plant_name: string;
+  verified_fact: string;
+  script: ScriptStructure;
+  thumbnail_prompt: ThumbnailPrompt;
   caption: string;
-  part2Hook: string;
-  scriptVisuals: string;
-  raw?: string;
+  part2_hook: string;
 }
 
 export interface SavedContent extends BotanicalContent {
   id: string;
-  plant_name: string | null;
   created_at: string;
 }
 
@@ -40,23 +54,19 @@ export function useBotanicalContent() {
         throw new Error(data.error || "Failed to generate content");
       }
 
-      const generatedContent = data.content;
+      const generatedContent: BotanicalContent = data.content;
       setContent(generatedContent);
 
-      // Extract plant name from script (first mentioned plant)
-      const plantMatch = generatedContent.script?.match(/\b([A-Z][a-z]+ ?[a-z]*)\b/);
-      const plantName = plantMatch ? plantMatch[1] : null;
-
-      // Save to database
+      // Save to database with JSON stringified fields
       const { error: insertError } = await supabase
         .from("botanical_content")
         .insert({
-          plant_name: plantName,
-          script: generatedContent.script || "",
-          thumbnail: generatedContent.thumbnail || "",
-          caption: generatedContent.caption || "",
-          part2_hook: generatedContent.part2Hook || "",
-          script_visuals: generatedContent.scriptVisuals || "",
+          plant_name: generatedContent.plant_name,
+          verified_fact: generatedContent.verified_fact,
+          script: JSON.stringify(generatedContent.script),
+          thumbnail: JSON.stringify(generatedContent.thumbnail_prompt),
+          caption: generatedContent.caption,
+          part2_hook: generatedContent.part2_hook,
           raw_content: data.raw || "",
         });
 
@@ -66,7 +76,7 @@ export function useBotanicalContent() {
 
       toast({
         title: "Content generated",
-        description: "Your botanical content package is ready.",
+        description: `${generatedContent.plant_name} content package is ready.`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -88,11 +98,12 @@ export function useBotanicalContent() {
 
   const loadFromHistory = (saved: SavedContent) => {
     setContent({
+      plant_name: saved.plant_name,
+      verified_fact: saved.verified_fact,
       script: saved.script,
-      thumbnail: saved.thumbnail,
+      thumbnail_prompt: saved.thumbnail_prompt,
       caption: saved.caption,
-      part2Hook: saved.part2Hook,
-      scriptVisuals: saved.scriptVisuals,
+      part2_hook: saved.part2_hook,
     });
   };
 
@@ -116,16 +127,42 @@ export function useContentHistory() {
       console.error("Failed to fetch history:", error);
     } else {
       setHistory(
-        (data || []).map((item) => ({
-          id: item.id,
-          plant_name: item.plant_name,
-          script: item.script,
-          thumbnail: item.thumbnail || "",
-          caption: item.caption || "",
-          part2Hook: item.part2_hook || "",
-          scriptVisuals: item.script_visuals || "",
-          created_at: item.created_at,
-        }))
+        (data || []).map((item) => {
+          // Parse JSON strings back to objects
+          let script: ScriptStructure;
+          let thumbnail_prompt: ThumbnailPrompt;
+          
+          try {
+            script = typeof item.script === 'string' ? JSON.parse(item.script) : item.script;
+          } catch {
+            script = {
+              hook: "",
+              dangle_1: "",
+              rehook: "",
+              dangle_2: "",
+              payoff: "",
+              verified_truth: "",
+              close: "",
+            };
+          }
+          
+          try {
+            thumbnail_prompt = typeof item.thumbnail === 'string' ? JSON.parse(item.thumbnail) : item.thumbnail;
+          } catch {
+            thumbnail_prompt = { mode: "light", prompt: item.thumbnail || "" };
+          }
+
+          return {
+            id: item.id,
+            plant_name: item.plant_name || "Unknown Plant",
+            verified_fact: item.verified_fact || "",
+            script,
+            thumbnail_prompt,
+            caption: item.caption || "",
+            part2_hook: item.part2_hook || "",
+            created_at: item.created_at,
+          };
+        })
       );
     }
     setIsLoading(false);
