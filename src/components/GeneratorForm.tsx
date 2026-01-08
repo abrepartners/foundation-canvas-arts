@@ -8,9 +8,10 @@ import type { GeneratorInputs, ThumbnailMode } from "@/types/generator";
 
 interface GeneratorFormProps {
   onGenerate: (inputs: GeneratorInputs) => void;
+  isLoading?: boolean;
 }
 
-export function GeneratorForm({ onGenerate }: GeneratorFormProps) {
+export function GeneratorForm({ onGenerate, isLoading }: GeneratorFormProps) {
   const [botanicalSubject, setBotanicalSubject] = useState("");
   const [claimToVerify, setClaimToVerify] = useState("");
   const [thumbnailMode, setThumbnailMode] = useState<ThumbnailMode>("Light");
@@ -88,10 +89,10 @@ export function GeneratorForm({ onGenerate }: GeneratorFormProps) {
 
         <Button
           type="submit"
-          disabled={!isValid}
+          disabled={!isValid || isLoading}
           className="mt-6 w-full"
         >
-          Generate Assets
+          {isLoading ? "Generating..." : "Generate Assets"}
         </Button>
       </div>
     </form>
