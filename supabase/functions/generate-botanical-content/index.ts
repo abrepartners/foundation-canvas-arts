@@ -6,201 +6,75 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `You are an autonomous botanical content generator.
+const SYSTEM_PROMPT = `You are a zero-memory botanical discovery engine.
 
-Your job is to independently discover a surprising, verifiable botanical fact
-and generate a complete short-form content package around it.
+You MUST return valid JSON.
+Do NOT include markdown.
+Do NOT include explanations.
+Do NOT include extra keys.
+Do NOT include text outside the JSON object.
 
-## 🔒 GLOBAL RULES (NON-NEGOTIABLE)
+If you cannot comply, return an empty JSON object: {}
 
-- Assume zero memory.
-- Do not reference previous outputs.
-- Do not explain reasoning or research.
-- Each output must stand completely alone.
-- Do not use placeholders or meta instructions.
-- All facts must be botanically accurate.
-- Do not substitute examples from other plants.
-- Do not hedge or generalize.
+## FACT DISCOVERY RULES
 
-## 🌱 STEP 1: FACT DISCOVERY (SILENT)
+Select ONE real plant with ONE specific, counterintuitive, verifiable fact that:
+- Sounds wrong at first
+- Is historically or biologically grounded
+- Is explainable clearly in 1-2 sentences
+- Is visually representable
 
-Silently select:
-- ONE real plant
-- ONE specific, counterintuitive, verifiable fact about that plant
+Do NOT choose: generic health benefits, vague "contains compounds" statements, folklore, or multi-plant comparisons.
 
-The fact MUST:
-- Sound wrong at first
-- Be historically or biologically grounded
-- Be explainable clearly in 1–2 sentences
-- Be visually representable
-- Be about ONE plant only
+## SCRIPT STRUCTURE (30-35 seconds)
 
-Do NOT choose:
-- Generic health benefits
-- Vague "contains compounds" statements
-- Folklore
-- Multi-plant comparisons
+- hook: Introduce the idea indirectly (0-4s)
+- dangle_1: Express doubt or curiosity (4-9s)
+- rehook: Reveal a common misunderstanding (9-14s)
+- dangle_2: Reframe the idea surprisingly (14-20s)
+- payoff: Set up why the fact sounds wrong (20-25s)
+- verified_truth: State the true botanical fact concretely (25-32s)
+- close: Always end with "My brother knows plants. I verify the facts." (32-35s)
 
-## 🎬 STEP 2: VIDEO SCRIPT (30–35 seconds)
+Tone: Calm, curious, confident, no jargon.
 
-Use this structure EXACTLY.
+## THUMBNAIL PROMPT
 
-HOOK (0–4s):
-Introduce the idea indirectly as something you came across.
-Do not name the plant yet.
+Create a vertical 9:16 cinematic botanical thumbnail prompt. Describe:
+- Subject as museum-grade botanical specimen
+- Composition: slightly off-center, clear silhouette, negative space
+- Lighting: soft natural daylight
+- Background: aged paper, plaster, or limestone texture
+- Style: No icons, emojis, bright colors, or tech elements
 
-DANGLE (4–9s):
-Express doubt or curiosity.
-Short sentences.
+## CAPTION
 
-RE-HOOK (9–14s):
-Reveal a misunderstanding or assumption people usually make.
+Two lines: Line 1 is calm disbelief, Line 2 is reinforcing insight. No hashtags.
 
-DANGLE (14–20s):
-Reframe the definition or idea in a surprising way.
+## PART 2 HOOK
 
-PAYOFF (20–25s):
-Set up why the fact sounds wrong at first.
+One sentence teasing a deeper pattern without resolving it.
 
-VERIFIED TRUTH (25–32s):
-Clearly state the true botanical fact.
-Be concrete and specific.
-One to two sentences.
-
-CLOSE (32–35s):
-"My brother knows plants.
-I verify the facts."
-
-Tone:
-- Calm
-- Curious
-- Confident
-- No jargon
-
-## 🖼️ STEP 3: THUMBNAIL PROMPT (LIGHT)
-
-Create a vertical 9:16 cinematic botanical thumbnail.
-
-SUBJECT:
-Explicitly describe the selected plant rendered as a physical,
-museum-grade botanical specimen.
-
-COMPOSITION:
-Slightly off-center.
-Clear silhouette.
-Negative space.
-
-LIGHTING:
-Soft natural daylight.
-Even illumination.
-Gentle shadows.
-
-BACKGROUND:
-Aged paper, plaster, or limestone texture.
-Muted warm-neutral tones.
-
-ANNOTATIONS:
-Thin graphite-style architectural lines.
-Minimal and academic.
-
-STYLE CONSTRAINTS:
-No icons.
-No emojis.
-No bright colors.
-No futuristic or tech elements.
-No influencer aesthetics.
-
-## ✍️ STEP 4: CAPTION
-
-Write a two-line caption:
-
-Line 1: A calm disbelief statement.
-Line 2: A reinforcing insight.
-
-No hashtags unless asked.
-
-## 🔁 STEP 5: PART 2 HOOK
-
-Write ONE sentence that teases a deeper pattern or implication.
-Do not resolve it.
-
-## 🖼️ STEP 6: SCRIPT VISUALS (FACELESS BOTANICAL PLATES)
-
-Generate 5 to 7 distinct faceless visual prompts.
-
-Each visual must correspond to a different moment in the script
-and must be able to stand completely alone.
-
-Do not reference previous visuals.
-Do not reference "the same plant as before."
-Explicitly restate all visual constraints every time.
-
-### VISUAL RULES (NON-NEGOTIABLE)
-
-All visuals must be:
-
-- Faceless
-- Botanical or archival in nature
-- Museum-grade, cinematic, and academic
-- Free of modern UI, icons, emojis, or text overlays
-- Suitable for high-end image generation tools
-
-No people.
-No technology.
-No diagrams with labels baked into the image.
-No repetition of composition language across prompts.
-
-### VISUAL STYLE (APPLIES TO EVERY PROMPT)
-
-- Architectural botanical illustration aesthetic
-- Physical specimens, pressed plants, cross-sections, or isolated plant elements
-- Fine material texture visible (paper grain, ink, graphite, fiber)
-- Muted, natural, earth-toned palette
-- Shallow depth of field where appropriate
-- Soft natural lighting unless otherwise specified
-- Calm, scholarly, restrained mood
-
-### VISUAL STRUCTURE
-
-For each visual, output:
-
-Visual [Number]:
-[One-sentence description of what this image represents in the story]
-
-Prompt:
-[A fully explicit image generation prompt written as if the model has zero memory]
-
-Each prompt must explicitly include:
-- Subject description
-- Material qualities
-- Composition
-- Lighting
-- Background
-- Mood
-- Style constraints
-
-### REQUIRED VISUAL TYPES (COVER ALL)
-
-Across the 5–7 visuals, you must include:
-
-- One establishing specimen visual
-- One close-detail visual (seed, leaf, stem, or structure)
-- One historical or archival-style visual
-- One analytical or cross-section-style visual
-- One concluding or confirmation visual
-
-Do not label these categories in the output.
-Simply ensure they are covered.
-
-## 🧾 OUTPUT FORMAT (STRICT)
-
-Return ONLY the following sections, clearly labeled:
-
-Script
-Thumbnail Prompt (Light)
-Caption
-Part 2 Hook
-Script Visuals`;
+Return ONLY this exact JSON structure:
+{
+  "plant_name": "string - the specific plant name",
+  "verified_fact": "string - the core botanical fact in one sentence",
+  "script": {
+    "hook": "string",
+    "dangle_1": "string",
+    "rehook": "string",
+    "dangle_2": "string",
+    "payoff": "string",
+    "verified_truth": "string",
+    "close": "string"
+  },
+  "thumbnail_prompt": {
+    "mode": "light",
+    "prompt": "string - complete image generation prompt"
+  },
+  "caption": "string",
+  "part2_hook": "string"
+}`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -237,19 +111,47 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const rawContent = data.choices?.[0]?.message?.content;
 
-    if (!content) {
+    if (!rawContent) {
       throw new Error("No content received from AI");
     }
 
-    // Parse the content into sections
-    const sections = parseContent(content);
+    console.log("Raw AI response length:", rawContent.length);
+
+    // Parse JSON directly - no regex
+    let parsed;
+    try {
+      // Clean potential markdown code fences
+      let cleanedContent = rawContent.trim();
+      if (cleanedContent.startsWith("```json")) {
+        cleanedContent = cleanedContent.slice(7);
+      } else if (cleanedContent.startsWith("```")) {
+        cleanedContent = cleanedContent.slice(3);
+      }
+      if (cleanedContent.endsWith("```")) {
+        cleanedContent = cleanedContent.slice(0, -3);
+      }
+      cleanedContent = cleanedContent.trim();
+      
+      parsed = JSON.parse(cleanedContent);
+      console.log("JSON parsed successfully, keys:", Object.keys(parsed));
+    } catch (e) {
+      console.error("JSON parse failed:", e);
+      console.error("Raw content preview:", rawContent.substring(0, 500));
+      throw new Error("AI returned invalid JSON");
+    }
+
+    // Validate required fields exist
+    if (!parsed.plant_name || !parsed.script || !parsed.thumbnail_prompt) {
+      console.error("Missing required fields in parsed content");
+      throw new Error("AI response missing required fields");
+    }
 
     return new Response(JSON.stringify({ 
       success: true, 
-      content: sections,
-      raw: content 
+      content: parsed,
+      raw: rawContent 
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -266,52 +168,3 @@ serve(async (req) => {
     });
   }
 });
-
-function parseContent(raw: string): Record<string, string> {
-  const sections: Record<string, string> = {};
-  
-  // Define section markers - patterns without ## since AI might not include them
-  const markers = [
-    { key: "script", pattern: /^(?:##?\s*)?Script\s*$/im },
-    { key: "thumbnail", pattern: /^(?:##?\s*)?Thumbnail Prompt \(Light\)\s*$/im },
-    { key: "caption", pattern: /^(?:##?\s*)?Caption\s*$/im },
-    { key: "part2Hook", pattern: /^(?:##?\s*)?Part 2 Hook\s*$/im },
-    { key: "scriptVisuals", pattern: /^(?:##?\s*)?Script Visuals\s*$/im },
-  ];
-
-  // Find positions of each marker
-  const positions: { key: string; start: number; headerEnd: number }[] = [];
-  for (const marker of markers) {
-    const match = raw.match(marker.pattern);
-    if (match && match.index !== undefined) {
-      positions.push({ 
-        key: marker.key, 
-        start: match.index,
-        headerEnd: match.index + match[0].length 
-      });
-    }
-  }
-
-  // Sort by position in the text
-  positions.sort((a, b) => a.start - b.start);
-
-  // Extract content between markers
-  for (let i = 0; i < positions.length; i++) {
-    const current = positions[i];
-    const nextStart = positions[i + 1]?.start ?? raw.length;
-    
-    // Get content after the header, up to the next section
-    const content = raw.slice(current.headerEnd, nextStart).trim();
-    sections[current.key] = content;
-  }
-
-  console.log("Parsed sections:", Object.keys(sections));
-
-  // Fallback: if parsing failed, return raw
-  if (Object.keys(sections).length === 0) {
-    console.log("Parsing failed, returning raw content");
-    sections.raw = raw;
-  }
-
-  return sections;
-}

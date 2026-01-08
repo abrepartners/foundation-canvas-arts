@@ -25,6 +25,7 @@ export type Database = {
           script: string
           script_visuals: string | null
           thumbnail: string | null
+          verified_fact: string | null
         }
         Insert: {
           caption?: string | null
@@ -36,6 +37,7 @@ export type Database = {
           script: string
           script_visuals?: string | null
           thumbnail?: string | null
+          verified_fact?: string | null
         }
         Update: {
           caption?: string | null
@@ -47,6 +49,7 @@ export type Database = {
           script?: string
           script_visuals?: string | null
           thumbnail?: string | null
+          verified_fact?: string | null
         }
         Relationships: []
       }
