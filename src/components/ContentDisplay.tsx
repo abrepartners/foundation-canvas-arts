@@ -67,10 +67,33 @@ const momentLabels: Record<string, string> = {
   close: "Close"
 };
 
+const momentOrder = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
+
 function FacelessVisualsSection({ visuals }: { visuals: FacelessVisual[] }) {
-  const allPrompts = visuals
+  const [expandedPrompts, setExpandedPrompts] = useState<Set<number>>(new Set());
+  
+  // Sort visuals by script flow order
+  const sortedVisuals = [...visuals].sort(
+    (a, b) => momentOrder.indexOf(a.moment) - momentOrder.indexOf(b.moment)
+  );
+
+  const allPrompts = sortedVisuals
     .map((v) => `[${momentLabels[v.moment]}]\n${v.prompt}`)
     .join("\n\n---\n\n");
+
+  const togglePrompt = (idx: number) => {
+    setExpandedPrompts(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) {
+        next.delete(idx);
+      } else {
+        next.add(idx);
+      }
+      return next;
+    });
+  };
+
+  const imagesGenerated = sortedVisuals.filter(v => v.image_url).length;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
@@ -79,20 +102,50 @@ function FacelessVisualsSection({ visuals }: { visuals: FacelessVisual[] }) {
         <CopyButton text={allPrompts} />
       </div>
       <p className="text-xs text-muted-foreground">
-        {visuals.length} unique moments • Zero-memory prompts
+        {visuals.length} unique moments • {imagesGenerated} images generated
       </p>
-      <div className="space-y-4">
-        {visuals.map((visual, idx) => (
-          <div key={idx} className="border-l-2 border-primary/30 pl-3">
-            <div className="flex items-center justify-between mb-1">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {sortedVisuals.map((visual, idx) => (
+          <div key={idx} className="space-y-2">
+            {/* Image or placeholder */}
+            <div className="aspect-[9/16] rounded-lg overflow-hidden bg-muted/50 border border-border">
+              {visual.image_url ? (
+                <img 
+                  src={visual.image_url} 
+                  alt={`${momentLabels[visual.moment]} visual`}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
+                  No image
+                </div>
+              )}
+            </div>
+            
+            {/* Moment label and actions */}
+            <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-primary">
                 {momentLabels[visual.moment]}
               </span>
-              <CopyButton text={visual.prompt} />
+              <div className="flex items-center gap-1">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => togglePrompt(idx)}
+                  className="h-6 px-2 text-xs"
+                >
+                  {expandedPrompts.has(idx) ? "Hide" : "Prompt"}
+                </Button>
+                <CopyButton text={visual.prompt} />
+              </div>
             </div>
-            <p className="text-sm text-foreground/90 font-body whitespace-pre-wrap">
-              {visual.prompt}
-            </p>
+
+            {/* Collapsible prompt */}
+            {expandedPrompts.has(idx) && (
+              <p className="text-xs text-foreground/80 font-body whitespace-pre-wrap bg-muted/30 rounded p-2">
+                {visual.prompt}
+              </p>
+            )}
           </div>
         ))}
       </div>
