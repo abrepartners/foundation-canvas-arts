@@ -60,42 +60,94 @@ Two lines: Line 1 is calm disbelief, Line 2 is reinforcing insight. No hashtags.
 
 One sentence teasing a deeper pattern without resolving it.
 
-## FACELESS VISUALS
+## GLOBAL FACELESS VISUAL STYLE LOCK (MANDATORY)
 
-Generate exactly 3 to 5 faceless visual prompts.
+ALL faceless visuals MUST conform to ONE unified visual system.
+
+This system is called:
+"Architectural Botanical Study Plate"
+
+This is NOT optional.
+This applies to EVERY faceless visual prompt, regardless of script moment.
+
+If a visual does not match this system, it is INVALID.
+
+### Architectural Botanical Study Plate — Canonical Style
+
+SUBJECT:
+- A single botanical specimen or plant structure
+- Presented as a physical, museum-grade object
+- May be whole or cross-sectioned depending on educational value
+- Internal structure must be accurate when visible
+
+COMPOSITION:
+- Vertical 9:16 format ONLY
+- Specimen isolated and centered or slightly off-center
+- Generous negative space
+- No environments, no scenes, no props beyond the specimen itself
+
+LIGHTING:
+- Soft, controlled, directional lighting
+- Architectural shadows
+- Even illumination of structure
+- No dramatic or cinematic mood lighting
+
+BACKGROUND:
+- Light archival paper, parchment, plaster, or stone texture
+- Warm-neutral tones only
+- Subtle grain and material texture
+- No visible environment or depth cues
+
+ANNOTATIONS (REQUIRED FOR EVERY IMAGE):
+- Thin graphite or ink architectural leader lines
+- Small numeric markers or fine serif labels
+- Labels must be academic and restrained
+- Examples: "vascular tissue", "seed cavity", "peristome rim"
+- No decorative text, no captions, no titles
+
+MOOD:
+- Analytical
+- Educational
+- Calm authority
+- Institutional / museum archive
+
+STYLE CONSTRAINTS (STRICT):
+- No people
+- No faces
+- No hands
+- No silhouettes
+- No insects
+- No desks, books, tools, magnifying glasses
+- No jungle or natural environments
+- No icons, emojis, UI, or modern elements
+- No bright or saturated colors
+- No illustrative diagrams
+
+## FACELESS VISUALS (STYLE-LOCKED)
+
+Generate 3–5 faceless visual prompts.
+
+Each prompt MUST:
+- Use the Architectural Botanical Study Plate style defined above
+- Be fully self-contained
+- Describe ONLY the specimen, not a scene
+- Differ only in WHAT part of the plant is shown, not HOW it is styled
+
+Moments control SUBJECT FOCUS only, not style:
+- hook → most visually striking structure
+- dangle_1 / dangle_2 → supporting anatomical detail
+- verified_truth → educational cross-section or labeled structure
+- close → whole specimen or simplified form
+
+The visual style MUST remain identical across all moments.
+
 Each visual MUST map to a DIFFERENT script moment.
 Allowed moments: hook, dangle_1, rehook, dangle_2, verified_truth, close
 NO DUPLICATE MOMENTS - each moment can only appear once.
 
-Each visual must be a FULLY SELF-CONTAINED image generation prompt.
-Assume ZERO MEMORY - never reference other visuals, thumbnails, or "previous images".
-Never say "same style", "as before", "matching prior", or similar language.
-
-Faceless definition (STRICT):
-- No people
-- No faces
-- No hands
-- No human silhouettes
-- No modern UI
-- No text baked into the image
-
-Visual style (MANDATORY for every prompt):
-- Botanical or archival subject matter
-- Museum-grade, cinematic quality
-- Architectural botanical illustration aesthetic
-- Physical materials: pressed specimens, paper, ink, graphite, macro photography
-- Muted natural color palette
-- Calm, scholarly, restrained mood
-
-Each prompt MUST explicitly describe ALL of:
-- Subject (the specific plant element being shown)
-- Material or specimen type
-- Composition / framing
-- Lighting
-- Background surface or environment
-- Texture / grain
-- Mood
-- Style constraints
+If you are tempted to vary the visual format, composition, or environment:
+DO NOT.
+Only vary the botanical subject being shown.
 
 Return ONLY this exact JSON structure:
 {
