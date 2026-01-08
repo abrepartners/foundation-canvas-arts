@@ -60,6 +60,43 @@ Two lines: Line 1 is calm disbelief, Line 2 is reinforcing insight. No hashtags.
 
 One sentence teasing a deeper pattern without resolving it.
 
+## FACELESS VISUALS
+
+Generate exactly 3 to 5 faceless visual prompts.
+Each visual MUST map to a DIFFERENT script moment.
+Allowed moments: hook, dangle_1, rehook, dangle_2, verified_truth, close
+NO DUPLICATE MOMENTS - each moment can only appear once.
+
+Each visual must be a FULLY SELF-CONTAINED image generation prompt.
+Assume ZERO MEMORY - never reference other visuals, thumbnails, or "previous images".
+Never say "same style", "as before", "matching prior", or similar language.
+
+Faceless definition (STRICT):
+- No people
+- No faces
+- No hands
+- No human silhouettes
+- No modern UI
+- No text baked into the image
+
+Visual style (MANDATORY for every prompt):
+- Botanical or archival subject matter
+- Museum-grade, cinematic quality
+- Architectural botanical illustration aesthetic
+- Physical materials: pressed specimens, paper, ink, graphite, macro photography
+- Muted natural color palette
+- Calm, scholarly, restrained mood
+
+Each prompt MUST explicitly describe ALL of:
+- Subject (the specific plant element being shown)
+- Material or specimen type
+- Composition / framing
+- Lighting
+- Background surface or environment
+- Texture / grain
+- Mood
+- Style constraints
+
 Return ONLY this exact JSON structure:
 {
   "plant_name": "string - the specific plant name",
@@ -78,7 +115,13 @@ Return ONLY this exact JSON structure:
     "prompt": "string - complete image generation prompt"
   },
   "caption": "string",
-  "part2_hook": "string"
+  "part2_hook": "string",
+  "faceless_visuals": [
+    {
+      "moment": "hook | dangle_1 | rehook | dangle_2 | verified_truth | close",
+      "prompt": "string - complete self-contained image generation prompt"
+    }
+  ]
 }`;
 
 serve(async (req) => {
@@ -204,6 +247,33 @@ Repetition is NOT allowed.
       console.error("Missing required fields in parsed content");
       throw new Error("AI response missing required fields");
     }
+
+    // Validate faceless_visuals: 3-5 items with unique moments
+    if (!Array.isArray(parsed.faceless_visuals) || 
+        parsed.faceless_visuals.length < 3 || 
+        parsed.faceless_visuals.length > 5) {
+      console.error("faceless_visuals invalid:", parsed.faceless_visuals?.length);
+      throw new Error("faceless_visuals must be an array of 3-5 items");
+    }
+
+    const validMoments = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
+    const usedMoments = new Set<string>();
+
+    for (const visual of parsed.faceless_visuals) {
+      if (!visual.moment || !visual.prompt) {
+        throw new Error("Each faceless_visual must have moment and prompt");
+      }
+      if (!validMoments.includes(visual.moment)) {
+        throw new Error(`Invalid moment: ${visual.moment}`);
+      }
+      if (usedMoments.has(visual.moment)) {
+        console.error("Duplicate moment detected:", visual.moment);
+        throw new Error(`Duplicate moment: ${visual.moment}`);
+      }
+      usedMoments.add(visual.moment);
+    }
+
+    console.log("faceless_visuals validated:", parsed.faceless_visuals.length, "unique moments");
 
     // Post-parse novelty guard (belt-and-suspenders)
     if (recentPlants?.some(p => 
