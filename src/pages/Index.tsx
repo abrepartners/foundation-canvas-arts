@@ -3,13 +3,24 @@ import { GeneratorForm } from "@/components/GeneratorForm";
 import { GeneratedAssets } from "@/components/GeneratedAssets";
 import type { GeneratorInputs, GeneratedContent } from "@/types/generator";
 import { generateContent } from "@/lib/generator";
+import { toast } from "sonner";
 
 const Index = () => {
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleGenerate = (inputs: GeneratorInputs) => {
-    const content = generateContent(inputs);
-    setGeneratedContent(content);
+  const handleGenerate = async (inputs: GeneratorInputs) => {
+    setIsGenerating(true);
+    try {
+      const content = await generateContent(inputs);
+      setGeneratedContent(content);
+      toast.success("Content generated successfully");
+    } catch (error) {
+      console.error("Generation error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to generate content");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -20,7 +31,7 @@ const Index = () => {
             Botanical Content Generator
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Draft assets for botanical verification content
+            AI-powered draft assets for botanical verification content
           </p>
         </div>
       </header>
@@ -28,16 +39,25 @@ const Index = () => {
       <main className="container mx-auto px-6 py-10">
         <div className="grid gap-10 lg:grid-cols-[400px_1fr]">
           <aside>
-            <GeneratorForm onGenerate={handleGenerate} />
+            <GeneratorForm onGenerate={handleGenerate} isLoading={isGenerating} />
           </aside>
           
           <section>
-            {generatedContent ? (
+            {isGenerating ? (
+              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/20 p-12">
+                <div className="text-center">
+                  <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    Generating content with AI...
+                  </p>
+                </div>
+              </div>
+            ) : generatedContent ? (
               <GeneratedAssets content={generatedContent} />
             ) : (
               <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/20 p-12">
                 <p className="text-center text-sm text-muted-foreground">
-                  Enter inputs and generate to see draft assets
+                  Enter inputs and generate to see AI-powered draft assets
                 </p>
               </div>
             )}
