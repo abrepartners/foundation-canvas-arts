@@ -1,23 +1,14 @@
 ## Goal
-Run an end-to-end test of the botanical content generator and confirm every faceless visual image is created, uploaded to storage, and rendered in the UI.
+Confirm the regenerate button flow works by exercising the `regenerate-visual` edge function against the latest content row and verifying the result reaches storage, DB, and UI.
 
 ## Steps
+1. **Pick a target** — query `botanical_content` for the most recent row and pull a `faceless_visuals` entry (prefer the `close` moment that was skipped in the last generation run, otherwise any existing one to confirm upsert).
+2. **Invoke the function** — call `regenerate-visual` via `supabase--curl_edge_functions` with `{ content_id, moment, prompt }` and capture `image_url` from the response.
+3. **Check edge logs** — `supabase--edge_function_logs` for `regenerate-visual` to confirm: image API success, upload success, DB update success, no errors.
+4. **Verify storage** — HEAD the returned `image_url` (HTTP 200, `image/png`).
+5. **Verify DB** — re-query `botanical_content.script_visuals` for that row and confirm the targeted moment now has the new `image_url`.
+6. **Verify UI** — reload the preview, open the item from history, screenshot the Faceless Visuals grid to confirm the regenerated card renders.
 
-1. **Invoke the edge function** via `supabase--curl_edge_functions` (POST `/generate-botanical-content`) to produce a fresh content package. Capture `content_id` and the returned `faceless_visuals` array.
-
-2. **Inspect edge function logs** (`supabase--edge_function_logs` for `generate-botanical-content`) to confirm:
-   - DB insert succeeded
-   - Image generation loop ran for up to 4 visuals
-   - Each upload to `botanical-faceless-visuals` returned a public URL
-   - No timeout / 4xx / moderation errors
-
-3. **Verify DB state** with `supabase--read_query` on `botanical_content` for the new `content_id`, parsing `script_visuals` to check each entry has a non-null `image_url`.
-
-4. **Verify storage objects** by listing files under `{content_id}/` in the `botanical-faceless-visuals` bucket and HEAD-checking one public URL returns 200.
-
-5. **Verify UI rendering** by reloading the preview, selecting the new item from the history sidebar, and screenshotting the Faceless Visuals grid to confirm all images display in the 9:16 cards (and that regenerate buttons appear on hover).
-
-## Outcome / report
-A short summary listing: visuals expected vs. visuals with images, any moments that failed (with the log reason), and a screenshot of the rendered grid. If gaps exist, recommend whether to use the per-visual Regenerate button or adjust the timeout/concurrency in the edge function.
-
-No code changes are planned — this is a verification run only. If issues surface, I'll come back with a follow-up fix plan.
+## Notes
+- No code changes — verification only.
+- If a step fails, I'll surface the exact log line and propose a fix in a follow-up plan.
