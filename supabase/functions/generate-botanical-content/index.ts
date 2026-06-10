@@ -353,42 +353,48 @@ Repetition is NOT allowed.
       throw new Error("AI response missing required fields");
     }
 
-    // Validate faceless_visuals
-    if (!Array.isArray(parsed.faceless_visuals) || 
-        parsed.faceless_visuals.length < 3 || 
-        parsed.faceless_visuals.length > 5) {
-      console.error("faceless_visuals invalid:", parsed.faceless_visuals?.length);
-      throw new Error("faceless_visuals must be an array of 3-5 items");
+    // Validate faceless_visuals — must be exactly 6, one per required moment
+    if (!Array.isArray(parsed.faceless_visuals) ||
+        parsed.faceless_visuals.length !== REQUIRED_VISUAL_COUNT) {
+      console.error("faceless_visuals invalid count:", parsed.faceless_visuals?.length);
+      throw new Error(`faceless_visuals must contain exactly ${REQUIRED_VISUAL_COUNT} items`);
     }
 
-    const validMoments = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
     const usedMoments = new Set<string>();
-
     for (const visual of parsed.faceless_visuals) {
       if (!visual.moment || !visual.prompt) {
         throw new Error("Each faceless_visual must have moment and prompt");
       }
-      if (!validMoments.includes(visual.moment)) {
+      if (!REQUIRED_MOMENTS.includes(visual.moment)) {
         throw new Error(`Invalid moment: ${visual.moment}`);
       }
       if (usedMoments.has(visual.moment)) {
-        console.error("Duplicate moment detected:", visual.moment);
         throw new Error(`Duplicate moment: ${visual.moment}`);
       }
       usedMoments.add(visual.moment);
     }
+    for (const required of REQUIRED_MOMENTS) {
+      if (!usedMoments.has(required)) {
+        throw new Error(`Missing required moment: ${required}`);
+      }
+    }
 
-    console.log("faceless_visuals validated:", parsed.faceless_visuals.length, "unique moments");
+    console.log("faceless_visuals validated: 6 unique moments");
 
     // Novelty guard
-    if (recentPlants?.some(p => 
+    if (recentPlants?.some(p =>
       p.plant_name?.toLowerCase() === parsed.plant_name?.toLowerCase()
     )) {
       console.error("Novelty violation: AI selected recently used plant:", parsed.plant_name);
       throw new Error("Novelty violation: repeated plant");
     }
 
-    // INSERT content to DB to get real ID before image generation
+    // Sort visuals by script order; initialize with image_url: null
+    const visualsInitial = [...parsed.faceless_visuals]
+      .sort((a, b) => REQUIRED_MOMENTS.indexOf(a.moment) - REQUIRED_MOMENTS.indexOf(b.moment))
+      .map((v) => ({ moment: v.moment, prompt: v.prompt, image_url: null as string | null }));
+
+    // INSERT content to DB immediately (with empty image_urls)
     console.log("Inserting content to database...");
     const { data: insertedRow, error: insertError } = await supabase
       .from("botanical_content")
@@ -399,7 +405,7 @@ Repetition is NOT allowed.
         thumbnail: JSON.stringify(parsed.thumbnail_prompt),
         caption: parsed.caption,
         part2_hook: parsed.part2_hook,
-        script_visuals: JSON.stringify(parsed.faceless_visuals),
+        script_visuals: JSON.stringify(visualsInitial),
         raw_content: rawContent,
       })
       .select("id")
@@ -413,144 +419,123 @@ Repetition is NOT allowed.
     const contentId = insertedRow.id;
     console.log("Content saved with ID:", contentId);
 
-    // Image generation with timeout guard
-    const startTime = Date.now();
-    const momentOrder = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
-    
-    // Sort by script order and take max 4
-    const visualsToProcess = [...parsed.faceless_visuals]
-      .sort((a, b) => momentOrder.indexOf(a.moment) - momentOrder.indexOf(b.moment))
-      .slice(0, MAX_VISUALS);
+    // Background image generation — all 6 in parallel
+    const generateAllImages = async () => {
+      console.log(`Background: generating ${visualsInitial.length} images in parallel...`);
 
-    console.log(`Processing ${visualsToProcess.length} faceless visuals (max ${MAX_VISUALS})...`);
+      const results = await Promise.all(
+        visualsInitial.map(async (visual) => {
+          try {
+            const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "google/gemini-2.5-flash-image-preview",
+                messages: [{ role: "user", content: visual.prompt }],
+                modalities: ["image", "text"],
+              }),
+            });
 
-    let isFirstImage = true;
-    const visualsWithImages: Array<{ moment: string; prompt: string; image_url: string | null }> = [];
+            if (!imageResponse.ok) {
+              console.error(`Image API error for ${visual.moment}:`, imageResponse.status);
+              return { ...visual, image_url: null };
+            }
 
-    // Generate images SEQUENTIALLY
-    for (const visual of visualsToProcess) {
-      const elapsed = Date.now() - startTime;
-      
-      // Check timeout before each image
-      if (elapsed > MAX_EXECUTION_MS) {
-        console.warn(`Timeout guard triggered at ${elapsed}ms, skipping remaining images`);
-        visualsWithImages.push({ ...visual, image_url: null });
-        continue;
-      }
+            const imageData = await imageResponse.json();
+            const base64Image = imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
 
-      try {
-        console.log(`Generating image for moment: ${visual.moment} (${elapsed}ms elapsed)`);
-        
-        const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash-image-preview",
-            messages: [{ role: "user", content: visual.prompt }],
-            modalities: ["image", "text"]
-          }),
-        });
+            if (!base64Image || typeof base64Image !== "string") {
+              console.error(`No valid image data for ${visual.moment}`);
+              return { ...visual, image_url: null };
+            }
 
-        if (!imageResponse.ok) {
-          console.error(`Image API error for ${visual.moment}:`, imageResponse.status);
-          visualsWithImages.push({ ...visual, image_url: null });
-          continue;
-        }
+            const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+            const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+            const filePath = `${contentId}/${visual.moment}.png`;
 
-        const imageData = await imageResponse.json();
+            const { error: uploadError } = await supabase.storage
+              .from("botanical-faceless-visuals")
+              .upload(filePath, imageBuffer, {
+                contentType: "image/png",
+                upsert: true,
+              });
 
-        // Log first raw response for debugging
-        if (isFirstImage) {
-          console.log("Raw image API response structure:", JSON.stringify({
-            hasChoices: !!imageData.choices,
-            choicesLength: imageData.choices?.length,
-            hasMessage: !!imageData.choices?.[0]?.message,
-            hasImages: !!imageData.choices?.[0]?.message?.images,
-            imagesLength: imageData.choices?.[0]?.message?.images?.length,
-            firstImageKeys: imageData.choices?.[0]?.message?.images?.[0] 
-              ? Object.keys(imageData.choices[0].message.images[0]) 
-              : null
-          }));
-          isFirstImage = false;
-        }
+            if (uploadError) {
+              console.error(`Upload failed for ${visual.moment}:`, uploadError);
+              return { ...visual, image_url: null };
+            }
 
-        // Defensive parsing
-        const base64Image = imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-        
-        if (!base64Image || typeof base64Image !== "string") {
-          console.error(`No valid image data for ${visual.moment}`);
-          visualsWithImages.push({ ...visual, image_url: null });
-          continue;
-        }
+            const { data: urlData } = supabase.storage
+              .from("botanical-faceless-visuals")
+              .getPublicUrl(filePath);
 
-        // Extract base64 data and convert to binary
-        const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
-        const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+            console.log(`Image complete for ${visual.moment}`);
 
-        // Use REAL content ID for storage path
-        const filePath = `${contentId}/${visual.moment}.png`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from("botanical-faceless-visuals")
-          .upload(filePath, imageBuffer, {
-            contentType: "image/png",
-            upsert: true
-          });
+            // Incrementally update DB so client polling sees progress
+            const updated = visualsInitial.map((v) =>
+              v.moment === visual.moment ? { ...v, image_url: urlData.publicUrl } : v
+            );
+            // Merge with any already-completed images by re-reading current row
+            const { data: currentRow } = await supabase
+              .from("botanical_content")
+              .select("script_visuals")
+              .eq("id", contentId)
+              .single();
 
-        if (uploadError) {
-          console.error(`Upload failed for ${visual.moment}:`, uploadError);
-          visualsWithImages.push({ ...visual, image_url: null });
-          continue;
-        }
+            let currentVisuals = updated;
+            if (currentRow?.script_visuals) {
+              try {
+                const parsedCurrent = typeof currentRow.script_visuals === "string"
+                  ? JSON.parse(currentRow.script_visuals)
+                  : currentRow.script_visuals;
+                currentVisuals = parsedCurrent.map((v: typeof visualsInitial[number]) =>
+                  v.moment === visual.moment ? { ...v, image_url: urlData.publicUrl } : v
+                );
+              } catch {
+                // fallback to `updated`
+              }
+            }
 
-        const { data: urlData } = supabase.storage
-          .from("botanical-faceless-visuals")
-          .getPublicUrl(filePath);
+            await supabase
+              .from("botanical_content")
+              .update({ script_visuals: JSON.stringify(currentVisuals) })
+              .eq("id", contentId);
 
-        console.log(`Image complete for ${visual.moment}`);
-        visualsWithImages.push({ ...visual, image_url: urlData.publicUrl });
+            return { ...visual, image_url: urlData.publicUrl };
+          } catch (err) {
+            console.error(`Image error for ${visual.moment}:`, err);
+            return { ...visual, image_url: null };
+          }
+        })
+      );
 
-      } catch (err) {
-        console.error(`Image error for ${visual.moment}:`, err);
-        visualsWithImages.push({ ...visual, image_url: null });
-      }
+      const successCount = results.filter((v) => v.image_url).length;
+      console.log(`Background image generation complete: ${successCount} of ${results.length}`);
+    };
+
+    // Fire and forget via EdgeRuntime.waitUntil (keeps function alive)
+    // @ts-ignore - EdgeRuntime is available in Supabase edge runtime
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(generateAllImages());
+    } else {
+      // Fallback: run without waiting
+      generateAllImages();
     }
 
-    // Add any remaining visuals (beyond MAX_VISUALS) without images
-    const processedMoments = new Set(visualsWithImages.map(v => v.moment));
-    for (const visual of parsed.faceless_visuals) {
-      if (!processedMoments.has(visual.moment)) {
-        visualsWithImages.push({ ...visual, image_url: null });
-      }
-    }
+    // Return immediately with all 6 visual slots (image_url: null) so UI renders all plates
+    parsed.faceless_visuals = visualsInitial;
 
-    const successCount = visualsWithImages.filter(v => v.image_url).length;
-    console.log(`Image generation complete: ${successCount} of ${visualsWithImages.length}`);
-
-    // Update the DB record with image URLs
-    const { error: updateError } = await supabase
-      .from("botanical_content")
-      .update({
-        script_visuals: JSON.stringify(visualsWithImages),
-      })
-      .eq("id", contentId);
-
-    if (updateError) {
-      console.error("Failed to update with image URLs:", updateError);
-    }
-
-    // Replace faceless_visuals in response
-    parsed.faceless_visuals = visualsWithImages;
-
-    return new Response(JSON.stringify({ 
-      success: true, 
+    return new Response(JSON.stringify({
+      success: true,
       content: parsed,
       content_id: contentId,
-      raw: rawContent 
+      raw: rawContent,
     }), {
+      status: 202,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
