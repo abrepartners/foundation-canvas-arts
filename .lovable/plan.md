@@ -1,37 +1,48 @@
-## Goal
+## What's happening
 
-Add a manual **Post to TikTok** action on a generated content item. It sends the 6 faceless-visual plates as a **photo carousel** to your TikTok inbox as a **draft**, with the generated caption attached. You finish/publish from the TikTok app.
+The edge function is the bottleneck. Three hardcoded limits prevent 6 plates from ever appearing:
 
-## How it works
+1. **`MAX_VISUALS = 4`** — caps image generation at 4 plates even if the AI returns more.
+2. **`MAX_EXECUTION_MS = 20000`** (20s) — kills image generation early. Images are made one-at-a-time, so usually only 3 complete before the timeout skip kicks in.
+3. **AI prompt asks for "3–5 faceless visuals"** — so the model often returns 4 or 5, never 6.
 
-1. You click **Post to TikTok** on a content item.
-2. A dialog shows the 6 plates, lets you edit the caption (prefilled from `content.caption`), and confirms.
-3. An edge function calls TikTok's Content Posting API via the Lovable connector gateway:
-   - `POST /post/publish/content/init/` with `post_mode: MEDIA_UPLOAD` (inbox draft), `media_type: PHOTO`, and the 6 public image URLs from the `botanical-faceless-visuals` bucket.
-4. The dialog shows success + a hint to open TikTok mobile to finalize.
+That's why you see ~3 images, the 4th is empty/needs regenerate, and you never see 6.
 
-## Steps
+## The fix
 
-1. **Connect TikTok connector** — trigger the connection picker so `TIKTOK_API_KEY` is injected as an env var. (You'll authorize your TikTok account in a popup.)
-2. **New edge function `post-to-tiktok`** in `supabase/functions/post-to-tiktok/index.ts`:
-   - Input (zod): `{ content_id: string, caption: string }`
-   - Loads the row from `botanical_content`, parses `script_visuals` to get the 6 `image_url`s.
-   - Validates all URLs are public `https://` from the project's storage bucket (TikTok requires verified domains; we'll surface a clear error if TikTok rejects them so we can add domain verification next).
-   - Calls `https://connector-gateway.lovable.dev/tiktok/post/publish/content/init/` with `Authorization: Bearer $LOVABLE_API_KEY` and `X-Connection-Api-Key: $TIKTOK_API_KEY`.
-   - Returns `{ success, publish_id }` or a structured error.
-3. **Frontend**
-   - `src/components/PostToTikTokDialog.tsx` — shadcn Dialog: caption textarea (prefilled), thumbnail strip of the 6 plates, Post button, success/error state.
-   - `src/components/ContentDisplay.tsx` — add a **Post to TikTok** button next to the existing actions; opens the dialog.
-   - `src/hooks/useBotanicalContent.ts` — add `postToTikTok(caption)` that invokes the edge function.
+Make the generator actually produce all 6 plates and return them reliably, without hitting the edge-function timeout.
+
+### 1. AI prompt (`generate-botanical-content/index.ts`)
+- Change "Generate 3–5 faceless visuals" → **"Generate exactly 6 faceless visuals, one per moment: hook, dangle_1, rehook, dangle_2, verified_truth, close."**
+- Update validation to require exactly 6 unique moments (reject and retry-friendly error otherwise).
+
+### 2. Image generation strategy
+- Remove `MAX_VISUALS` cap (process all 6).
+- Remove the 20s timeout guard.
+- Generate images in **parallel** (`Promise.all`) instead of sequentially — 6 in parallel completes in roughly the time of 1.
+- Keep per-image try/catch so one failure doesn't kill the batch; failed plates come back with `image_url: null` and stay regenerable from the UI.
+
+### 3. Background processing (safety net for slow runs)
+Even parallelized, image generation can occasionally exceed the function wall-clock. To make this robust:
+
+- The function inserts the row immediately with `script_visuals` containing the 6 prompts and `image_url: null` for each.
+- Returns `202` to the client right away with `content_id` + the parsed script/visual prompts (so the UI renders all 6 slots immediately).
+- Image generation runs in the background via `EdgeRuntime.waitUntil(...)`, writing image URLs back to the DB as each one finishes.
+- The client subscribes to that row (Supabase realtime on `botanical_content`) or polls every 2s on `script_visuals` and updates the 6 plate slots as images arrive.
+
+### 4. Frontend (`useBotanicalContent.ts` + `ContentDisplay.tsx`)
+- After `generate()`, immediately show all 6 plate slots with the "Generate" placeholder for ones still pending.
+- Subscribe to the row's updates (or poll) until every plate has an `image_url` or a final failure marker.
+- Existing per-plate "Regenerate" button already covers any plate that ultimately fails.
+
+## Result
+
+- Every generation returns **6 plates** (one per script moment).
+- All 6 image slots appear in the UI immediately; images stream in as they finish, usually within ~10–20s thanks to parallel generation.
+- No more silent "only 3 generated" outcome — failures are explicit and per-plate regenerable.
 
 ## Technical notes
 
-- Gateway URL: `https://connector-gateway.lovable.dev/tiktok/post/publish/content/init/` (gateway injects `/v2` and the OAuth token).
-- Photo carousel max = 35 images; we send 6. Each image must be a publicly reachable HTTPS URL — the existing `botanical-faceless-visuals` bucket is already public.
-- `post_mode: MEDIA_UPLOAD` = inbox draft (no Direct Post approval needed). Caption is sent in the init payload.
-- If TikTok returns `url_ownership_unverified`, we'll need to verify the storage domain in the TikTok developer portal — handled as a follow-up only if it comes up.
-- No DB schema changes. No new secrets beyond what the connector injects.
-
-## Out of scope
-
-- Auto-posting on generate, analytics/stats, video uploads, scheduling, multi-account support.
+- Files touched: `supabase/functions/generate-botanical-content/index.ts`, `src/hooks/useBotanicalContent.ts`, `src/components/ContentDisplay.tsx` (minor — already handles pending plates).
+- No schema change. `script_visuals` already stores the full array; we just update it incrementally.
+- `regenerate-visual` function untouched.

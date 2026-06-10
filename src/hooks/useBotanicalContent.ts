@@ -48,6 +48,39 @@ export function useBotanicalContent() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const pollForImages = async (contentId: string) => {
+    const MAX_POLLS = 60; // 60 * 2s = 120s
+    const INTERVAL_MS = 2000;
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, INTERVAL_MS));
+
+      const { data, error: dbError } = await supabase
+        .from("botanical_content")
+        .select("script_visuals")
+        .eq("id", contentId)
+        .single();
+
+      if (dbError || !data?.script_visuals) continue;
+
+      let visuals: FacelessVisual[] = [];
+      try {
+        visuals = typeof data.script_visuals === "string"
+          ? JSON.parse(data.script_visuals)
+          : data.script_visuals;
+      } catch {
+        continue;
+      }
+
+      setContent((prev) => (prev && prev.id === contentId ? { ...prev, faceless_visuals: visuals } : prev));
+
+      // Stop when all have an image_url (or we've hit max polls)
+      if (visuals.length > 0 && visuals.every((v) => v.image_url)) {
+        return;
+      }
+    }
+  };
+
   const generate = async () => {
     setIsLoading(true);
     setError(null);
@@ -65,7 +98,6 @@ export function useBotanicalContent() {
         throw new Error(data.error || "Failed to generate content");
       }
 
-      // Content is now saved by the edge function (with image URLs)
       const generatedContent: ContentWithId = {
         ...data.content,
         id: data.content_id,
@@ -74,8 +106,11 @@ export function useBotanicalContent() {
 
       toast({
         title: "Content generated",
-        description: `${generatedContent.plant_name} content package is ready.`,
+        description: `${generatedContent.plant_name} — images generating in background.`,
       });
+
+      // Poll for images to stream in
+      pollForImages(data.content_id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       setError(message);
