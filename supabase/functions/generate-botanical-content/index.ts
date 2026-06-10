@@ -8,8 +8,8 @@ const corsHeaders = {
 };
 
 const EXCLUDE_COUNT = 5;
-const MAX_VISUALS = 4;
-const MAX_EXECUTION_MS = 20000;
+const REQUIRED_VISUAL_COUNT = 6;
+const REQUIRED_MOMENTS = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;
 
 const buildSystemPrompt = (noveltyBlock: string) => `You are a zero-memory botanical discovery engine.
 
