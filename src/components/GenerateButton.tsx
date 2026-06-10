@@ -50,7 +50,7 @@ export function GenerateButton({
         </span>
         <Select
           value={provider}
-          onValueChange={(v) => onProviderChange(v as ImageProvider)}
+          onValueChange={(v) => onProviderChange?.(v as ImageProvider)}
           disabled={isLoading}
         >
           <SelectTrigger className="h-8 w-[220px] text-xs">
