@@ -164,21 +164,19 @@ Each prompt MUST:
 - Explicitly state "no text, no labels, no numbers, no captions anywhere in the image"
 - Differ only in WHAT part of the plant is shown, not HOW it is styled
 
-Moments control SUBJECT FOCUS only, not style:
-- hook → most visually striking structure of the plant
-- dangle_1 / dangle_2 → supporting anatomical view of the plant
-- rehook → contrasting or unexpected view of the plant
-- verified_truth → the part of the plant that proves the verified_fact (still photographic, no labels)
-- close → whole specimen or simplified form
+All 6 plates MUST show the SAME WHOLE PHOTOGRAPHIC SPECIMEN of the plant (think: one tall sunflower with stem + leaves + head, full plant, centered, occupying most of the frame) on the warm cream paper with the faint golden-ratio circle and thin construction lines + small circular tick markers. The composition, crop, framing, lighting, palette, and overlay are IDENTICAL across all 6 plates.
 
-The visual style MUST remain identical across all 6 moments.
+The ONLY thing that may vary between the 6 plates is the BACKGROUND TREATMENT of the warm paper — e.g. slightly different grain, slightly different vignette intensity, slightly different placement of the faint construction-line + tick-marker pattern. Nothing else changes. Same plant, same pose, same crop, same lighting.
 
-Each visual MUST map to a DIFFERENT script moment.
+Moments do NOT change the subject, the crop, the camera angle, or the part of the plant shown. Every plate is the SAME hero specimen view. Treat the "moment" label as metadata only — it MUST NOT alter the image. No cross-sections, no zoom-ins, no anatomical close-ups, no alternate angles, no different parts of the plant.
+
+Each visual MUST map to a DIFFERENT script moment (metadata only).
 Exactly 6 visuals — NO MORE, NO LESS. NO duplicate moments. All 6 moments above MUST be present.
 
-If you are tempted to vary the visual format, composition, environment, or to add text/labels/numbers:
+If you are tempted to vary the subject, crop, camera angle, composition, or to add text/labels/numbers:
 DO NOT.
-Only vary the botanical subject being shown.
+The 6 plates are visually near-identical hero specimens of the same plant on warm paper.
+
 
 
 Return ONLY this exact JSON structure:
