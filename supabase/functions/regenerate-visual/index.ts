@@ -7,54 +7,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Canonical "Architectural Botanical Study Plate" — kept in sync with
-// src/lib/plateTemplate.ts. Only the botanical subject changes per plate.
-const PLATE_TEMPLATE = `Vertical 9:16 dark-mode botanical archive plate on deep charcoal to near-black textured paper with fine grain, subtle parchment texture, soft vignette, and low-key directional light from the upper left.
+// Architectural Botanical Study Plate — locked style. Same style across all six plates;
+// only the per-moment composition / storytelling purpose changes.
+// Mirrors src/lib/architecturalPlate.ts (edge functions may not import from src).
+type Moment = "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
 
-The plate MUST include ALL of the following layout elements (strict template — every element must appear):
+const PLATE_STYLE_BLOCK = `ARCHITECTURAL BOTANICAL STUDY PLATE — LOCKED STYLE:
+Vertical 9:16 dark mode botanical study plate. Deep charcoal textured paper. Near black parchment background. Fine paper grain. Soft vignette. Cinematic upper left directional lighting. Muted ivory, bone, warm gray, sage, olive, faded green, graphite, and aged natural tones. Realistic botanical or organic specimen illustration. Architectural blueprint layout. Fine graphite construction lines. Measurement brackets. Scientific annotations. Figure labels. Small numeric markers. Subtle museum style serif typography. Premium archival research aesthetic.
 
-TOP LEFT:
-- Plant common name in large refined serif (warm bone/ivory)
-- Latin binomial directly below in smaller italic serif
-- A 3-4 line short description (evergreen/deciduous, family, native region, notable use) in small muted serif
+AVOID: people, modern elements, neon, cartoon style, bright colors, glossy advertising style, Canva style layouts, white backgrounds, random decorative elements, clutter, and text heavy graphics.`;
 
-TOP RIGHT:
-- "PLATE — 0X" label in small spaced sans-serif caps
-
-CENTER:
-- ONE hero botanical specimen (real photographic specimen aesthetic, slightly desaturated, museum-grade) — a single branch with leaves, fruit, or seed structure
-- Thin graphite construction lines, circular golden-ratio overlays, and faint geometric framing behind the specimen
-- Numeric annotations along the right edge (e.g. "2.8", "1.618", "0.618", "2.1", "4.7") in small serif
-- "Fig. 1  Branch" label in small italic serif beneath the specimen
-
-LOWER SECTION:
-- "Morphology" header in small serif
-- A short labeled list (A. Flower / B. Fruit / C. Seed — or Cone/Bud/Leaf as appropriate)
-- A horizontal row of 3-4 small hand-drawn anatomical illustrations labeled A, B, C, D
-- A small circular golden-ratio diagram on the right with "Scale  1:2" label
-
-FOOTER:
-- "BOTANICAL STUDY ARCHIVE" in small spaced sans-serif caps on the left
-- "MMXXIV" on the right
-- Thin border frame around the entire plate
-
-Composition: architectural blueprint meets archival botanical study plate. Hand-drawn botanical sketches, abstract leaves, stems, seed structures, thin graphite construction lines, measurement marks, numeric annotations, subtle diagram labels. Clean, premium, calm, contemplative.
-
-Palette: muted warm-gray, bone, ivory, parchment, sage, olive, graphite. No bright colors, no neon, no cartoon styling, no oversaturated greens.
-
-Mood: cinematic, intellectual, architectural, archival, calm authority, meditative, editorial.
-
-Aspect ratio: 9:16 vertical.
-Lighting: low-key, soft upper-left directional light.
-Texture: dark paper, fine grain, parchment, subtle vignette.
-
-STYLE CONSTRAINTS (STRICT):
-- No people, no faces, no hands, no silhouettes
-- No modern elements (phones, screens, logos, brands)
-- No bright/neon colors, no cartoon, no 3D render look
-
-CONSISTENCY LINE (REQUIRED):
-Use the exact same Architectural Botanical Study Plate style. Only change the botanical subject. Do not change the scene, composition language, lighting, texture, typography style, or overall visual system.`;
+const MOMENT_BRIEFS: Record<Moment, string> = {
+  hook:
+    "MOMENT — HOOK: Boldest plate. Large hero specimen filling most of the frame. Mysterious, scroll stopping, dramatic upper left light, deep vignette.",
+  dangle_1:
+    "MOMENT — DANGLE 1: Close up clue. Partial reveal. One isolated detail such as a leaf edge, bud, tendril, root, seed, flower part, fruit surface, or botanical texture cropped tight. Suspenseful. Does not show the whole subject.",
+  rehook:
+    "MOMENT — RE-HOOK: Second visual punch. Stronger angle, higher contrast, larger scale, more construction lines and brackets framing the specimen.",
+  dangle_2:
+    "MOMENT — DANGLE 2: Investigative detail. Cross section, anatomy, hidden internal structure, magnified scientific breakdown, measurement brackets, numeric markers.",
+  verified_truth:
+    "MOMENT — VERIFIED TRUTH: Most credible plate. Organized evidence layout. Labeled A, B, C, D anatomical row. Figure annotations. Clean structured reveal.",
+  close:
+    "MOMENT — CLOSE: Final archive plate. Calm, resolved, premium, minimal. Single specimen, golden ratio diagram, small archival footer feel.",
+};
 
 interface PlateSubject {
   commonName?: string;
@@ -63,19 +39,42 @@ interface PlateSubject {
   specimenNote?: string;
 }
 
-function composePrompt(subject: PlateSubject): string {
-  const lines = [
-    PLATE_TEMPLATE,
+function subjectToString(subject: PlateSubject): string {
+  const parts: string[] = [];
+  if (subject.commonName?.trim()) parts.push(subject.commonName.trim());
+  if (subject.binomial?.trim()) parts.push(`(${subject.binomial.trim()})`);
+  let line = parts.join(" ");
+  if (subject.description?.trim()) line += ` — ${subject.description.trim()}`;
+  if (subject.specimenNote?.trim()) line += `. Hero specimen: ${subject.specimenNote.trim()}`;
+  return line.trim();
+}
+
+function isMoment(v: unknown): v is Moment {
+  return (
+    v === "hook" ||
+    v === "dangle_1" ||
+    v === "rehook" ||
+    v === "dangle_2" ||
+    v === "verified_truth" ||
+    v === "close"
+  );
+}
+
+function buildPlatePrompt(subject: string, moment: Moment): string {
+  const subj = subject.trim() || "the selected botanical subject";
+  return [
+    PLATE_STYLE_BLOCK,
     "",
-    "BOTANICAL SUBJECT (changes per plate):",
-    `- Common name: ${subject.commonName ?? ""}`,
-    `- Latin binomial: ${subject.binomial ?? ""}`,
-    `- Short description: ${subject.description ?? ""}`,
-  ];
-  if (subject.specimenNote && subject.specimenNote.trim()) {
-    lines.push(`- Hero specimen: ${subject.specimenNote.trim()}`);
-  }
-  return lines.join("\n");
+    MOMENT_BRIEFS[moment],
+    "",
+    `SUBJECT: ${subj}.`,
+    "",
+    `Use the exact same Architectural Botanical Study Plate style across all six plates. Only the composition and storytelling purpose change. Subject: ${subj}.`,
+  ].join("\n");
+}
+
+function composePrompt(subject: PlateSubject, moment: Moment): string {
+  return buildPlatePrompt(subjectToString(subject), moment);
 }
 
 serve(async (req) => {

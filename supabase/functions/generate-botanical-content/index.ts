@@ -147,6 +147,8 @@ Do NOT choose: generic health benefits, vague "contains compounds" statements, f
 - verified_truth: State the true botanical fact concretely (25-32s)
 - close: Always end with "My brother knows plants. I verify the facts." (32-35s)
 
+Do NOT include section labels such as "Hook:", "Dangle 1:", "Re-hook:", "Dangle 2:", "Payoff:", "Verified Truth:", "Close:", or timing labels like "0-4s" or "(0-4s)" inside the script text. Output only the spoken words for each section.
+
 Tone: Calm, curious, confident, no jargon.
 
 ## THUMBNAIL PROMPT (CINEMATIC EDUCATIONAL THUMBNAIL SYSTEM)
@@ -203,83 +205,47 @@ One sentence teasing a deeper pattern without resolving it.
 
 ## GLOBAL FACELESS VISUAL STYLE LOCK (MANDATORY)
 
-ALL faceless visuals MUST conform to ONE unified visual system.
+ALL six faceless visuals MUST use ONE locked visual style:
+"Architectural Botanical Study Plate"
 
-This system is called:
-"Warm Botanical Plate"
+Same style across all six plates. Different composition and storytelling purpose per moment.
 
-This is NOT optional.
-This applies to EVERY faceless visual prompt, regardless of script moment.
+### Architectural Botanical Study Plate — Locked Style
 
-If a visual does not match this system, it is INVALID.
+Vertical 9:16 dark mode botanical study plate. Deep charcoal textured paper. Near black parchment background. Fine paper grain. Soft vignette. Cinematic upper left directional lighting. Muted ivory, bone, warm gray, sage, olive, faded green, graphite, and aged natural tones. Realistic botanical or organic specimen illustration. Architectural blueprint layout. Fine graphite construction lines. Measurement brackets. Scientific annotations. Figure labels. Small numeric markers. Subtle museum style serif typography. Premium archival research aesthetic.
 
-### Warm Botanical Plate — Canonical Style
+AVOID: people, modern elements, neon, cartoon style, bright colors, glossy advertising style, Canva style layouts, white backgrounds, random decorative elements, clutter, and text heavy graphics.
 
-Vertical 9:16 light-mode botanical plate on warm cream / parchment / bone textured paper with soft natural grain, gentle vignette, and soft natural top-light. The overall feel is calm, contemplative, archival, museum-quality.
+### Per-Moment Composition Briefs (the ONLY thing that changes between plates)
 
-The plate MUST contain ONLY:
-- ONE hero photographic botanical specimen, slightly desaturated, museum-grade, centered or composed on the rule of thirds, occupying most of the frame.
-- A faint golden-ratio circle overlay behind/around the specimen.
-- Thin geometric construction lines (horizontal + vertical) extending toward the edges.
-- Small circular tick markers / nodes along the construction lines at the edges (like surveyor or architectural reference points).
+- hook: Boldest plate. Large hero specimen filling most of the frame. Mysterious, scroll stopping, dramatic upper left light, deep vignette.
+- dangle_1: Close up clue. Partial reveal. One isolated detail such as a leaf edge, bud, tendril, root, seed, flower part, fruit surface, or botanical texture cropped tight. Suspenseful. Does not show the whole subject.
+- rehook: Second visual punch. Stronger angle, higher contrast, larger scale, more construction lines and brackets framing the specimen.
+- dangle_2: Investigative detail. Cross section, anatomy, hidden internal structure, magnified scientific breakdown, measurement brackets, numeric markers.
+- verified_truth: Most credible plate. Organized evidence layout. Labeled A, B, C, D anatomical row. Figure annotations. Clean structured reveal.
+- close: Final archive plate. Calm, resolved, premium, minimal. Single specimen, golden ratio diagram, small archival footer feel.
 
-ABSOLUTELY NO TEXT OF ANY KIND inside the image. Zero typography. Zero labels. Zero numbers. Zero captions.
-
-EXPLICITLY FORBIDDEN ELEMENTS (do NOT render any of these):
-- Common name label
-- Latin binomial
-- Any short description block (3-4 line paragraph)
-- "PLATE — 0X" tag or any plate-number label
-- "Fig. 1" / "Branch" / any figure caption
-- "Morphology" header or any section header
-- A/B/C/D anatomical row, hand-drawn anatomical mini-illustrations, flower/fruit/seed cross-section diagrams
-- Circular "Scale 1:2" diagram or any scale label
-- "BOTANICAL STUDY ARCHIVE", "MMXXIV", or any footer text
-- Border frame around the plate
-- Any other text annotations, numeric measurements, axis labels, arrows with words, or written marks
-- Dark / charcoal / near-black backgrounds (this is a LIGHT warm-paper plate, not a dark plate)
-- Saturated or bright colors, neon, modern UI, icons, emojis
-- People, faces, hands, silhouettes, insects, desks, books, tools, magnifying glasses, jungle or natural environments
-
-Palette: warm cream, parchment, bone, ivory, soft sage, muted olive, graphite line work. Nothing saturated.
-
-Mood: calm, intellectual, archival, meditative, editorial, museum-quality.
-
-Aspect ratio: 9:16 vertical
-Style: Warm Botanical Plate
-Lighting: soft natural top-light on warm paper
-Texture: warm cream / parchment paper, fine natural grain, gentle vignette
-
-SHORT VERSION:
-Warm cream parchment paper, vertical 9:16, ONE photographic botanical specimen slightly desaturated and museum-grade, faint golden-ratio circle overlay, thin geometric construction lines with small circular tick markers at the edges, soft natural top-light, calm archival editorial mood, ABSOLUTELY NO TEXT OR LABELS ANYWHERE IN THE IMAGE.
-
-CONSISTENCY LINE (REQUIRED AT THE END OF EVERY PROMPT):
-Use the exact same Warm Botanical Plate style. Only change the botanical subject. Do not change the paper, lighting, golden-ratio overlay, construction lines, palette, or overall visual system. NO TEXT in the image under any circumstance.
-
-## FACELESS VISUALS (STYLE-LOCKED)
+## FACELESS VISUALS (STYLE-LOCKED, MOMENT-VARIED)
 
 Generate EXACTLY 6 faceless visual prompts — one for EACH of these moments, in this exact set:
 hook, dangle_1, rehook, dangle_2, verified_truth, close
 
-Each prompt MUST:
-- Use the Warm Botanical Plate style defined above
-- Be fully self-contained (restate the entire warm-paper style from scratch — zero memory)
-- Describe ONLY the specimen + the faint golden-ratio + construction-line overlay
-- Explicitly state "no text, no labels, no numbers, no captions anywhere in the image"
-- Differ only in WHAT part of the plant is shown, not HOW it is styled
+Each faceless_visuals[i].prompt MUST be a fully standalone, Replicate-ready image prompt that:
+- Restates the ENTIRE Architectural Botanical Study Plate locked style block above (zero memory — assume the image model has never seen any previous prompt).
+- Applies the correct per-moment composition brief from the list above for that moment.
+- Names the chosen botanical SUBJECT explicitly (the same subject across all six prompts).
+- Includes the AVOID list.
+- Ends with this exact consistency line, with {subject} replaced by the chosen subject:
+  "Use the exact same Architectural Botanical Study Plate style across all six plates. Only the composition and storytelling purpose change. Subject: {subject}."
 
-All 6 plates MUST show the SAME WHOLE PHOTOGRAPHIC SPECIMEN of the plant (think: one tall sunflower with stem + leaves + head, full plant, centered, occupying most of the frame) on the warm cream paper with the faint golden-ratio circle and thin construction lines + small circular tick markers. The composition, crop, framing, lighting, palette, and overlay are IDENTICAL across all 6 plates.
+Rules:
+- Same locked visual style across all 6 plates. Same palette, paper, lighting, typography system.
+- Different composition / camera / crop / storytelling purpose per moment, following its brief.
+- Exactly 6 visuals — NO MORE, NO LESS. NO duplicate moments. All 6 moments above MUST be present.
+- Each visual MUST map to a DIFFERENT script moment.
+- The subject is dynamic — use the plant you selected for this package. Do not hard-code any example subject.
 
-The ONLY thing that may vary between the 6 plates is the BACKGROUND TREATMENT of the warm paper — e.g. slightly different grain, slightly different vignette intensity, slightly different placement of the faint construction-line + tick-marker pattern. Nothing else changes. Same plant, same pose, same crop, same lighting.
 
-Moments do NOT change the subject, the crop, the camera angle, or the part of the plant shown. Every plate is the SAME hero specimen view. Treat the "moment" label as metadata only — it MUST NOT alter the image. No cross-sections, no zoom-ins, no anatomical close-ups, no alternate angles, no different parts of the plant.
-
-Each visual MUST map to a DIFFERENT script moment (metadata only).
-Exactly 6 visuals — NO MORE, NO LESS. NO duplicate moments. All 6 moments above MUST be present.
-
-If you are tempted to vary the subject, crop, camera angle, composition, or to add text/labels/numbers:
-DO NOT.
-The 6 plates are visually near-identical hero specimens of the same plant on warm paper.
 
 
 
