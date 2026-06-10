@@ -21,7 +21,9 @@ export interface FacelessVisual {
   moment: "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
   prompt: string;
   image_url?: string | null;
+  error?: string | null;
 }
+
 
 export interface BotanicalContent {
   plant_name: string;
