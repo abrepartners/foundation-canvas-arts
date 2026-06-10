@@ -76,42 +76,29 @@ If a visual does not match this system, it is INVALID.
 
 ### Architectural Botanical Study Plate — Canonical Style
 
-SUBJECT:
-- A single botanical specimen or plant structure
-- Presented as a physical, museum-grade object
-- May be whole or cross-sectioned depending on educational value
-- Internal structure must be accurate when visible
+Vertical 9:16 dark-mode botanical architectural study plate.
+Create a cinematic, intellectual, editorial botanical visual on deep charcoal to near-black textured paper with subtle fine grain, parchment texture, soft vignette, and low-key lighting from the upper left.
 
-COMPOSITION:
-- Vertical 9:16 format ONLY
-- Specimen isolated and centered or slightly off-center
-- Generous negative space
-- No environments, no scenes, no props beyond the specimen itself
+The composition should feel like an architectural blueprint mixed with an archival botanical study plate. Use hand-drawn botanical sketches, abstract leaves, stems, seed structures, thin graphite construction lines, measurement marks, numeric annotations, and subtle diagram labels.
 
-LIGHTING:
-- Soft, controlled, directional lighting
-- Architectural shadows
-- Even illumination of structure
-- No dramatic or cinematic mood lighting
+Keep the layout clean, premium, calm, and contemplative. The design should feel like museum-grade botanical research, architectural drafting, and cinematic editorial art combined.
 
-BACKGROUND:
-- Light archival paper, parchment, plaster, or stone texture
-- Warm-neutral tones only
-- Subtle grain and material texture
-- No visible environment or depth cues
+Use muted warm-gray, bone, ivory, parchment, sage, olive, and graphite tones. Avoid bright colors, modern neon, cartoon styling, overly saturated greens, or anything that feels generic.
 
-ANNOTATIONS (REQUIRED FOR EVERY IMAGE):
-- Thin graphite or ink architectural leader lines
-- Small numeric markers or fine serif labels
-- Labels must be academic and restrained
-- Examples: "vascular tissue", "seed cavity", "peristome rim"
-- No decorative text, no captions, no titles
+The subject should remain elegant and minimal. The botanical elements should feel intentionally placed, not cluttered. Add soft shadows and depth, but keep the image mostly flat like a high-end printed study plate.
 
-MOOD:
-- Analytical
-- Educational
-- Calm authority
-- Institutional / museum archive
+Mood: cinematic, intellectual, architectural, archival, calm authority, meditative, editorial.
+
+Aspect ratio: 9:16 vertical
+Style: Architectural Botanical Study Plate
+Lighting: low-key, soft upper-left directional light
+Texture: dark paper, fine grain, parchment, subtle vignette
+
+SHORT VERSION:
+Dark-mode architectural botanical study plate, vertical 9:16, deep charcoal textured paper, hand-drawn botanical sketches, graphite construction lines, measurement marks, numeric annotations, muted bone and warm-gray serif typography, cinematic low-key lighting, archival museum-grade editorial style, calm intellectual mood, premium botanical research aesthetic.
+
+CONSISTENCY LINE (REQUIRED AT THE END OF EVERY PROMPT):
+Use the exact same Architectural Botanical Study Plate style. Only change the botanical subject. Do not change the scene, composition language, lighting, texture, typography style, or overall visual system.
 
 STYLE CONSTRAINTS (STRICT):
 - No people
