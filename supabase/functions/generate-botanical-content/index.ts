@@ -303,15 +303,28 @@ serve(async (req) => {
 
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    
+
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY not configured");
     }
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error("Supabase credentials not configured");
     }
+
+    let imageProvider: "lovable" | "replicate" = "lovable";
+    try {
+      const body = await req.json();
+      if (body?.image_provider === "replicate") imageProvider = "replicate";
+    } catch {
+      // no body — default to lovable
+    }
+    if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
+      throw new Error("Replicate selected but REPLICATE_API_KEY not configured");
+    }
+    console.log(`Image provider: ${imageProvider}`);
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     
@@ -493,34 +506,12 @@ Repetition is NOT allowed.
       const results = await Promise.all(
         visualsInitial.map(async (visual) => {
           try {
-            const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: "google/gemini-2.5-flash-image-preview",
-                messages: [{ role: "user", content: visual.prompt }],
-                modalities: ["image", "text"],
-              }),
-            });
-
-            if (!imageResponse.ok) {
-              console.error(`Image API error for ${visual.moment}:`, imageResponse.status);
-              return { ...visual, image_url: null };
-            }
-
-            const imageData = await imageResponse.json();
-            const base64Image = imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-
-            if (!base64Image || typeof base64Image !== "string") {
-              console.error(`No valid image data for ${visual.moment}`);
-              return { ...visual, image_url: null };
-            }
-
-            const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
-            const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+            const imageBuffer = await generateImageBytes(
+              imageProvider,
+              visual.prompt,
+              LOVABLE_API_KEY,
+              REPLICATE_API_KEY,
+            );
             const filePath = `${contentId}/${visual.moment}.png`;
 
             const { error: uploadError } = await supabase.storage
