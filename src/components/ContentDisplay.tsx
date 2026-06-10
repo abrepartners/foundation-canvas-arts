@@ -139,14 +139,16 @@ function FacelessVisualsSection({
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {sortedVisuals.map((visual, idx) => {
           const isRegenerating = regenerating === visual.moment;
+          const hasImage = !!visual.image_url;
+          const hasError = !!visual.error;
 
           return (
             <div key={idx} className="space-y-2">
               <div className="aspect-[9/16] rounded-lg overflow-hidden bg-muted/50 border border-border relative group">
-                {visual.image_url ? (
+                {hasImage ? (
                   <>
                     <img
-                      src={visual.image_url}
+                      src={visual.image_url!}
                       alt={`${momentLabels[visual.moment]} visual`}
                       className="w-full h-full object-cover"
                     />
@@ -170,10 +172,19 @@ function FacelessVisualsSection({
                     )}
                   </>
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                    {onRegenerate ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-3 text-center">
+                    {hasError ? (
+                      <p className="text-[10px] text-destructive font-body leading-tight line-clamp-3">
+                        {visual.error}
+                      </p>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {onRegenerate ? "Pending…" : "No image"}
+                      </span>
+                    )}
+                    {onRegenerate && (
                       <Button
-                        variant="ghost"
+                        variant={hasError ? "default" : "ghost"}
                         size="sm"
                         onClick={() => openDialog(visual.moment)}
                         disabled={isRegenerating}
@@ -184,10 +195,8 @@ function FacelessVisualsSection({
                         ) : (
                           <RefreshCw className="h-3 w-3 mr-1" />
                         )}
-                        Generate
+                        {hasError ? "Retry" : "Generate"}
                       </Button>
-                    ) : (
-                      <span className="text-xs">No image</span>
                     )}
                   </div>
                 )}
@@ -199,11 +208,23 @@ function FacelessVisualsSection({
                 )}
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-1">
                 <span className="text-xs font-medium text-primary">
                   {momentLabels[visual.moment]}
                 </span>
                 <div className="flex items-center gap-1">
+                  {onRegenerate && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openDialog(visual.moment)}
+                      disabled={isRegenerating}
+                      className="h-6 px-2 text-xs"
+                      title="Regenerate this image"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -224,6 +245,7 @@ function FacelessVisualsSection({
             </div>
           );
         })}
+
       </div>
 
       {dialogVisual && (
