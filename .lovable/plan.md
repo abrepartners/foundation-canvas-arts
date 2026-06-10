@@ -1,47 +1,38 @@
+## Pricing clarification
 
-## What I'm changing
+One AI call is NOT $1. Lovable AI Gateway bills per-token / per-image. Rough costs:
+- Text generation (Gemini Flash): fractions of a cent per call
+- Image generation (Nano Banana): ~1–3 cents per image
 
-Only the image generation prompt inside `supabase/functions/generate-botanical-content/index.ts`. No UI changes, no schema changes, no model change.
+Your current 7-call package (1 text + 6 images) costs roughly $0.05–$0.20, not $7. A $1 top-up covers many full packages.
 
-## Current vs new style
+Replicate is billed separately by Replicate itself (FLUX 1.1 Pro ≈ $0.04/image), through the connector.
 
-**Current prompt produces:** dark charcoal "museum study plate" with common name, Latin binomial, 3–4 line description, "PLATE — 0X" label, "Fig. 1 Branch" caption, "Morphology" header, A/B/C/D anatomical row, scale diagram, "BOTANICAL STUDY ARCHIVE / MMXXIV" footer, border frame.
+## Replicate plan
 
-**Your samples show:** warm cream/parchment paper, ONE photographic specimen, faint golden-ratio circles and thin construction lines with tiny circular tick markers, and almost no text — at most a small serif title or one or two whisper callouts.
+Your "My Replicate" connection exists but isn't linked to this project. I'll link it, then add it as an **optional** image provider alongside the existing Lovable AI (Nano Banana) path.
 
-## New "Warm Botanical Plate" style (what gets sent to the image model)
+### Steps
 
-Every one of the 6 plates will be prompted with this locked style:
+1. **Link the Replicate connector** to this project so `LOVABLE_CONNECTOR_REPLICATE_API_KEY` is available to edge functions.
 
-- Vertical 9:16, warm cream / parchment / bone paper background, soft natural grain, subtle vignette.
-- ONE hero photographic botanical specimen, centered or rule-of-thirds, slightly desaturated, museum-grade, soft natural top-light.
-- Faint golden-ratio circle overlay + thin geometric construction lines + small circular tick markers along the edges (like the sunflower references).
-- Muted palette: warm bone, parchment, soft olive/sage, graphite line work. No dark mode, no charcoal background, no saturated colors.
+2. **Add a provider toggle** in the generate flow:
+   - Default: Lovable AI (Nano Banana) — unchanged
+   - Option: Replicate (FLUX 1.1 Pro)
+   - UI: a small select/toggle on the generate panel near the Generate button.
 
-### What is explicitly REMOVED from every prompt
-- Common name label
-- Latin binomial
-- 3–4 line description block
-- "PLATE — 0X" tag
-- "Fig. 1 / Branch" caption
-- "Morphology" header + A/B/C/D anatomical row
-- Circular scale diagram with "Scale 1:2"
-- "BOTANICAL STUDY ARCHIVE" / "MMXXIV" footer
-- Border frame
-- Any other text annotations, numeric measurements, or labels inside the image
+3. **Update `generate-botanical-content` edge function**:
+   - Accept `image_provider: "lovable" | "replicate"` in the request body
+   - When `replicate`: call FLUX 1.1 Pro via the connector gateway (`https://connector-gateway.lovable.dev/replicate/v1/models/black-forest-labs/flux-1.1-pro/predictions`) per plate, poll until succeeded, then upload the resulting image to the `botanical-faceless-visuals` bucket (same as today)
+   - When `lovable`: keep existing Nano Banana path
+   - Same 6-plate parallel generation, same DB update pattern
 
-The moment (hook, dangle_1, rehook, dangle_2, verified_truth, close) still only controls **which part of the plant** is shown — never the layout, never the text, never the typography. Style stays identical across all 6.
+4. **Update `regenerate-visual` edge function** the same way so single-plate regenerations honor the chosen provider.
 
-### Constraints kept
-- No people, faces, hands, silhouettes, insects, desks, tools, jungles, icons, emojis, UI, bright colors.
-- Zero-memory: every prompt restates the full warm-paper style from scratch.
+5. **Pass the chosen provider through** `useBotanicalContent` hook → edge function call.
 
-## Files touched
-- `supabase/functions/generate-botanical-content/index.ts` — replace the "Architectural Botanical Study Plate" block and the per-visual instructions with the new "Warm Botanical Plate" block above. Redeploy the function.
+### Notes
 
-## Not touched
-- Image model stays `google/gemini-2.5-flash-image-preview`.
-- 6-plate parallel generation, polling, UI grid, history, regenerate-visual function — all unchanged.
-- Script / caption / thumbnail / part2_hook UI sections in the app — unchanged (you said the "typing stuff" to strip is the text *inside the images*, per your Q1 answer).
-
-Tell me to go and I'll switch to build mode and ship it.
+- Warm Botanical Plate prompt stays identical; only the model swaps.
+- FLUX 1.1 Pro takes ~5–15s per image; 6 in parallel should finish in ~15–25s.
+- No new secrets needed — the connector injects them automatically.
