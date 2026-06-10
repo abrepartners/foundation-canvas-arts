@@ -23,21 +23,34 @@ async function generateImageBytes(
       "Content-Type": "application/json",
     };
 
-    const createRes = await fetch(`${GW}/models/black-forest-labs/flux-1.1-pro/predictions`, {
-      method: "POST",
-      headers: authHeaders,
-      body: JSON.stringify({
-        input: {
-          prompt,
-          aspect_ratio: "9:16",
-          output_format: "png",
-          safety_tolerance: 2,
-          prompt_upsampling: false,
-        },
-      }),
-    });
-    if (!createRes.ok) {
-      throw new Error(`Replicate create failed: ${createRes.status} ${await createRes.text()}`);
+    // Create prediction with 429 backoff (Replicate enforces 6/min + burst 1 under $5 credit)
+    let createRes: Response | null = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      createRes = await fetch(`${GW}/models/black-forest-labs/flux-1.1-pro/predictions`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          input: {
+            prompt,
+            aspect_ratio: "9:16",
+            output_format: "png",
+            safety_tolerance: 2,
+            prompt_upsampling: false,
+          },
+        }),
+      });
+      if (createRes.status !== 429) break;
+      let waitSec = 12;
+      try {
+        const body = await createRes.clone().json();
+        if (typeof body?.retry_after === "number") waitSec = Math.max(body.retry_after + 2, 8);
+      } catch { /* ignore */ }
+      console.log(`Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`);
+      await new Promise((r) => setTimeout(r, waitSec * 1000));
+    }
+    if (!createRes || !createRes.ok) {
+      const txt = createRes ? await createRes.text() : "no response";
+      throw new Error(`Replicate create failed: ${createRes?.status} ${txt}`);
     }
     const pred = await createRes.json();
     const predId = pred.id;
@@ -95,6 +108,7 @@ async function generateImageBytes(
   const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
   return Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
 }
+
 
 
 const EXCLUDE_COUNT = 5;
