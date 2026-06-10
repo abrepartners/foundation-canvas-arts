@@ -102,78 +102,55 @@ One sentence teasing a deeper pattern without resolving it.
 ALL faceless visuals MUST conform to ONE unified visual system.
 
 This system is called:
-"Architectural Botanical Study Plate"
+"Warm Botanical Plate"
 
 This is NOT optional.
 This applies to EVERY faceless visual prompt, regardless of script moment.
 
 If a visual does not match this system, it is INVALID.
 
-### Architectural Botanical Study Plate — Canonical Style
+### Warm Botanical Plate — Canonical Style
 
-Vertical 9:16 dark-mode botanical archive plate on deep charcoal to near-black textured paper with fine grain, subtle parchment texture, soft vignette, and low-key directional light from the upper left.
+Vertical 9:16 light-mode botanical plate on warm cream / parchment / bone textured paper with soft natural grain, gentle vignette, and soft natural top-light. The overall feel is calm, contemplative, archival, museum-quality.
 
-The plate MUST include ALL of the following layout elements (this is a strict template — restate every element in every prompt):
+The plate MUST contain ONLY:
+- ONE hero photographic botanical specimen, slightly desaturated, museum-grade, centered or composed on the rule of thirds, occupying most of the frame.
+- A faint golden-ratio circle overlay behind/around the specimen.
+- Thin geometric construction lines (horizontal + vertical) extending toward the edges.
+- Small circular tick markers / nodes along the construction lines at the edges (like surveyor or architectural reference points).
 
-TOP LEFT:
-- Plant common name in large refined serif (warm bone/ivory), e.g. "Olive"
-- Latin binomial directly below in smaller italic serif, e.g. "Olea europaea"
-- A 3-4 line short description (evergreen/deciduous, family, native region, notable use) in small muted serif
+ABSOLUTELY NO TEXT OF ANY KIND inside the image. Zero typography. Zero labels. Zero numbers. Zero captions.
 
-TOP RIGHT:
-- "PLATE — 0X" label in small spaced sans-serif caps
+EXPLICITLY FORBIDDEN ELEMENTS (do NOT render any of these):
+- Common name label
+- Latin binomial
+- Any short description block (3-4 line paragraph)
+- "PLATE — 0X" tag or any plate-number label
+- "Fig. 1" / "Branch" / any figure caption
+- "Morphology" header or any section header
+- A/B/C/D anatomical row, hand-drawn anatomical mini-illustrations, flower/fruit/seed cross-section diagrams
+- Circular "Scale 1:2" diagram or any scale label
+- "BOTANICAL STUDY ARCHIVE", "MMXXIV", or any footer text
+- Border frame around the plate
+- Any other text annotations, numeric measurements, axis labels, arrows with words, or written marks
+- Dark / charcoal / near-black backgrounds (this is a LIGHT warm-paper plate, not a dark plate)
+- Saturated or bright colors, neon, modern UI, icons, emojis
+- People, faces, hands, silhouettes, insects, desks, books, tools, magnifying glasses, jungle or natural environments
 
-CENTER:
-- ONE hero botanical specimen (real photographic specimen aesthetic, slightly desaturated, museum-grade) — a single branch with leaves, fruit, or seed structure
-- Thin graphite construction lines, circular golden-ratio overlays, and faint geometric framing behind the specimen
-- Numeric annotations along the right edge (e.g. "2.8", "1.618", "0.618", "2.1", "4.7") in small serif
-- "Fig. 1  Branch" label in small italic serif beneath the specimen
+Palette: warm cream, parchment, bone, ivory, soft sage, muted olive, graphite line work. Nothing saturated.
 
-LOWER SECTION:
-- "Morphology" header in small serif
-- A short labeled list (A. Flower / B. Fruit / C. Seed — or Cone/Bud/Leaf as appropriate)
-- A horizontal row of 3-4 small hand-drawn anatomical illustrations (flower, fruit cross-section, seed) labeled A, B, C, D
-- A small circular golden-ratio diagram on the right with "Scale  1:2" label
-
-FOOTER:
-- "BOTANICAL STUDY ARCHIVE" in small spaced sans-serif caps on the left
-- "MMXXIV" on the right
-- Thin border frame around the entire plate
-
-
-
-The composition should feel like an architectural blueprint mixed with an archival botanical study plate. Use hand-drawn botanical sketches, abstract leaves, stems, seed structures, thin graphite construction lines, measurement marks, numeric annotations, and subtle diagram labels.
-
-Keep the layout clean, premium, calm, and contemplative. The design should feel like museum-grade botanical research, architectural drafting, and cinematic editorial art combined.
-
-Use muted warm-gray, bone, ivory, parchment, sage, olive, and graphite tones. Avoid bright colors, modern neon, cartoon styling, overly saturated greens, or anything that feels generic.
-
-The subject should remain elegant and minimal. The botanical elements should feel intentionally placed, not cluttered. Add soft shadows and depth, but keep the image mostly flat like a high-end printed study plate.
-
-Mood: cinematic, intellectual, architectural, archival, calm authority, meditative, editorial.
+Mood: calm, intellectual, archival, meditative, editorial, museum-quality.
 
 Aspect ratio: 9:16 vertical
-Style: Architectural Botanical Study Plate
-Lighting: low-key, soft upper-left directional light
-Texture: dark paper, fine grain, parchment, subtle vignette
+Style: Warm Botanical Plate
+Lighting: soft natural top-light on warm paper
+Texture: warm cream / parchment paper, fine natural grain, gentle vignette
 
 SHORT VERSION:
-Dark-mode architectural botanical study plate, vertical 9:16, deep charcoal textured paper, hand-drawn botanical sketches, graphite construction lines, measurement marks, numeric annotations, muted bone and warm-gray serif typography, cinematic low-key lighting, archival museum-grade editorial style, calm intellectual mood, premium botanical research aesthetic.
+Warm cream parchment paper, vertical 9:16, ONE photographic botanical specimen slightly desaturated and museum-grade, faint golden-ratio circle overlay, thin geometric construction lines with small circular tick markers at the edges, soft natural top-light, calm archival editorial mood, ABSOLUTELY NO TEXT OR LABELS ANYWHERE IN THE IMAGE.
 
 CONSISTENCY LINE (REQUIRED AT THE END OF EVERY PROMPT):
-Use the exact same Architectural Botanical Study Plate style. Only change the botanical subject. Do not change the scene, composition language, lighting, texture, typography style, or overall visual system.
-
-STYLE CONSTRAINTS (STRICT):
-- No people
-- No faces
-- No hands
-- No silhouettes
-- No insects
-- No desks, books, tools, magnifying glasses
-- No jungle or natural environments
-- No icons, emojis, UI, or modern elements
-- No bright or saturated colors
-- No illustrative diagrams
+Use the exact same Warm Botanical Plate style. Only change the botanical subject. Do not change the paper, lighting, golden-ratio overlay, construction lines, palette, or overall visual system. NO TEXT in the image under any circumstance.
 
 ## FACELESS VISUALS (STYLE-LOCKED)
 
@@ -181,26 +158,28 @@ Generate EXACTLY 6 faceless visual prompts — one for EACH of these moments, in
 hook, dangle_1, rehook, dangle_2, verified_truth, close
 
 Each prompt MUST:
-- Use the Architectural Botanical Study Plate style defined above
-- Be fully self-contained
-- Describe ONLY the specimen, not a scene
+- Use the Warm Botanical Plate style defined above
+- Be fully self-contained (restate the entire warm-paper style from scratch — zero memory)
+- Describe ONLY the specimen + the faint golden-ratio + construction-line overlay
+- Explicitly state "no text, no labels, no numbers, no captions anywhere in the image"
 - Differ only in WHAT part of the plant is shown, not HOW it is styled
 
 Moments control SUBJECT FOCUS only, not style:
-- hook → most visually striking structure
-- dangle_1 / dangle_2 → supporting anatomical detail
-- rehook → contrasting or unexpected anatomical view
-- verified_truth → educational cross-section or labeled structure
+- hook → most visually striking structure of the plant
+- dangle_1 / dangle_2 → supporting anatomical view of the plant
+- rehook → contrasting or unexpected view of the plant
+- verified_truth → the part of the plant that proves the verified_fact (still photographic, no labels)
 - close → whole specimen or simplified form
 
-The visual style MUST remain identical across all moments.
+The visual style MUST remain identical across all 6 moments.
 
 Each visual MUST map to a DIFFERENT script moment.
 Exactly 6 visuals — NO MORE, NO LESS. NO duplicate moments. All 6 moments above MUST be present.
 
-If you are tempted to vary the visual format, composition, or environment:
+If you are tempted to vary the visual format, composition, environment, or to add text/labels/numbers:
 DO NOT.
 Only vary the botanical subject being shown.
+
 
 Return ONLY this exact JSON structure:
 {
