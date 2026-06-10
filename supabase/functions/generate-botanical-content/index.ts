@@ -218,12 +218,14 @@ AVOID: people, modern elements, neon, cartoon style, bright colors, glossy adver
 
 ### Per-Moment Composition Briefs (the ONLY thing that changes between plates)
 
-- hook: Boldest plate. Large hero specimen filling most of the frame. Mysterious, scroll stopping, dramatic upper left light, deep vignette.
-- dangle_1: Close up clue. Partial reveal. One isolated detail such as a leaf edge, bud, tendril, root, seed, flower part, fruit surface, or botanical texture cropped tight. Suspenseful. Does not show the whole subject.
-- rehook: Second visual punch. Stronger angle, higher contrast, larger scale, more construction lines and brackets framing the specimen.
-- dangle_2: Investigative detail. Cross section, anatomy, hidden internal structure, magnified scientific breakdown, measurement brackets, numeric markers.
-- verified_truth: Most credible plate. Organized evidence layout. Labeled A, B, C, D anatomical row. Figure annotations. Clean structured reveal.
-- close: Final archive plate. Calm, resolved, premium, minimal. Single specimen, golden ratio diagram, small archival footer feel.
+- hook (SHOT TYPE: FULL HERO SPECIMEN): One large complete botanical subject filling most of the vertical frame. Dramatic, mysterious, scroll stopping. This plate CAN show the full subject. Heavy upper left directional light, deep vignette.
+- dangle_1 (SHOT TYPE: EXTREME MACRO CLUE ONLY): Do NOT show the full plant or full flower. Show only one tightly cropped detail such as a petal edge, bud texture, seed pod surface, leaf vein, thorn, root fiber, pollen structure, or stem surface. Must feel incomplete, suspenseful, partial. Strictly no full specimen visible.
+- rehook (SHOT TYPE: DYNAMIC DIAGONAL COMPOSITION): The subject cuts across the frame at a strong diagonal angle, at larger scale than the hook, with higher contrast, deeper shadow, and heavier blueprint measurement brackets and construction lines. Must feel more dramatic and more graphic than the hook.
+- dangle_2 (SHOT TYPE: SCIENTIFIC BREAKDOWN PLATE): Do NOT show a normal full specimen. Show cross sections, internal anatomy, magnified tissue panels, cutaway diagrams, detail circles with leader lines, and numeric markers. Investigative and technical. Multiple inset panels acceptable.
+- verified_truth (SHOT TYPE: EVIDENCE BOARD LAYOUT): Must include a structured A, B, C, D anatomical row or grouped detail panels of separated specimen parts. Use labeled parts, figure callouts (Fig. 1, Fig. 2), measurement references, and a clean organized reveal. Most credible, research based. Not a single hero specimen.
+- close (SHOT TYPE: FINAL MINIMAL ARCHIVE PLATE): One clean centered specimen with significantly more negative space than the other plates, a subtle golden ratio diagram, a small archival footer, and minimal annotations. Calm, premium, resolved, quiet.
+
+CRITICAL COMPOSITION VARIETY RULE: The six images MUST NOT look like six variations of the same full botanical poster. They must share the exact same visual style (paper, palette, typography, blueprint language), but each moment must have a clearly different shot type and composition as specified in its moment brief above.
 
 ## FACELESS VISUALS (STYLE-LOCKED, MOMENT-VARIED)
 
