@@ -2,11 +2,19 @@ import { Button } from "@/components/ui/button";
 import { RotateCcw, Copy, Check, RefreshCw, Loader2 } from "lucide-react";
 import { useState } from "react";
 import type { ContentWithId, FacelessVisual } from "@/hooks/useBotanicalContent";
+import { RegenerateVisualDialog } from "@/components/RegenerateVisualDialog";
+import type { PlateSubject } from "@/lib/plateTemplate";
+
+type RegenerateFn = (
+  moment: string,
+  prompt: string,
+  subject?: PlateSubject
+) => Promise<string | null>;
 
 interface ContentDisplayProps {
   content: ContentWithId;
   onReset: () => void;
-  onRegenerateVisual?: (moment: string, prompt: string) => Promise<string | null>;
+  onRegenerateVisual?: RegenerateFn;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -70,16 +78,17 @@ const momentLabels: Record<string, string> = {
 
 const momentOrder = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
 
-function FacelessVisualsSection({ 
-  visuals, 
-  onRegenerate 
-}: { 
+function FacelessVisualsSection({
+  visuals,
+  onRegenerate,
+}: {
   visuals: FacelessVisual[];
-  onRegenerate?: (moment: string, prompt: string) => Promise<string | null>;
+  onRegenerate?: RegenerateFn;
 }) {
   const [expandedPrompts, setExpandedPrompts] = useState<Set<number>>(new Set());
   const [regenerating, setRegenerating] = useState<string | null>(null);
-  
+  const [dialogMoment, setDialogMoment] = useState<string | null>(null);
+
   // Sort visuals by script flow order
   const sortedVisuals = [...visuals].sort(
     (a, b) => momentOrder.indexOf(a.moment) - momentOrder.indexOf(b.moment)
@@ -90,28 +99,33 @@ function FacelessVisualsSection({
     .join("\n\n---\n\n");
 
   const togglePrompt = (idx: number) => {
-    setExpandedPrompts(prev => {
+    setExpandedPrompts((prev) => {
       const next = new Set(prev);
-      if (next.has(idx)) {
-        next.delete(idx);
-      } else {
-        next.add(idx);
-      }
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
       return next;
     });
   };
 
-  const handleRegenerate = async (moment: string, prompt: string) => {
+  const openDialog = (moment: string) => {
     if (!onRegenerate || regenerating) return;
-    setRegenerating(moment);
+    setDialogMoment(moment);
+  };
+
+  const dialogVisual = sortedVisuals.find((v) => v.moment === dialogMoment) ?? null;
+
+  const handleSubmit = async (subject: PlateSubject) => {
+    if (!onRegenerate || !dialogVisual) return;
+    setRegenerating(dialogVisual.moment);
     try {
-      await onRegenerate(moment, prompt);
+      await onRegenerate(dialogVisual.moment, dialogVisual.prompt, subject);
+      setDialogMoment(null);
     } finally {
       setRegenerating(null);
     }
   };
 
-  const imagesGenerated = sortedVisuals.filter(v => v.image_url).length;
+  const imagesGenerated = sortedVisuals.filter((v) => v.image_url).length;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
@@ -125,25 +139,23 @@ function FacelessVisualsSection({
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {sortedVisuals.map((visual, idx) => {
           const isRegenerating = regenerating === visual.moment;
-          
+
           return (
             <div key={idx} className="space-y-2">
-              {/* Image or placeholder */}
               <div className="aspect-[9/16] rounded-lg overflow-hidden bg-muted/50 border border-border relative group">
                 {visual.image_url ? (
                   <>
-                    <img 
-                      src={visual.image_url} 
+                    <img
+                      src={visual.image_url}
                       alt={`${momentLabels[visual.moment]} visual`}
                       className="w-full h-full object-cover"
                     />
-                    {/* Regenerate overlay on hover */}
                     {onRegenerate && (
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleRegenerate(visual.moment, visual.prompt)}
+                          onClick={() => openDialog(visual.moment)}
                           disabled={isRegenerating}
                           className="text-xs"
                         >
@@ -163,7 +175,7 @@ function FacelessVisualsSection({
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleRegenerate(visual.moment, visual.prompt)}
+                        onClick={() => openDialog(visual.moment)}
                         disabled={isRegenerating}
                         className="text-xs"
                       >
@@ -179,24 +191,22 @@ function FacelessVisualsSection({
                     )}
                   </div>
                 )}
-                
-                {/* Loading overlay */}
+
                 {isRegenerating && (
                   <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                   </div>
                 )}
               </div>
-              
-              {/* Moment label and actions */}
+
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-primary">
                   {momentLabels[visual.moment]}
                 </span>
                 <div className="flex items-center gap-1">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => togglePrompt(idx)}
                     className="h-6 px-2 text-xs"
                   >
@@ -206,7 +216,6 @@ function FacelessVisualsSection({
                 </div>
               </div>
 
-              {/* Collapsible prompt */}
               {expandedPrompts.has(idx) && (
                 <p className="text-xs text-foreground/80 font-body whitespace-pre-wrap bg-muted/30 rounded p-2">
                   {visual.prompt}
@@ -216,6 +225,19 @@ function FacelessVisualsSection({
           );
         })}
       </div>
+
+      {dialogVisual && (
+        <RegenerateVisualDialog
+          open={!!dialogMoment}
+          onOpenChange={(open) => {
+            if (!open && !regenerating) setDialogMoment(null);
+          }}
+          momentLabel={momentLabels[dialogVisual.moment]}
+          currentPrompt={dialogVisual.prompt}
+          isRegenerating={regenerating === dialogVisual.moment}
+          onSubmit={handleSubmit}
+        />
+      )}
     </div>
   );
 }

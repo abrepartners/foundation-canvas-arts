@@ -89,7 +89,16 @@ export function useBotanicalContent() {
     }
   };
 
-  const regenerateVisual = async (moment: string, prompt: string) => {
+  const regenerateVisual = async (
+    moment: string,
+    prompt: string,
+    subject?: {
+      commonName: string;
+      binomial: string;
+      description: string;
+      specimenNote?: string;
+    }
+  ) => {
     if (!content?.id) {
       toast({
         title: "Cannot regenerate",
@@ -107,6 +116,7 @@ export function useBotanicalContent() {
             content_id: content.id,
             moment,
             prompt,
+            subject,
           },
         }
       );
@@ -119,13 +129,19 @@ export function useBotanicalContent() {
         throw new Error(data.error || "Failed to regenerate image");
       }
 
-      // Update local state with new image URL
+      // Update local state with new image URL (and prompt if returned)
       setContent((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
           faceless_visuals: prev.faceless_visuals.map((v) =>
-            v.moment === moment ? { ...v, image_url: data.image_url } : v
+            v.moment === moment
+              ? {
+                  ...v,
+                  image_url: data.image_url,
+                  prompt: data.prompt ?? v.prompt,
+                }
+              : v
           ),
         };
       });
