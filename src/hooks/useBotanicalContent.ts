@@ -51,8 +51,9 @@ export function useBotanicalContent() {
   const { toast } = useToast();
 
   const pollForImages = async (contentId: string) => {
-    const MAX_POLLS = 60; // 60 * 2s = 120s
+    const MAX_POLLS = 180; // 180 * 2s = 360s (6 min, covers sequential Replicate runs)
     const INTERVAL_MS = 2000;
+
 
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, INTERVAL_MS));
