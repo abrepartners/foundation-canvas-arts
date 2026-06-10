@@ -76,10 +76,11 @@ export function useBotanicalContent() {
 
       setContent((prev) => (prev && prev.id === contentId ? { ...prev, faceless_visuals: visuals } : prev));
 
-      // Stop when all have an image_url (or we've hit max polls)
-      if (visuals.length > 0 && visuals.every((v) => v.image_url)) {
+      // Stop when every plate has resolved (image_url OR error)
+      if (visuals.length > 0 && visuals.every((v) => v.image_url || v.error)) {
         return;
       }
+
     }
   };
 
