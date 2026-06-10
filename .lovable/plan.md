@@ -1,38 +1,47 @@
-## Pricing clarification
+## Answering your questions
 
-One AI call is NOT $1. Lovable AI Gateway bills per-token / per-image. Rough costs:
-- Text generation (Gemini Flash): fractions of a cent per call
-- Image generation (Nano Banana): ~1–3 cents per image
+**1. Is your image prompt being used per image via Replicate?**
+Yes. The AI generates 6 unique prompts (one per script moment: hook, dangle_1, rehook, dangle_2, verified_truth, close) following your Botanical Study Plates style system. Each prompt is sent verbatim to Replicate FLUX 1.1 Pro at 9:16. No prompt sharing, no memory between plates.
 
-Your current 7-call package (1 text + 6 images) costs roughly $0.05–$0.20, not $7. A $1 top-up covers many full packages.
+**2. Why are 5 of 6 images failing?**
+Edge function logs show Replicate is returning **HTTP 429 rate limit**:
+> "Your rate limit for creating predictions is reduced to **6 requests per minute with a burst of 1** while you have less than $5.00 in credit."
 
-Replicate is billed separately by Replicate itself (FLUX 1.1 Pro ≈ $0.04/image), through the connector.
+We're firing all 6 plates in parallel → only 1 succeeds, the other 5 fail instantly. This is a Replicate account-level throttle, not a code bug. Topping the Replicate account above $5 lifts it; until then, we must serialize.
 
-## Replicate plan
+**3. Regenerate button.**
+A regenerate button already exists per image — it appears on hover for completed images and as a "Generate" button on empty slots. But because the failed plates currently have *no* slot state at all (they were never marked as "failed"), nothing shows. We'll surface a visible Regenerate button on every plate regardless of state.
 
-Your "My Replicate" connection exists but isn't linked to this project. I'll link it, then add it as an **optional** image provider alongside the existing Lovable AI (Nano Banana) path.
+---
 
-### Steps
+## Plan
 
-1. **Link the Replicate connector** to this project so `LOVABLE_CONNECTOR_REPLICATE_API_KEY` is available to edge functions.
+### A. Throttle Replicate to respect the burst limit
+In both `generate-botanical-content` and `regenerate-visual`:
+- When `image_provider === "replicate"`: run the 6 plates **sequentially** with a ~11s gap between starts (safe under 6/min + burst=1).
+- On 429: read `retry_after` from Replicate's response and wait that long, then retry up to 2 times.
+- Lovable provider keeps current parallel behavior (no rate limit issue there).
 
-2. **Add a provider toggle** in the generate flow:
-   - Default: Lovable AI (Nano Banana) — unchanged
-   - Option: Replicate (FLUX 1.1 Pro)
-   - UI: a small select/toggle on the generate panel near the Generate button.
+### B. Mark failed plates so the UI can recover
+- When a plate errors, write the visual back to `script_visuals` with `image_url: null` and `error: "<short message>"` instead of leaving it blank.
+- Frontend polling already updates state from this column, so failures will render immediately.
 
-3. **Update `generate-botanical-content` edge function**:
-   - Accept `image_provider: "lovable" | "replicate"` in the request body
-   - When `replicate`: call FLUX 1.1 Pro via the connector gateway (`https://connector-gateway.lovable.dev/replicate/v1/models/black-forest-labs/flux-1.1-pro/predictions`) per plate, poll until succeeded, then upload the resulting image to the `botanical-faceless-visuals` bucket (same as today)
-   - When `lovable`: keep existing Nano Banana path
-   - Same 6-plate parallel generation, same DB update pattern
+### C. Always-visible per-image Regenerate button
+In `src/components/ContentDisplay.tsx`:
+- Show a small "Regenerate" button under every plate (not only hover), in addition to the hover overlay on successful images.
+- If `visual.error` exists, render a subtle error chip + a prominent "Retry" button on the empty slot.
+- Reuses existing `RegenerateVisualDialog` and the already-wired `regenerateVisual(moment, prompt, subject, imageProvider)` path.
 
-4. **Update `regenerate-visual` edge function** the same way so single-plate regenerations honor the chosen provider.
+### D. No schema changes
+`script_visuals` is already a JSON blob; the optional `error` field is additive.
 
-5. **Pass the chosen provider through** `useBotanicalContent` hook → edge function call.
+---
 
-### Notes
+## Files to edit
+- `supabase/functions/generate-botanical-content/index.ts` — sequential loop + 429 backoff + persist errors
+- `supabase/functions/regenerate-visual/index.ts` — same 429 backoff
+- `src/hooks/useBotanicalContent.ts` — extend `FacelessVisual` with optional `error`
+- `src/components/ContentDisplay.tsx` — always-visible regenerate button + error state
 
-- Warm Botanical Plate prompt stays identical; only the model swaps.
-- FLUX 1.1 Pro takes ~5–15s per image; 6 in parallel should finish in ~15–25s.
-- No new secrets needed — the connector injects them automatically.
+## Note on cost
+Sequential Replicate at 11s/plate ≈ ~70s for 6 images (plus model runtime, so realistically 2–3 min total). If you top up Replicate past $5, the throttle disappears and we can switch back to parallel for ~20s total — say the word and I'll add a toggle.

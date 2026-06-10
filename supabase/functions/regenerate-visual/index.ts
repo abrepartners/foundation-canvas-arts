@@ -135,26 +135,39 @@ serve(async (req) => {
     let imageBuffer: Uint8Array;
     if (imageProvider === "replicate") {
       const GW = "https://connector-gateway.lovable.dev/replicate/v1";
-      const createRes = await fetch(`${GW}/models/black-forest-labs/flux-1.1-pro/predictions`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-          "X-Connection-Api-Key": REPLICATE_API_KEY!,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          input: {
-            prompt: finalPrompt,
-            aspect_ratio: "9:16",
-            output_format: "png",
-            safety_tolerance: 2,
+      let createRes: Response | null = null;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        createRes = await fetch(`${GW}/models/black-forest-labs/flux-1.1-pro/predictions`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": REPLICATE_API_KEY!,
+            "Content-Type": "application/json",
           },
-        }),
-      });
-      if (!createRes.ok) {
-        throw new Error(`Replicate create failed: ${createRes.status} ${await createRes.text()}`);
+          body: JSON.stringify({
+            input: {
+              prompt: finalPrompt,
+              aspect_ratio: "9:16",
+              output_format: "png",
+              safety_tolerance: 2,
+            },
+          }),
+        });
+        if (createRes.status !== 429) break;
+        let waitSec = 12;
+        try {
+          const body = await createRes.clone().json();
+          if (typeof body?.retry_after === "number") waitSec = Math.max(body.retry_after + 2, 8);
+        } catch { /* ignore */ }
+        console.log(`Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`);
+        await new Promise((r) => setTimeout(r, waitSec * 1000));
+      }
+      if (!createRes || !createRes.ok) {
+        const txt = createRes ? await createRes.text() : "no response";
+        throw new Error(`Replicate create failed: ${createRes?.status} ${txt}`);
       }
       const pred = await createRes.json();
+
       const predId = pred.id;
       let outputUrl: string | null = null;
       for (let i = 0; i < 60; i++) {

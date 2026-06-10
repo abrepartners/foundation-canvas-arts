@@ -21,7 +21,9 @@ export interface FacelessVisual {
   moment: "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
   prompt: string;
   image_url?: string | null;
+  error?: string | null;
 }
+
 
 export interface BotanicalContent {
   plant_name: string;
@@ -49,8 +51,9 @@ export function useBotanicalContent() {
   const { toast } = useToast();
 
   const pollForImages = async (contentId: string) => {
-    const MAX_POLLS = 60; // 60 * 2s = 120s
+    const MAX_POLLS = 180; // 180 * 2s = 360s (6 min, covers sequential Replicate runs)
     const INTERVAL_MS = 2000;
+
 
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, INTERVAL_MS));
@@ -74,10 +77,11 @@ export function useBotanicalContent() {
 
       setContent((prev) => (prev && prev.id === contentId ? { ...prev, faceless_visuals: visuals } : prev));
 
-      // Stop when all have an image_url (or we've hit max polls)
-      if (visuals.length > 0 && visuals.every((v) => v.image_url)) {
+      // Stop when every plate has resolved (image_url OR error)
+      if (visuals.length > 0 && visuals.every((v) => v.image_url || v.error)) {
         return;
       }
+
     }
   };
 

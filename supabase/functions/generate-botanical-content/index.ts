@@ -23,21 +23,34 @@ async function generateImageBytes(
       "Content-Type": "application/json",
     };
 
-    const createRes = await fetch(`${GW}/models/black-forest-labs/flux-1.1-pro/predictions`, {
-      method: "POST",
-      headers: authHeaders,
-      body: JSON.stringify({
-        input: {
-          prompt,
-          aspect_ratio: "9:16",
-          output_format: "png",
-          safety_tolerance: 2,
-          prompt_upsampling: false,
-        },
-      }),
-    });
-    if (!createRes.ok) {
-      throw new Error(`Replicate create failed: ${createRes.status} ${await createRes.text()}`);
+    // Create prediction with 429 backoff (Replicate enforces 6/min + burst 1 under $5 credit)
+    let createRes: Response | null = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      createRes = await fetch(`${GW}/models/black-forest-labs/flux-1.1-pro/predictions`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          input: {
+            prompt,
+            aspect_ratio: "9:16",
+            output_format: "png",
+            safety_tolerance: 2,
+            prompt_upsampling: false,
+          },
+        }),
+      });
+      if (createRes.status !== 429) break;
+      let waitSec = 12;
+      try {
+        const body = await createRes.clone().json();
+        if (typeof body?.retry_after === "number") waitSec = Math.max(body.retry_after + 2, 8);
+      } catch { /* ignore */ }
+      console.log(`Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`);
+      await new Promise((r) => setTimeout(r, waitSec * 1000));
+    }
+    if (!createRes || !createRes.ok) {
+      const txt = createRes ? await createRes.text() : "no response";
+      throw new Error(`Replicate create failed: ${createRes?.status} ${txt}`);
     }
     const pred = await createRes.json();
     const predId = pred.id;
@@ -95,6 +108,7 @@ async function generateImageBytes(
   const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
   return Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
 }
+
 
 
 const EXCLUDE_COUNT = 5;
@@ -499,79 +513,85 @@ Repetition is NOT allowed.
     const contentId = insertedRow.id;
     console.log("Content saved with ID:", contentId);
 
-    // Background image generation — all 6 in parallel
+    // Background image generation — parallel for lovable, sequential for replicate (rate-limited)
+    const generateOne = async (visual: typeof visualsInitial[number]) => {
+      try {
+        const imageBuffer = await generateImageBytes(
+          imageProvider,
+          visual.prompt,
+          LOVABLE_API_KEY,
+          REPLICATE_API_KEY,
+        );
+        const filePath = `${contentId}/${visual.moment}.png`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("botanical-faceless-visuals")
+          .upload(filePath, imageBuffer, {
+            contentType: "image/png",
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error(`Upload failed for ${visual.moment}:`, uploadError);
+          await mergeVisual(visual.moment, { image_url: null, error: `upload: ${uploadError.message}` });
+          return { ...visual, image_url: null };
+        }
+
+        const { data: urlData } = supabase.storage
+          .from("botanical-faceless-visuals")
+          .getPublicUrl(filePath);
+
+        console.log(`Image complete for ${visual.moment}`);
+        await mergeVisual(visual.moment, { image_url: urlData.publicUrl, error: null });
+        return { ...visual, image_url: urlData.publicUrl };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`Image error for ${visual.moment}:`, msg);
+        await mergeVisual(visual.moment, { image_url: null, error: msg.slice(0, 240) });
+        return { ...visual, image_url: null };
+      }
+    };
+
+    // Re-read latest row and patch a single visual, preserving siblings' progress
+    const mergeVisual = async (
+      moment: string,
+      patch: { image_url: string | null; error?: string | null },
+    ) => {
+      const { data: currentRow } = await supabase
+        .from("botanical_content")
+        .select("script_visuals")
+        .eq("id", contentId)
+        .single();
+      let arr = visualsInitial as Array<Record<string, unknown>>;
+      if (currentRow?.script_visuals) {
+        try {
+          arr = typeof currentRow.script_visuals === "string"
+            ? JSON.parse(currentRow.script_visuals)
+            : currentRow.script_visuals;
+        } catch { /* fallback */ }
+      }
+      const next = arr.map((v) => v.moment === moment ? { ...v, ...patch } : v);
+      await supabase
+        .from("botanical_content")
+        .update({ script_visuals: JSON.stringify(next) })
+        .eq("id", contentId);
+    };
+
     const generateAllImages = async () => {
-      console.log(`Background: generating ${visualsInitial.length} images in parallel...`);
-
-      const results = await Promise.all(
-        visualsInitial.map(async (visual) => {
-          try {
-            const imageBuffer = await generateImageBytes(
-              imageProvider,
-              visual.prompt,
-              LOVABLE_API_KEY,
-              REPLICATE_API_KEY,
-            );
-            const filePath = `${contentId}/${visual.moment}.png`;
-
-            const { error: uploadError } = await supabase.storage
-              .from("botanical-faceless-visuals")
-              .upload(filePath, imageBuffer, {
-                contentType: "image/png",
-                upsert: true,
-              });
-
-            if (uploadError) {
-              console.error(`Upload failed for ${visual.moment}:`, uploadError);
-              return { ...visual, image_url: null };
-            }
-
-            const { data: urlData } = supabase.storage
-              .from("botanical-faceless-visuals")
-              .getPublicUrl(filePath);
-
-            console.log(`Image complete for ${visual.moment}`);
-
-            // Incrementally update DB so client polling sees progress
-            const updated = visualsInitial.map((v) =>
-              v.moment === visual.moment ? { ...v, image_url: urlData.publicUrl } : v
-            );
-            // Merge with any already-completed images by re-reading current row
-            const { data: currentRow } = await supabase
-              .from("botanical_content")
-              .select("script_visuals")
-              .eq("id", contentId)
-              .single();
-
-            let currentVisuals = updated;
-            if (currentRow?.script_visuals) {
-              try {
-                const parsedCurrent = typeof currentRow.script_visuals === "string"
-                  ? JSON.parse(currentRow.script_visuals)
-                  : currentRow.script_visuals;
-                currentVisuals = parsedCurrent.map((v: typeof visualsInitial[number]) =>
-                  v.moment === visual.moment ? { ...v, image_url: urlData.publicUrl } : v
-                );
-              } catch {
-                // fallback to `updated`
-              }
-            }
-
-            await supabase
-              .from("botanical_content")
-              .update({ script_visuals: JSON.stringify(currentVisuals) })
-              .eq("id", contentId);
-
-            return { ...visual, image_url: urlData.publicUrl };
-          } catch (err) {
-            console.error(`Image error for ${visual.moment}:`, err);
-            return { ...visual, image_url: null };
-          }
-        })
-      );
-
-      const successCount = results.filter((v) => v.image_url).length;
-      console.log(`Background image generation complete: ${successCount} of ${results.length}`);
+      console.log(`Background: generating ${visualsInitial.length} images via ${imageProvider} (${imageProvider === "replicate" ? "sequential" : "parallel"})...`);
+      let successCount = 0;
+      if (imageProvider === "replicate") {
+        // Sequential with spacing to respect 6/min + burst=1 throttle on accounts <$5
+        for (const v of visualsInitial) {
+          const r = await generateOne(v);
+          if (r.image_url) successCount++;
+          await new Promise((r) => setTimeout(r, 11000));
+        }
+      } else {
+        const results = await Promise.all(visualsInitial.map(generateOne));
+        successCount = results.filter((v) => v.image_url).length;
+      }
+      console.log(`Background image generation complete: ${successCount} of ${visualsInitial.length}`);
     };
 
     // Fire and forget via EdgeRuntime.waitUntil (keeps function alive)
@@ -583,6 +603,7 @@ Repetition is NOT allowed.
       // Fallback: run without waiting
       generateAllImages();
     }
+
 
     // Return immediately with all 6 visual slots (image_url: null) so UI renders all plates
     parsed.faceless_visuals = visualsInitial;
