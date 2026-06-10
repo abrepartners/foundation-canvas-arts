@@ -84,11 +84,14 @@ serve(async (req) => {
   }
 
   try {
-    const { content_id, moment, prompt, subject } = await req.json();
+    const { content_id, moment, prompt, subject, image_provider } = await req.json();
 
     if (!content_id || !moment) {
       throw new Error("Missing required fields: content_id, moment");
     }
+
+    const imageProvider: "lovable" | "replicate" =
+      image_provider === "replicate" ? "replicate" : "lovable";
 
     // If a subject is provided, compose a fresh prompt from the locked template.
     // Otherwise, fall back to the prompt sent by the client (legacy behavior).
@@ -111,6 +114,7 @@ serve(async (req) => {
     }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -120,44 +124,87 @@ serve(async (req) => {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error("Supabase credentials not configured");
     }
+    if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
+      throw new Error("Replicate selected but REPLICATE_API_KEY not configured");
+    }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    console.log(`Regenerating image for content ${content_id}, moment: ${moment}`);
+    console.log(`Regenerating image for content ${content_id}, moment: ${moment}, provider: ${imageProvider}`);
 
-    // Generate image
-    const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages: [{ role: "user", content: finalPrompt }],
-        modalities: ["image", "text"]
-      }),
-    });
-
-    if (!imageResponse.ok) {
-      console.error("Image API error:", imageResponse.status);
-      throw new Error(`Image generation failed: ${imageResponse.status}`);
+    let imageBuffer: Uint8Array;
+    if (imageProvider === "replicate") {
+      const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+      const createRes = await fetch(`${GW}/models/black-forest-labs/flux-1.1-pro/predictions`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+          "X-Connection-Api-Key": REPLICATE_API_KEY!,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: {
+            prompt: finalPrompt,
+            aspect_ratio: "9:16",
+            output_format: "png",
+            safety_tolerance: 2,
+          },
+        }),
+      });
+      if (!createRes.ok) {
+        throw new Error(`Replicate create failed: ${createRes.status} ${await createRes.text()}`);
+      }
+      const pred = await createRes.json();
+      const predId = pred.id;
+      let outputUrl: string | null = null;
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
+        const pollRes = await fetch(`${GW}/predictions/${predId}`, {
+          headers: {
+            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": REPLICATE_API_KEY!,
+          },
+        });
+        if (!pollRes.ok) continue;
+        const p = await pollRes.json();
+        if (p.status === "succeeded") {
+          outputUrl = Array.isArray(p.output) ? p.output[0] : p.output;
+          break;
+        }
+        if (p.status === "failed" || p.status === "canceled") {
+          throw new Error(`Replicate prediction ${p.status}: ${p.error ?? ""}`);
+        }
+      }
+      if (!outputUrl) throw new Error("Replicate timed out");
+      const imgRes = await fetch(outputUrl);
+      if (!imgRes.ok) throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
+      imageBuffer = new Uint8Array(await imgRes.arrayBuffer());
+    } else {
+      const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash-image-preview",
+          messages: [{ role: "user", content: finalPrompt }],
+          modalities: ["image", "text"],
+        }),
+      });
+      if (!imageResponse.ok) {
+        console.error("Image API error:", imageResponse.status);
+        throw new Error(`Image generation failed: ${imageResponse.status}`);
+      }
+      const imageData = await imageResponse.json();
+      const base64Image = imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+      if (!base64Image || typeof base64Image !== "string") {
+        throw new Error("No image data received from AI");
+      }
+      const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+      imageBuffer = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
     }
 
-    const imageData = await imageResponse.json();
-    console.log("Image API response received");
-
-    // Defensive parsing
-    const base64Image = imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-
-    if (!base64Image || typeof base64Image !== "string") {
-      console.error("No valid image data in response");
-      throw new Error("No image data received from AI");
-    }
-
-    // Extract base64 and convert to binary
-    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
-    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
     // Upload to storage (upsert to replace existing)
     const filePath = `${content_id}/${moment}.png`;
