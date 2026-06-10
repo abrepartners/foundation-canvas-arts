@@ -134,7 +134,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash-image-preview",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: finalPrompt }],
         modalities: ["image", "text"]
       }),
     });
@@ -200,9 +200,11 @@ serve(async (req) => {
       visuals = [];
     }
 
-    // Update the specific visual's image_url
-    const updatedVisuals = visuals.map((v: { moment: string; prompt: string; image_url?: string }) => 
-      v.moment === moment ? { ...v, image_url: publicUrl } : v
+    // Update the specific visual's image_url (and prompt if we composed a new one)
+    const updatedVisuals = visuals.map((v: { moment: string; prompt: string; image_url?: string }) =>
+      v.moment === moment
+        ? { ...v, image_url: publicUrl, prompt: hasSubject ? finalPrompt : v.prompt }
+        : v
     );
 
     const { error: updateError } = await supabase
@@ -218,7 +220,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       image_url: publicUrl,
-      moment
+      moment,
+      prompt: hasSubject ? finalPrompt : undefined,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
