@@ -45,14 +45,49 @@ Do NOT choose: generic health benefits, vague "contains compounds" statements, f
 
 Tone: Calm, curious, confident, no jargon.
 
-## THUMBNAIL PROMPT
+## THUMBNAIL PROMPT (CINEMATIC EDUCATIONAL THUMBNAIL SYSTEM)
 
-Create a vertical 9:16 cinematic botanical thumbnail prompt. Describe:
-- Subject as museum-grade botanical specimen
-- Composition: slightly off-center, clear silhouette, negative space
-- Lighting: soft natural daylight
-- Background: aged paper, plaster, or limestone texture
-- Style: No icons, emojis, bright colors, or tech elements
+Generate a complete, self-contained vertical 9:16 thumbnail prompt that follows this exact system:
+
+CORE IDENTITY:
+- Cinematic mood, museum/archive aesthetic
+- Architectural editorial design language
+- Emotional tension and intellectual curiosity
+- Institutional credibility — feels like a documentary frame, museum exhibition panel, or research archive
+
+COMPOSITION:
+- Large focal botanical subject as a museum-grade specimen
+- One primary idea, strong hierarchy
+- Top-half symbolism, bottom-third title placement
+- Symmetry, generous negative space, balanced spacing
+- Contemplative arrangement with emotional restraint
+
+LIGHTING & ATMOSPHERE:
+- Cinematic low-key lighting, soft directional source
+- Depth via haze, smoke, shadow falloff, atmospheric separation
+- Texture, grain, restraint
+
+COLOR PALETTE (strict):
+- Charcoal, umber, warm parchment, bone, muted olive, soft stone
+- No saturation, no bright colors
+
+TYPOGRAPHY:
+- Refined serif for institutional/archival feel OR condensed sans-serif for cinematic headline
+- Minimal text, strong spacing, no decorative effects
+- Headline should create a question, not explain the answer
+- Use a curiosity-driven structure: contradiction, hidden truth, misunderstanding, or authority challenge
+  (e.g. "NOT WHAT YOU THINK", "MOST PEOPLE GET THIS WRONG", "THE REAL DIFFERENCE")
+
+SYMBOLIC SUPPORT:
+- Introduce subtle symbolic elements tied directly to the botanical topic
+- Optimize for small-screen readability
+
+NEVER INCLUDE:
+- Emojis, neon colors, cartoon styling, futuristic interfaces
+- Gaming aesthetics, influencer-style effects, busy infographics
+- Modern social-media aesthetics
+
+The prompt MUST be fully self-contained (zero memory): restate subject, lighting, palette, composition, typography, and constraints every time.
 
 ## CAPTION
 
