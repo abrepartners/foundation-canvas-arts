@@ -177,7 +177,8 @@ STYLE CONSTRAINTS (STRICT):
 
 ## FACELESS VISUALS (STYLE-LOCKED)
 
-Generate 3–5 faceless visual prompts.
+Generate EXACTLY 6 faceless visual prompts — one for EACH of these moments, in this exact set:
+hook, dangle_1, rehook, dangle_2, verified_truth, close
 
 Each prompt MUST:
 - Use the Architectural Botanical Study Plate style defined above
@@ -188,14 +189,14 @@ Each prompt MUST:
 Moments control SUBJECT FOCUS only, not style:
 - hook → most visually striking structure
 - dangle_1 / dangle_2 → supporting anatomical detail
+- rehook → contrasting or unexpected anatomical view
 - verified_truth → educational cross-section or labeled structure
 - close → whole specimen or simplified form
 
 The visual style MUST remain identical across all moments.
 
 Each visual MUST map to a DIFFERENT script moment.
-Allowed moments: hook, dangle_1, rehook, dangle_2, verified_truth, close
-NO DUPLICATE MOMENTS - each moment can only appear once.
+Exactly 6 visuals — NO MORE, NO LESS. NO duplicate moments. All 6 moments above MUST be present.
 
 If you are tempted to vary the visual format, composition, or environment:
 DO NOT.
