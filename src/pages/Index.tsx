@@ -133,7 +133,9 @@ const Index = () => {
               <ContentDisplay 
                 content={content} 
                 onReset={handleReset} 
-                onRegenerateVisual={regenerateVisual}
+                onRegenerateVisual={(moment, prompt, subject) =>
+                  regenerateVisual(moment, prompt, subject, imageProvider)
+                }
               />
             )}
           </div>
