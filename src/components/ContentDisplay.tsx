@@ -33,6 +33,41 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+// Strip leading section labels (Hook:, Dangle 1:, Payoff:, etc.) and timing
+// labels (0-4s:, (0-4s), 0:00-0:04, etc.) from the START of each line or
+// paragraph only. Mid-sentence words like "hook", "close", "truth" are left
+// intact. Used ONLY for the copy-to-clipboard text; on-screen display is
+// unchanged.
+function cleanScript(text: string): string {
+  const labelWord =
+    "(?:hook|re[-\\s]?hook|rehook|dangle\\s*(?:1|one|2|two)|payoff|verified\\s*truth|close)";
+  // Matches a label optionally wrapped in brackets/parens, optionally followed
+  // by a timing label, then a separator (colon, dash, em/en dash).
+  const labelLine = new RegExp(
+    `^\\s*[\\[\\(]?\\s*${labelWord}\\s*[\\)\\]]?` +
+      `(?:\\s*[\\[\\(]?\\s*\\d{1,2}(?::\\d{2})?\\s*(?:-|to|through|–|—)\\s*\\d{1,2}(?::\\d{2})?\\s*(?:s|sec|seconds)?\\s*[\\)\\]]?)?` +
+      `\\s*[:\\-–—]\\s*`,
+    "i",
+  );
+  // Standalone timing labels at start of line: "0-4s:", "(0-4s)", "0:00 to 0:04".
+  const timingLine = new RegExp(
+    `^\\s*[\\[\\(]?\\s*\\d{1,2}(?::\\d{2})?\\s*(?:-|to|through|–|—)\\s*\\d{1,2}(?::\\d{2})?\\s*(?:s|sec|seconds)?\\s*[\\)\\]]?\\s*[:\\-–—]?\\s*`,
+    "i",
+  );
+  return text
+    .split(/\n/)
+    .map((line) => {
+      let out = line;
+      const before = out;
+      out = out.replace(labelLine, "");
+      if (out === before) out = out.replace(timingLine, "");
+      return out;
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function ScriptSection({ script }: { script: ContentWithId["script"] }) {
   const sections = [
     { label: "Hook", timing: "0-4s", content: script.hook },
@@ -45,12 +80,13 @@ function ScriptSection({ script }: { script: ContentWithId["script"] }) {
   ];
 
   const fullScript = sections.map(s => s.content).join("\n\n");
+  const copyScript = cleanScript(fullScript);
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="font-serif text-lg text-foreground">Script</h3>
-        <CopyButton text={fullScript} />
+        <CopyButton text={copyScript} />
       </div>
       <div className="space-y-3">
         {sections.map((section) => (
