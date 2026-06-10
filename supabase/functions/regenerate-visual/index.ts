@@ -104,8 +104,9 @@ serve(async (req) => {
       typeof subject.description === "string" &&
       subject.description.trim().length > 0;
 
+    const momentForPrompt: Moment = isMoment(moment) ? moment : "hook";
     const finalPrompt: string = hasSubject
-      ? composePrompt(subject as PlateSubject)
+      ? composePrompt(subject as PlateSubject, momentForPrompt)
       : prompt;
 
     if (!finalPrompt || typeof finalPrompt !== "string") {
