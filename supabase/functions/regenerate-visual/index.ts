@@ -72,6 +72,8 @@ function buildPlatePrompt(subject: string, moment: Moment): string {
     "",
     `SUBJECT: ${subj}.`,
     "",
+    COMPOSITION_VARIETY_RULE,
+    "",
     `Use the exact same Architectural Botanical Study Plate style across all six plates. Only the composition and storytelling purpose change. Subject: ${subj}.`,
   ].join("\n");
 }
