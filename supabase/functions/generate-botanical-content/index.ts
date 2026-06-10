@@ -578,19 +578,9 @@ Repetition is NOT allowed.
     };
 
     const generateAllImages = async () => {
-      console.log(`Background: generating ${visualsInitial.length} images via ${imageProvider} (${imageProvider === "replicate" ? "sequential" : "parallel"})...`);
-      let successCount = 0;
-      if (imageProvider === "replicate") {
-        // Sequential with spacing to respect 6/min + burst=1 throttle on accounts <$5
-        for (const v of visualsInitial) {
-          const r = await generateOne(v);
-          if (r.image_url) successCount++;
-          await new Promise((r) => setTimeout(r, 11000));
-        }
-      } else {
-        const results = await Promise.all(visualsInitial.map(generateOne));
-        successCount = results.filter((v) => v.image_url).length;
-      }
+      console.log(`Background: generating ${visualsInitial.length} images via ${imageProvider} (parallel)...`);
+      const results = await Promise.all(visualsInitial.map(generateOne));
+      const successCount = results.filter((v) => v.image_url).length;
       console.log(`Background image generation complete: ${successCount} of ${visualsInitial.length}`);
     };
 
