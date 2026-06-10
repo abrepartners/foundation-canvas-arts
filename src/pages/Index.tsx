@@ -3,7 +3,7 @@ import {
   useBotanicalContent,
   useContentHistory,
 } from "@/hooks/useBotanicalContent";
-import { GenerateButton } from "@/components/GenerateButton";
+import { GenerateButton, type ImageProvider } from "@/components/GenerateButton";
 import { ContentDisplay } from "@/components/ContentDisplay";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ const Index = () => {
   } = useContentHistory();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [imageProvider, setImageProvider] = useState<ImageProvider>("lovable");
 
   const handleSelect = (item: (typeof history)[0]) => {
     setSelectedId(item.id);
@@ -28,7 +29,7 @@ const Index = () => {
 
   const handleGenerate = async () => {
     setSelectedId(undefined);
-    await generate();
+    await generate(imageProvider);
     refetch();
   };
 
@@ -117,7 +118,12 @@ const Index = () => {
                   </p>
                 </div>
 
-                <GenerateButton onClick={handleGenerate} isLoading={isLoading} />
+                <GenerateButton
+                  onClick={handleGenerate}
+                  isLoading={isLoading}
+                  provider={imageProvider}
+                  onProviderChange={setImageProvider}
+                />
 
                 <p className="text-xs text-graphite font-body">
                   My brother knows plants. I verify the facts.

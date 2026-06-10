@@ -81,13 +81,14 @@ export function useBotanicalContent() {
     }
   };
 
-  const generate = async () => {
+  const generate = async (imageProvider: "lovable" | "replicate" = "lovable") => {
     setIsLoading(true);
     setError(null);
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke(
-        "generate-botanical-content"
+        "generate-botanical-content",
+        { body: { image_provider: imageProvider } }
       );
 
       if (fnError) {
@@ -109,7 +110,6 @@ export function useBotanicalContent() {
         description: `${generatedContent.plant_name} — images generating in background.`,
       });
 
-      // Poll for images to stream in
       pollForImages(data.content_id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -132,7 +132,8 @@ export function useBotanicalContent() {
       binomial: string;
       description: string;
       specimenNote?: string;
-    }
+    },
+    imageProvider: "lovable" | "replicate" = "lovable"
   ) => {
     if (!content?.id) {
       toast({
@@ -152,6 +153,7 @@ export function useBotanicalContent() {
             moment,
             prompt,
             subject,
+            image_provider: imageProvider,
           },
         }
       );
