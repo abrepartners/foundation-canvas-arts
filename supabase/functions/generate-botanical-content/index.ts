@@ -111,8 +111,36 @@ If a visual does not match this system, it is INVALID.
 
 ### Architectural Botanical Study Plate — Canonical Style
 
-Vertical 9:16 dark-mode botanical architectural study plate.
-Create a cinematic, intellectual, editorial botanical visual on deep charcoal to near-black textured paper with subtle fine grain, parchment texture, soft vignette, and low-key lighting from the upper left.
+Vertical 9:16 dark-mode botanical archive plate on deep charcoal to near-black textured paper with fine grain, subtle parchment texture, soft vignette, and low-key directional light from the upper left.
+
+The plate MUST include ALL of the following layout elements (this is a strict template — restate every element in every prompt):
+
+TOP LEFT:
+- Plant common name in large refined serif (warm bone/ivory), e.g. "Olive"
+- Latin binomial directly below in smaller italic serif, e.g. "Olea europaea"
+- A 3-4 line short description (evergreen/deciduous, family, native region, notable use) in small muted serif
+
+TOP RIGHT:
+- "PLATE — 0X" label in small spaced sans-serif caps
+
+CENTER:
+- ONE hero botanical specimen (real photographic specimen aesthetic, slightly desaturated, museum-grade) — a single branch with leaves, fruit, or seed structure
+- Thin graphite construction lines, circular golden-ratio overlays, and faint geometric framing behind the specimen
+- Numeric annotations along the right edge (e.g. "2.8", "1.618", "0.618", "2.1", "4.7") in small serif
+- "Fig. 1  Branch" label in small italic serif beneath the specimen
+
+LOWER SECTION:
+- "Morphology" header in small serif
+- A short labeled list (A. Flower / B. Fruit / C. Seed — or Cone/Bud/Leaf as appropriate)
+- A horizontal row of 3-4 small hand-drawn anatomical illustrations (flower, fruit cross-section, seed) labeled A, B, C, D
+- A small circular golden-ratio diagram on the right with "Scale  1:2" label
+
+FOOTER:
+- "BOTANICAL STUDY ARCHIVE" in small spaced sans-serif caps on the left
+- "MMXXIV" on the right
+- Thin border frame around the entire plate
+
+
 
 The composition should feel like an architectural blueprint mixed with an archival botanical study plate. Use hand-drawn botanical sketches, abstract leaves, stems, seed structures, thin graphite construction lines, measurement marks, numeric annotations, and subtle diagram labels.
 
