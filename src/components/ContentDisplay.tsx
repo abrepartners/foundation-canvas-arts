@@ -1,9 +1,130 @@
 import { Button } from "@/components/ui/button";
-import { RotateCcw, Copy, Check, RefreshCw, Loader2, History, Sparkles, Send } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { RotateCcw, Copy, Check, RefreshCw, Loader2, History, Sparkles, Send, X as XIcon } from "lucide-react";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { ContentWithId, FacelessVisual, VisualHistoryEntry } from "@/hooks/useBotanicalContent";
+
+type SendPhase =
+  | "idle"
+  | "initializing"
+  | "uploading"
+  | "processing"
+  | "in_drafts"
+  | "timeout"
+  | "failed";
+
+const SEND_STEPS: { key: SendPhase; label: string }[] = [
+  { key: "initializing", label: "Initializing" },
+  { key: "uploading", label: "Uploading to TikTok" },
+  { key: "processing", label: "Processing" },
+  { key: "in_drafts", label: "In your drafts" },
+];
+
+function SendProgress({
+  phase,
+  detail,
+  onDismiss,
+}: {
+  phase: SendPhase;
+  detail?: string;
+  onDismiss: () => void;
+}) {
+  if (phase === "idle") return null;
+  const currentIdx = SEND_STEPS.findIndex((s) => s.key === phase);
+  const isFailed = phase === "failed";
+  const isDone = phase === "in_drafts";
+  const isTimeout = phase === "timeout";
+  const progressValue = isDone
+    ? 100
+    : isFailed || isTimeout
+    ? 100
+    : Math.max(10, ((currentIdx + 0.5) / SEND_STEPS.length) * 100);
+
+  return (
+    <div className="w-full rounded-md border border-border bg-card/50 p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-body text-foreground">
+          {isDone
+            ? "Carousel is now a draft in your TikTok inbox."
+            : isFailed
+            ? "TikTok rejected the carousel."
+            : isTimeout
+            ? "Still processing on TikTok's side — check the app in a minute."
+            : "Sending to TikTok…"}
+        </p>
+        {(isDone || isFailed || isTimeout) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDismiss}
+            className="h-7 px-2 text-xs"
+          >
+            Dismiss
+          </Button>
+        )}
+      </div>
+      <Progress
+        value={progressValue}
+        className={isFailed ? "[&>div]:bg-destructive" : isDone ? "[&>div]:bg-green-600" : ""}
+      />
+      <ol className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-body">
+        {SEND_STEPS.map((step, i) => {
+          const done = !isFailed && (isDone || i < currentIdx);
+          const active = !isDone && !isFailed && !isTimeout && i === currentIdx;
+          const failedHere = isFailed && i === Math.max(currentIdx, 0);
+          return (
+            <li key={step.key} className="flex items-center gap-1.5">
+              <span
+                className={`inline-flex h-4 w-4 items-center justify-center rounded-full border ${
+                  failedHere
+                    ? "border-destructive bg-destructive text-destructive-foreground"
+                    : done
+                    ? "border-green-600 bg-green-600 text-white"
+                    : active
+                    ? "border-botanical text-botanical animate-pulse"
+                    : "border-border text-muted-foreground"
+                }`}
+              >
+                {failedHere ? (
+                  <XIcon className="h-3 w-3" />
+                ) : done ? (
+                  <Check className="h-3 w-3" />
+                ) : active ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <span className="h-1 w-1 rounded-full bg-current" />
+                )}
+              </span>
+              <span
+                className={
+                  failedHere
+                    ? "text-destructive"
+                    : done || active
+                    ? "text-foreground"
+                    : "text-muted-foreground"
+                }
+              >
+                {step.label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      {detail && (
+        <p
+          className={`text-xs font-body ${
+            isFailed ? "text-destructive" : "text-muted-foreground"
+          }`}
+        >
+          {detail}
+        </p>
+      )}
+    </div>
+  );
+}
+
 
 interface ContentDisplayProps {
   content: ContentWithId;
