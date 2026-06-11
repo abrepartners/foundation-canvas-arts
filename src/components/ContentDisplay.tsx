@@ -1,20 +1,14 @@
 import { Button } from "@/components/ui/button";
-import { RotateCcw, Copy, Check, RefreshCw, Loader2 } from "lucide-react";
+import { RotateCcw, Copy, Check, RefreshCw, Loader2, History, Sparkles } from "lucide-react";
 import { useState } from "react";
-import type { ContentWithId, FacelessVisual } from "@/hooks/useBotanicalContent";
-import { RegenerateVisualDialog } from "@/components/RegenerateVisualDialog";
-import type { PlateSubject } from "@/lib/plateTemplate";
-
-type RegenerateFn = (
-  moment: string,
-  prompt: string,
-  subject?: PlateSubject
-) => Promise<string | null>;
+import type { ContentWithId, FacelessVisual, VisualHistoryEntry } from "@/hooks/useBotanicalContent";
 
 interface ContentDisplayProps {
   content: ContentWithId;
   onReset: () => void;
-  onRegenerateVisual?: RegenerateFn;
+  onRegenerateVisual?: (moment: string) => Promise<string | null>;
+  onRegenerateAll?: () => Promise<void>;
+  onRestoreVersion?: (moment: string, entry: VisualHistoryEntry) => Promise<string | null>;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -33,23 +27,15 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-// Strip leading section labels (Hook:, Dangle 1:, Payoff:, etc.) and timing
-// labels (0-4s:, (0-4s), 0:00-0:04, etc.) from the START of each line or
-// paragraph only. Mid-sentence words like "hook", "close", "truth" are left
-// intact. Used ONLY for the copy-to-clipboard text; on-screen display is
-// unchanged.
 function cleanScript(text: string): string {
   const labelWord =
     "(?:hook|re[-\\s]?hook|rehook|dangle\\s*(?:1|one|2|two)|payoff|verified\\s*truth|close)";
-  // Matches a label optionally wrapped in brackets/parens, optionally followed
-  // by a timing label, then a separator (colon, dash, em/en dash).
   const labelLine = new RegExp(
     `^\\s*[\\[\\(]?\\s*${labelWord}\\s*[\\)\\]]?` +
       `(?:\\s*[\\[\\(]?\\s*\\d{1,2}(?::\\d{2})?\\s*(?:-|to|through|–|—)\\s*\\d{1,2}(?::\\d{2})?\\s*(?:s|sec|seconds)?\\s*[\\)\\]]?)?` +
       `\\s*[:\\-–—]\\s*`,
     "i",
   );
-  // Standalone timing labels at start of line: "0-4s:", "(0-4s)", "0:00 to 0:04".
   const timingLine = new RegExp(
     `^\\s*[\\[\\(]?\\s*\\d{1,2}(?::\\d{2})?\\s*(?:-|to|through|–|—)\\s*\\d{1,2}(?::\\d{2})?\\s*(?:s|sec|seconds)?\\s*[\\)\\]]?\\s*[:\\-–—]?\\s*`,
     "i",
@@ -117,15 +103,19 @@ const momentOrder = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth",
 function FacelessVisualsSection({
   visuals,
   onRegenerate,
+  onRegenerateAll,
+  onRestoreVersion,
 }: {
   visuals: FacelessVisual[];
-  onRegenerate?: RegenerateFn;
+  onRegenerate?: (moment: string) => Promise<string | null>;
+  onRegenerateAll?: () => Promise<void>;
+  onRestoreVersion?: (moment: string, entry: VisualHistoryEntry) => Promise<string | null>;
 }) {
   const [expandedPrompts, setExpandedPrompts] = useState<Set<number>>(new Set());
-  const [regenerating, setRegenerating] = useState<string | null>(null);
-  const [dialogMoment, setDialogMoment] = useState<string | null>(null);
+  const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set());
+  const [regenerating, setRegenerating] = useState<Set<string>>(new Set());
+  const [regenAllRunning, setRegenAllRunning] = useState(false);
 
-  // Sort visuals by script flow order
   const sortedVisuals = [...visuals].sort(
     (a, b) => momentOrder.indexOf(a.moment) - momentOrder.indexOf(b.moment)
   );
@@ -137,27 +127,55 @@ function FacelessVisualsSection({
   const togglePrompt = (idx: number) => {
     setExpandedPrompts((prev) => {
       const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
       return next;
     });
   };
 
-  const openDialog = (moment: string) => {
-    if (!onRegenerate || regenerating) return;
-    setDialogMoment(moment);
+  const toggleHistory = (moment: string) => {
+    setExpandedHistory((prev) => {
+      const next = new Set(prev);
+      if (next.has(moment)) next.delete(moment); else next.add(moment);
+      return next;
+    });
   };
 
-  const dialogVisual = sortedVisuals.find((v) => v.moment === dialogMoment) ?? null;
-
-  const handleSubmit = async (subject: PlateSubject) => {
-    if (!onRegenerate || !dialogVisual) return;
-    setRegenerating(dialogVisual.moment);
+  const handleRegen = async (moment: string) => {
+    if (!onRegenerate) return;
+    setRegenerating((prev) => new Set(prev).add(moment));
     try {
-      await onRegenerate(dialogVisual.moment, dialogVisual.prompt, subject);
-      setDialogMoment(null);
+      await onRegenerate(moment);
     } finally {
-      setRegenerating(null);
+      setRegenerating((prev) => {
+        const next = new Set(prev);
+        next.delete(moment);
+        return next;
+      });
+    }
+  };
+
+  const handleRegenAll = async () => {
+    if (!onRegenerateAll) return;
+    if (!window.confirm("Regenerate all 6 visuals using the current locked style? This will move the existing renders into history.")) return;
+    setRegenAllRunning(true);
+    try {
+      await onRegenerateAll();
+    } finally {
+      setRegenAllRunning(false);
+    }
+  };
+
+  const handleRestore = async (moment: string, entry: VisualHistoryEntry) => {
+    if (!onRestoreVersion) return;
+    setRegenerating((prev) => new Set(prev).add(moment));
+    try {
+      await onRestoreVersion(moment, entry);
+    } finally {
+      setRegenerating((prev) => {
+        const next = new Set(prev);
+        next.delete(moment);
+        return next;
+      });
     }
   };
 
@@ -165,18 +183,38 @@ function FacelessVisualsSection({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h3 className="font-serif text-lg text-foreground">Faceless Visuals</h3>
-        <CopyButton text={allPrompts} />
+        <div className="flex items-center gap-2">
+          {onRegenerateAll && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRegenAll}
+              disabled={regenAllRunning || regenerating.size > 0}
+              className="text-xs"
+            >
+              {regenAllRunning ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3 mr-1" />
+              )}
+              Regenerate all with new style
+            </Button>
+          )}
+          <CopyButton text={allPrompts} />
+        </div>
       </div>
       <p className="text-xs text-muted-foreground">
         {visuals.length} unique moments • {imagesGenerated} images generated
       </p>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {sortedVisuals.map((visual, idx) => {
-          const isRegenerating = regenerating === visual.moment;
+          const isRegenerating = regenerating.has(visual.moment);
           const hasImage = !!visual.image_url;
           const hasError = !!visual.error;
+          const history = visual.history ?? [];
+          const historyOpen = expandedHistory.has(visual.moment);
 
           return (
             <div key={idx} className="space-y-2">
@@ -193,7 +231,7 @@ function FacelessVisualsSection({
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => openDialog(visual.moment)}
+                          onClick={() => handleRegen(visual.moment)}
                           disabled={isRegenerating}
                           className="text-xs"
                         >
@@ -222,7 +260,7 @@ function FacelessVisualsSection({
                       <Button
                         variant={hasError ? "default" : "ghost"}
                         size="sm"
-                        onClick={() => openDialog(visual.moment)}
+                        onClick={() => handleRegen(visual.moment)}
                         disabled={isRegenerating}
                         className="text-xs"
                       >
@@ -249,11 +287,23 @@ function FacelessVisualsSection({
                   {momentLabels[visual.moment]}
                 </span>
                 <div className="flex items-center gap-1">
+                  {history.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleHistory(visual.moment)}
+                      className="h-6 px-2 text-xs"
+                      title="Previous versions"
+                    >
+                      <History className="h-3 w-3 mr-0.5" />
+                      {history.length}
+                    </Button>
+                  )}
                   {onRegenerate && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => openDialog(visual.moment)}
+                      onClick={() => handleRegen(visual.moment)}
                       disabled={isRegenerating}
                       className="h-6 px-2 text-xs"
                       title="Regenerate this image"
@@ -273,6 +323,35 @@ function FacelessVisualsSection({
                 </div>
               </div>
 
+              {historyOpen && history.length > 0 && (
+                <div className="space-y-1 bg-muted/30 rounded p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                    Previous versions
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {history.map((h, hi) => (
+                      <button
+                        key={hi}
+                        type="button"
+                        onClick={() => handleRestore(visual.moment, h)}
+                        disabled={isRegenerating}
+                        className="relative flex-shrink-0 w-16 aspect-[9/16] rounded overflow-hidden border border-border hover:border-primary transition-colors group/h"
+                        title={`Restore version from ${new Date(h.created_at).toLocaleString()}`}
+                      >
+                        <img
+                          src={h.image_url}
+                          alt={`Previous ${momentLabels[visual.moment]}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/h:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-[9px] text-white text-center px-1">Use this</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {expandedPrompts.has(idx) && (
                 <p className="text-xs text-foreground/80 font-body whitespace-pre-wrap bg-muted/30 rounded p-2">
                   {visual.prompt}
@@ -281,21 +360,7 @@ function FacelessVisualsSection({
             </div>
           );
         })}
-
       </div>
-
-      {dialogVisual && (
-        <RegenerateVisualDialog
-          open={!!dialogMoment}
-          onOpenChange={(open) => {
-            if (!open && !regenerating) setDialogMoment(null);
-          }}
-          momentLabel={momentLabels[dialogVisual.moment]}
-          currentPrompt={dialogVisual.prompt}
-          isRegenerating={regenerating === dialogVisual.moment}
-          onSubmit={handleSubmit}
-        />
-      )}
     </div>
   );
 }
@@ -312,7 +377,7 @@ function ContentCard({ title, children, copyText }: { title: string; children: R
   );
 }
 
-export function ContentDisplay({ content, onReset, onRegenerateVisual }: ContentDisplayProps) {
+export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegenerateAll, onRestoreVersion }: ContentDisplayProps) {
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -333,6 +398,8 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual }: Content
           <FacelessVisualsSection 
             visuals={content.faceless_visuals} 
             onRegenerate={onRegenerateVisual}
+            onRegenerateAll={onRegenerateAll}
+            onRestoreVersion={onRestoreVersion}
           />
         )}
 
