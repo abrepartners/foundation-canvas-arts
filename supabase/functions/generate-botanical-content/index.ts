@@ -227,6 +227,7 @@ Tone: educational, calm, confident, visually descriptive, easy to understand. Re
 
 Structure (follow in this exact order, with blank lines between sections, using real newline characters \n inside the JSON string):
 
+0. A bold title line at the very top: a single short headline (4–10 words) naming the surprising angle of the post. Wrap it in **double asterisks** so it renders as bold. No emojis. Only "." or "?" allowed as ending punctuation. Followed by a blank line. This is the ONLY place markdown bold is allowed.
 1. A strong, surprising or slightly counterintuitive hook statement about the selected plant/topic. One short paragraph.
 2. A line that says some variation of: "That sounds wrong until you understand how plants are actually classified."
 3. A paragraph that explains, in plain language, the botanical classification principle at play (structure, development, reproduction — not taste, size, tradition, or kitchen use). Reference "botanical classification", "plant structure", "plant reproduction", or "common names vs scientific definitions" naturally.
@@ -240,7 +241,7 @@ My brother studies plants.
 I verify the facts.
 10. The line: "More verified botanical explanations coming soon."
 11. A "Topics covered:" header followed by EXACTLY 6 searchable keyword phrases, one per line, no bullets, no hashtags. Mix general families (botanical classification, plant structure, seeds vs fruits, fruit definitions, plant reproduction, plant anatomy explained, common names vs scientific definitions, how botanists define [topic], why [topic] is classified this way) with topic-specific variants using the actual plant name.
-12. EXACTLY 5 hashtags, one per line, each starting with "#", lowercase or camelCase, relevant to the plant and to botany/plant science. No spaces inside a hashtag. Do not exceed 5.
+12. EXACTLY 5 hashtags, one per line, each starting with "#", lowercase or camelCase, relevant to the plant and to botany/plant science. No spaces inside a hashtag. Do not exceed 5. Hashtags are MANDATORY — the caption is invalid without exactly 5 hashtag lines at the very end. If unsure, default to: #botany, #plantscience, #plantfacts, #botanicalclassification, plus one topic-specific tag.
 
 Hard rules:
 - Do NOT generate a short generic caption.
@@ -248,8 +249,9 @@ Hard rules:
 - Do NOT make it sound like an ad.
 - Do NOT overuse hashtags (max 5 total).
 - Do NOT include incorrect or unverified science claims.
-- Do NOT use markdown bold/italics or emojis.
+- Do NOT use markdown bold/italics or emojis anywhere EXCEPT the Section 0 bold title line.
 - Embed real "\n" newline characters in the JSON string so the structure renders when displayed.
+
 
 ## PART 2 HOOK
 
