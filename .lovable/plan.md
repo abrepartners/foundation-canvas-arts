@@ -1,49 +1,56 @@
 ## Goal
 
-Replace the current short `caption` with a long-form, SEO-structured educational caption in the exact format you specified. This caption is what already gets sent to TikTok as the post description, so the same change powers both UI display and TikTok/Instagram drafts.
+Add a "Regenerate caption" action so old saved posts (with the old two-line caption) can be upgraded to the new long-form SEO botanical-verification caption — without re-running script or image generation.
 
-## Where the caption is generated
+## How it works
 
-Both content generators ask the model for a `caption` field:
+A small "Regenerate" button appears in the Caption card (on both Botanical and Trends pages). Clicking it calls a new edge function that:
 
-- `supabase/functions/generate-botanical-content/index.ts` (line ~283)
-- `supabase/functions/generate-trend-content/index.ts` (line ~273)
+1. Loads the row's existing topic + facts (`plant_name` / `subject`, `verified_fact`, full `script`).
+2. Calls Lovable AI (Gemini 3 Flash) with the same SEO caption spec used by the generators — passed as a focused prompt that only outputs the caption text.
+3. Saves the new caption to the row via service-role (bypassing RLS, since UPDATE is denied to clients by design).
+4. Returns the new caption; the UI swaps it in immediately.
 
-It's then displayed by `ContentDisplay.tsx` (Caption card) and sent as `description` in `handleSendTikTok`. Storage/types already hold it as plain text, so no schema or UI changes are needed — just a richer string.
+Works on freshly generated content and on history items loaded from the sidebar.
 
 ## Changes
 
-### 1. `supabase/functions/generate-botanical-content/index.ts`
+### 1. New edge function: `supabase/functions/regenerate-caption/index.ts`
 
-Expand the caption instructions in the system prompt so the model produces the SEO caption:
+- POST body: `{ table: "botanical_content" | "trend_content", id: string }`.
+- Validate inputs (zod-style guard), reject unknown table values.
+- Fetch the row by id with the service-role client; pull `plant_name`/`subject`, `verified_fact`, `script` (parse JSON), `raw_content` as fallback context.
+- Build a self-contained caption-only prompt that embeds the full SEO caption spec (175–300 words, 12-step structure, brand line "My brother studies plants. / I verify the facts.", `Topics covered:` block, 5 hashtags, hard rules) and the topic context.
+- Call Lovable AI gateway (`google/gemini-3-flash-preview`) via `https://ai.gateway.lovable.dev/v1/chat/completions` returning a plain text caption (no JSON wrapper — the response IS the caption). Handle 429/402 with clear error.
+- `UPDATE botanical_content|trend_content SET caption = $new WHERE id = $id` via service role.
+- Return `{ ok: true, caption }` with CORS headers.
 
-- Add a dedicated "CAPTION REQUIREMENTS" section before the JSON contract.
-- Specify: 175–300 words, structured as Hook → why-it-sounds-wrong → scientific clarification → plain-language fact → "This is why:" with 4 bullet lines (using `– ` em-dash bullets) → contrast common vs botanical → series framing → the literal brand line:
-  ```
-  My brother studies plants.
-  I verify the facts.
-  ```
-  → "More verified botanical explanations coming soon." → `Topics covered:` block with 6 searchable phrases (one per line, no bullets) → 5 relevant hashtags (one per line, `#` prefix).
-- Tone rules: calm, confident, educational, no slang, no hype, no ads, no emojis.
-- SEO keyword guidance: each caption must naturally weave in 2–3 of these phrase patterns: *botanical classification, plant structure, seeds vs fruits, fruit definitions, plant reproduction, why [topic] is classified this way, how botanists define [topic], common names vs scientific definitions, plant anatomy explained.* The `Topics covered:` block must include topic-specific variants of the same families.
-- "Do not" list mirrored from your spec (no generic short caption, no witty-only, no ad voice, no overused hashtags, no incorrect science).
-- Keep the JSON contract identical (`"caption": "string"`), but add a comment-style line in the prompt clarifying the caption must contain real newlines (`\n`) so the structure survives JSON encoding.
+No DB migration needed — UPDATE via service-role already works, and the existing client-side RLS deny stays in place (clients never UPDATE directly).
 
-### 2. `supabase/functions/generate-trend-content/index.ts`
+### 2. `src/hooks/useBotanicalContent.ts` and `src/hooks/useTrendContent.ts`
 
-Apply the same caption requirements block. Adapt the SEO keyword families to the trending topic where applicable (still botanical-leaning, since the trends page reuses the verification voice).
+- Add `regenerateCaption()` that:
+  - Checks `content.id` exists (toast if not).
+  - Sets a local `isRegeneratingCaption` flag.
+  - Invokes `regenerate-caption` with `{ table, id }`.
+  - On success: updates `content.caption` in local state, toasts success.
+  - On failure: toasts the error message verbatim.
+- Export `regenerateCaption` + `isRegeneratingCaption` from each hook.
 
-### 3. Length safety
+### 3. `src/components/ContentDisplay.tsx`
 
-TikTok's description cap is 4000 chars; ~300 words ≈ 2000 chars, so we're well within limits. No truncation logic needed. The existing `.slice(0, 4000)` in `post-tiktok-carousel` stays as a safety net.
+- Accept new optional props: `onRegenerateCaption?: () => Promise<void>` and `isRegeneratingCaption?: boolean`.
+- In the Caption `ContentCard`, render a small ghost button next to Copy: "Regenerate" with a `RotateCcw` icon + spinner state. Disabled while regenerating or when no `content.id` exists.
+- Keep `whitespace-pre-wrap` so the new structured caption renders correctly.
 
-### 4. No code changes needed in:
+### 4. `src/pages/Index.tsx` and `src/pages/Trends.tsx`
 
-- `ContentDisplay.tsx` — the Caption card already renders `whitespace-pre-wrap`-friendly content via `<p>`. (Quick verify during build that line breaks render; if not, swap the caption display to `whitespace-pre-wrap`.)
-- DB schema / RLS / types.
-- TikTok send flow.
+- Destructure `regenerateCaption`, `isRegeneratingCaption` from the respective hook.
+- Pass them through to `<ContentDisplay ... />`.
 
-## Out of scope
+## Notes
 
-- No new field for hashtags/topics — they're embedded inside the caption string per your format example.
-- No changes to Instagram-specific flow (not yet implemented); the same caption works when added later.
+- Costs are minimal (single short AI call per click).
+- Old rows whose `script` is missing still work because the prompt also accepts `verified_fact` + `raw_content` as fallback context.
+- No schema, RLS, or types change — `caption` is already `text` on both tables.
+- Out of scope: bulk "regenerate every old caption" job. Per-item regeneration only, triggered from the UI.
