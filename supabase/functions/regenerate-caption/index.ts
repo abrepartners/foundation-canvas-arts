@@ -16,10 +16,11 @@ const CAPTION_SPEC = `You write the "caption" field — the post description pub
 
 Requirements:
 - Length: 175–300 words. Never shorter. Never a witty one-liner.
-- Tone: educational, calm, confident, visually descriptive, easy to understand. Reads like a verified science explanation. No hype, no slang, no ad copy, no emojis, no markdown bold/italics.
+- Tone: educational, calm, confident, visually descriptive, easy to understand. Reads like a verified science explanation. No hype, no slang, no ad copy, no emojis. Markdown bold (**...**) is allowed ONLY for the Section 0 title line.
 - Use real newline characters between sections so the structure renders.
 
 Structure (in this exact order):
+0. A bold title line at the very top: a single short headline (4–10 words) naming the surprising angle of the post. Wrap it in **double asterisks** so it renders as bold. No emojis. Only "." or "?" allowed as ending punctuation. Followed by a blank line.
 1. A surprising or slightly counterintuitive hook statement about the topic. One short paragraph.
 2. A line that says some variation of: "That sounds wrong until you understand how this is actually classified."
 3. A paragraph that explains, in plain language, the underlying botanical/scientific principle (structure, development, reproduction — not taste, size, tradition, or kitchen use). Naturally reference phrases like "botanical classification", "plant structure", "plant reproduction", or "common names vs scientific definitions".
@@ -33,7 +34,7 @@ My brother studies plants.
 I verify the facts.
 10. The line: "More verified botanical explanations coming soon."
 11. A "Topics covered:" header followed by EXACTLY 6 searchable keyword phrases, one per line, no bullets, no hashtags. Mix general families (botanical classification, plant structure, seeds vs fruits, fruit definitions, plant reproduction, plant anatomy explained, common names vs scientific definitions, how botanists define [topic], why [topic] is classified this way) with topic-specific variants using the actual topic name.
-12. EXACTLY 5 hashtags, one per line, each starting with "#", lowercase or camelCase, relevant to the topic and to botany/plant science. No spaces inside a hashtag. Do not exceed 5.
+12. EXACTLY 5 hashtags, one per line, each starting with "#", lowercase or camelCase, relevant to the topic and to botany/plant science. No spaces inside a hashtag. Do not exceed 5. Hashtags are MANDATORY — the caption is invalid without exactly 5 hashtag lines at the very end. If unsure, default to: #botany, #plantscience, #plantfacts, #botanicalclassification, plus one topic-specific tag.
 
 Hard rules:
 - Do NOT generate a short generic caption.
@@ -41,8 +42,10 @@ Hard rules:
 - Do NOT make it sound like an ad.
 - Do NOT overuse hashtags (max 5 total).
 - Do NOT include incorrect or unverified science claims.
+- Do NOT use markdown bold/italics or emojis anywhere EXCEPT the Section 0 bold title line.
 
 Return ONLY the caption text. No JSON, no code fences, no preamble, no explanation.`;
+
 
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
