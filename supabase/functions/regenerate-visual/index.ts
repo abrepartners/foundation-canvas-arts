@@ -113,6 +113,8 @@ serve(async (req) => {
       action,
       image_url: restoreUrl,
       prompt: restorePrompt,
+      table: tableInput,
+      storage_prefix: storagePrefixInput,
     } = body;
 
     if (!content_id || !moment) {
@@ -121,6 +123,16 @@ serve(async (req) => {
     if (!isMoment(moment)) {
       throw new Error(`Invalid moment: ${moment}`);
     }
+
+    const table: "botanical_content" | "trend_content" =
+      tableInput === "trend_content" ? "trend_content" : "botanical_content";
+    const subjectColumn = table === "trend_content" ? "subject" : "plant_name";
+    const storagePrefix =
+      typeof storagePrefixInput === "string" && storagePrefixInput.length > 0
+        ? storagePrefixInput.replace(/^\/+|\/+$/g, "")
+        : table === "trend_content"
+        ? "trends"
+        : "";
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -131,14 +143,15 @@ serve(async (req) => {
 
     // Fetch current content row
     const { data: contentRow, error: fetchError } = await supabase
-      .from("botanical_content")
-      .select("script_visuals, plant_name")
+      .from(table)
+      .select(`script_visuals, ${subjectColumn}`)
       .eq("id", content_id)
       .single();
 
     if (fetchError || !contentRow) {
       throw new Error("Content not found");
     }
+    const subjectValue = (contentRow as Record<string, unknown>)[subjectColumn];
 
     let visuals: Visual[] = [];
     try {
