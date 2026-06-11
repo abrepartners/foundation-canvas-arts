@@ -380,17 +380,66 @@ function ContentCard({ title, children, copyText }: { title: string; children: R
 }
 
 export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegenerateAll, onRestoreVersion }: ContentDisplayProps) {
+  const { toast } = useToast();
+  const [sendingTikTok, setSendingTikTok] = useState(false);
+
+  const imageUrls = (content.faceless_visuals ?? [])
+    .map((v) => v.image_url)
+    .filter((u): u is string => !!u);
+  const canSendTikTok = imageUrls.length >= 2;
+
+  const handleSendTikTok = async () => {
+    if (!canSendTikTok) return;
+    setSendingTikTok(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("post-tiktok-carousel", {
+        body: {
+          title: content.plant_name,
+          description: content.caption,
+          photo_images: imageUrls,
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast({
+        title: "Sent to TikTok",
+        description: "Open the TikTok app — the carousel is in your inbox as a draft.",
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to send to TikTok";
+      toast({ title: "TikTok send failed", description: msg, variant: "destructive" });
+    } finally {
+      setSendingTikTok(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h2 className="text-2xl font-serif text-foreground">{content.plant_name}</h2>
           <p className="text-sm text-muted-foreground mt-1">{content.verified_fact}</p>
         </div>
-        <Button variant="outline" onClick={onReset} className="font-body">
-          <RotateCcw className="mr-2 h-4 w-4" />
-          Generate New
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="default"
+            onClick={handleSendTikTok}
+            disabled={!canSendTikTok || sendingTikTok}
+            className="font-body"
+            title={canSendTikTok ? "Send carousel to TikTok drafts" : "Generate all images first"}
+          >
+            {sendingTikTok ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            Send to TikTok ({imageUrls.length})
+          </Button>
+          <Button variant="outline" onClick={onReset} className="font-body">
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Generate New
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-4">
