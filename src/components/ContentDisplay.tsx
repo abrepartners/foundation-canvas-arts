@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button";
-import { RotateCcw, Copy, Check, RefreshCw, Loader2, History, Sparkles } from "lucide-react";
+import { RotateCcw, Copy, Check, RefreshCw, Loader2, History, Sparkles, Send } from "lucide-react";
 import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 import type { ContentWithId, FacelessVisual, VisualHistoryEntry } from "@/hooks/useBotanicalContent";
 
 interface ContentDisplayProps {
