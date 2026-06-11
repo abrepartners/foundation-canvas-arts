@@ -151,6 +151,8 @@ const Index = () => {
                 onRegenerateVisual={(moment) => regenerateVisual(moment, imageProvider)}
                 onRegenerateAll={() => regenerateAllVisuals(imageProvider)}
                 onRestoreVersion={restoreVisualVersion}
+                onRegenerateCaption={regenerateCaption}
+                isRegeneratingCaption={isRegeneratingCaption}
               />
             )}
           </div>
