@@ -603,9 +603,19 @@ Repetition is NOT allowed.
 
     const generateAllImages = async () => {
       console.log(
-        `Background: generating ${visualsInitial.length} images via ${imageProvider} (parallel)...`,
+        `Background: generating ${visualsInitial.length} images via ${imageProvider}...`,
       );
-      const results = await Promise.all(visualsInitial.map(generateOne));
+      // Replicate enforces ~6 requests/min with a small burst, so stagger the
+      // six starts ~12s apart instead of firing all at once. Lovable has no
+      // such limit and can run fully parallel.
+      const STAGGER_MS = imageProvider === "replicate" ? 12000 : 0;
+      const results = await Promise.all(
+        visualsInitial.map((visual, i) =>
+          new Promise((resolve) => setTimeout(resolve, i * STAGGER_MS)).then(
+            () => generateOne(visual),
+          ),
+        ),
+      );
       const successCount = results.filter((v) => v.image_url).length;
       console.log(
         `Background image generation complete: ${successCount} of ${visualsInitial.length}`,
