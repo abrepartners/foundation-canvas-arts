@@ -36,7 +36,8 @@ async function generateImageBytes(
             input: {
               prompt,
               aspect_ratio: "9:16",
-              output_format: "png",
+              // TikTok's photo API only accepts JPEG/WebP pulls — keep jpg
+              output_format: "jpg",
               safety_tolerance: 2,
               prompt_upsampling: false,
             },
@@ -562,12 +563,15 @@ Repetition is NOT allowed.
           LOVABLE_API_KEY,
           REPLICATE_API_KEY,
         );
-        const filePath = `${contentId}/${visual.moment}.png`;
+        // Replicate outputs jpg (TikTok-compatible); the Lovable/Gemini path
+        // returns png bytes, so keep the extension truthful per provider.
+        const ext = imageProvider === "replicate" ? "jpg" : "png";
+        const filePath = `${contentId}/${visual.moment}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
           .from("botanical-faceless-visuals")
           .upload(filePath, imageBuffer, {
-            contentType: "image/png",
+            contentType: ext === "jpg" ? "image/jpeg" : "image/png",
             upsert: true,
           });
 

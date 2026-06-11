@@ -131,8 +131,8 @@ serve(async (req) => {
       typeof storagePrefixInput === "string" && storagePrefixInput.length > 0
         ? storagePrefixInput.replace(/^\/+|\/+$/g, "")
         : table === "trend_content"
-        ? "trends"
-        : "";
+          ? "trends"
+          : "";
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -229,7 +229,9 @@ serve(async (req) => {
     }
 
     // Always build a fresh prompt from the current locked style + stored subject.
-    const subject = (typeof subjectValue === "string" ? subjectValue : "").trim();
+    const subject = (
+      typeof subjectValue === "string" ? subjectValue : ""
+    ).trim();
     const finalPrompt = buildPlatePrompt(subject, moment);
 
     console.log(
@@ -254,7 +256,8 @@ serve(async (req) => {
               input: {
                 prompt: finalPrompt,
                 aspect_ratio: "9:16",
-                output_format: "png",
+                // TikTok's photo API only accepts JPEG/WebP pulls — keep jpg
+                output_format: "jpg",
                 safety_tolerance: 2,
               },
             }),
@@ -334,15 +337,17 @@ serve(async (req) => {
     }
 
     // Versioned storage path so previous renders remain reachable.
+    // Replicate outputs jpg (TikTok-compatible); Lovable/Gemini returns png.
+    const ext = imageProvider === "replicate" ? "jpg" : "png";
     const timestamp = Date.now();
     const filePath = storagePrefix
-      ? `${storagePrefix}/${content_id}/${moment}/${timestamp}.png`
-      : `${content_id}/${moment}/${timestamp}.png`;
+      ? `${storagePrefix}/${content_id}/${moment}/${timestamp}.${ext}`
+      : `${content_id}/${moment}/${timestamp}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from("botanical-faceless-visuals")
       .upload(filePath, imageBuffer, {
-        contentType: "image/png",
+        contentType: ext === "jpg" ? "image/jpeg" : "image/png",
         upsert: false,
       });
 
