@@ -35,23 +35,6 @@ const MOMENT_BRIEFS: Record<Moment, string> = {
 const COMPOSITION_VARIETY_RULE =
   "The six images MUST NOT look like six variations of the same full botanical poster. They must share the exact same visual style (paper, palette, typography, blueprint language), but each moment must have a clearly different shot type and composition as specified in its moment brief.";
 
-interface PlateSubject {
-  commonName?: string;
-  binomial?: string;
-  description?: string;
-  specimenNote?: string;
-}
-
-function subjectToString(subject: PlateSubject): string {
-  const parts: string[] = [];
-  if (subject.commonName?.trim()) parts.push(subject.commonName.trim());
-  if (subject.binomial?.trim()) parts.push(`(${subject.binomial.trim()})`);
-  let line = parts.join(" ");
-  if (subject.description?.trim()) line += ` — ${subject.description.trim()}`;
-  if (subject.specimenNote?.trim()) line += `. Hero specimen: ${subject.specimenNote.trim()}`;
-  return line.trim();
-}
-
 function isMoment(v: unknown): v is Moment {
   return (
     v === "hook" ||
@@ -78,9 +61,21 @@ function buildPlatePrompt(subject: string, moment: Moment): string {
   ].join("\n");
 }
 
-function composePrompt(subject: PlateSubject, moment: Moment): string {
-  return buildPlatePrompt(subjectToString(subject), moment);
+interface HistoryEntry {
+  image_url: string;
+  prompt: string;
+  created_at: string;
 }
+
+interface Visual {
+  moment: string;
+  prompt: string;
+  image_url?: string | null;
+  error?: string | null;
+  history?: HistoryEntry[];
+}
+
+const HISTORY_CAP = 5;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -88,54 +83,101 @@ serve(async (req) => {
   }
 
   try {
-    const { content_id, moment, prompt, subject, image_provider } = await req.json();
+    const body = await req.json();
+    const { content_id, moment, image_provider, action, image_url: restoreUrl, prompt: restorePrompt } = body;
 
     if (!content_id || !moment) {
       throw new Error("Missing required fields: content_id, moment");
     }
-
-    const imageProvider: "lovable" | "replicate" =
-      image_provider === "replicate" ? "replicate" : "lovable";
-
-    // If a subject is provided, compose a fresh prompt from the locked template.
-    // Otherwise, fall back to the prompt sent by the client (legacy behavior).
-    const hasSubject =
-      subject &&
-      typeof subject === "object" &&
-      typeof subject.commonName === "string" &&
-      subject.commonName.trim().length > 0 &&
-      typeof subject.binomial === "string" &&
-      subject.binomial.trim().length > 0 &&
-      typeof subject.description === "string" &&
-      subject.description.trim().length > 0;
-
-    const momentForPrompt: Moment = isMoment(moment) ? moment : "hook";
-    const finalPrompt: string = hasSubject
-      ? composePrompt(subject as PlateSubject, momentForPrompt)
-      : prompt;
-
-    if (!finalPrompt || typeof finalPrompt !== "string") {
-      throw new Error("Missing prompt and no valid subject provided");
+    if (!isMoment(moment)) {
+      throw new Error(`Invalid moment: ${moment}`);
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY not configured");
-    }
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error("Supabase credentials not configured");
     }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Fetch current content row
+    const { data: contentRow, error: fetchError } = await supabase
+      .from("botanical_content")
+      .select("script_visuals, plant_name")
+      .eq("id", content_id)
+      .single();
+
+    if (fetchError || !contentRow) {
+      throw new Error("Content not found");
+    }
+
+    let visuals: Visual[] = [];
+    try {
+      visuals = JSON.parse(contentRow.script_visuals || "[]");
+    } catch {
+      visuals = [];
+    }
+
+    const currentVisual = visuals.find((v) => v.moment === moment);
+
+    // === RESTORE ACTION: swap current with a history entry ===
+    if (action === "restore") {
+      if (!restoreUrl || !restorePrompt) {
+        throw new Error("restore action requires image_url and prompt");
+      }
+      if (!currentVisual) throw new Error("Visual slot not found");
+
+      const newHistory: HistoryEntry[] = [];
+      // Push currently active into history (if any)
+      if (currentVisual.image_url) {
+        newHistory.push({
+          image_url: currentVisual.image_url,
+          prompt: currentVisual.prompt,
+          created_at: new Date().toISOString(),
+        });
+      }
+      // Add the remaining history minus the entry we're restoring
+      for (const h of currentVisual.history ?? []) {
+        if (h.image_url !== restoreUrl) newHistory.push(h);
+        if (newHistory.length >= HISTORY_CAP) break;
+      }
+
+      const updatedVisuals = visuals.map((v) =>
+        v.moment === moment
+          ? { ...v, image_url: restoreUrl, prompt: restorePrompt, error: null, history: newHistory }
+          : v
+      );
+
+      await supabase
+        .from("botanical_content")
+        .update({ script_visuals: JSON.stringify(updatedVisuals) })
+        .eq("id", content_id);
+
+      return new Response(JSON.stringify({
+        success: true,
+        image_url: restoreUrl,
+        prompt: restorePrompt,
+        moment,
+        history: newHistory,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // === REGENERATE ACTION (default) ===
+    const imageProvider: "lovable" | "replicate" =
+      image_provider === "replicate" ? "replicate" : "lovable";
+
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
       throw new Error("Replicate selected but REPLICATE_API_KEY not configured");
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    // Always build a fresh prompt from the current locked style + stored plant name.
+    const subject = (contentRow.plant_name ?? "").trim();
+    const finalPrompt = buildPlatePrompt(subject, moment);
 
-    console.log(`Regenerating image for content ${content_id}, moment: ${moment}, provider: ${imageProvider}`);
+    console.log(`Regenerating ${moment} for ${content_id} (provider: ${imageProvider})`);
 
     let imageBuffer: Uint8Array;
     if (imageProvider === "replicate") {
@@ -161,8 +203,8 @@ serve(async (req) => {
         if (createRes.status !== 429) break;
         let waitSec = 12;
         try {
-          const body = await createRes.clone().json();
-          if (typeof body?.retry_after === "number") waitSec = Math.max(body.retry_after + 2, 8);
+          const b = await createRes.clone().json();
+          if (typeof b?.retry_after === "number") waitSec = Math.max(b.retry_after + 2, 8);
         } catch { /* ignore */ }
         console.log(`Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`);
         await new Promise((r) => setTimeout(r, waitSec * 1000));
@@ -172,7 +214,6 @@ serve(async (req) => {
         throw new Error(`Replicate create failed: ${createRes?.status} ${txt}`);
       }
       const pred = await createRes.json();
-
       const predId = pred.id;
       let outputUrl: string | null = null;
       for (let i = 0; i < 60; i++) {
@@ -211,7 +252,6 @@ serve(async (req) => {
         }),
       });
       if (!imageResponse.ok) {
-        console.error("Image API error:", imageResponse.status);
         throw new Error(`Image generation failed: ${imageResponse.status}`);
       }
       const imageData = await imageResponse.json();
@@ -223,52 +263,42 @@ serve(async (req) => {
       imageBuffer = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
     }
 
-
-    // Upload to storage (upsert to replace existing)
-    const filePath = `${content_id}/${moment}.png`;
+    // Versioned storage path so previous renders remain reachable.
+    const timestamp = Date.now();
+    const filePath = `${content_id}/${moment}/${timestamp}.png`;
 
     const { error: uploadError } = await supabase.storage
       .from("botanical-faceless-visuals")
       .upload(filePath, imageBuffer, {
         contentType: "image/png",
-        upsert: true
+        upsert: false,
       });
 
     if (uploadError) {
-      console.error("Upload failed:", uploadError);
       throw new Error(`Failed to upload image: ${uploadError.message}`);
     }
 
     const { data: urlData } = supabase.storage
       .from("botanical-faceless-visuals")
       .getPublicUrl(filePath);
-
     const publicUrl = urlData.publicUrl;
-    console.log("Image uploaded successfully:", publicUrl);
 
-    // Update the visual in the database
-    const { data: contentRow, error: fetchError } = await supabase
-      .from("botanical_content")
-      .select("script_visuals")
-      .eq("id", content_id)
-      .single();
-
-    if (fetchError || !contentRow) {
-      console.error("Failed to fetch content:", fetchError);
-      throw new Error("Content not found");
+    // Push currently active render onto history (newest first, cap 5)
+    let newHistory: HistoryEntry[] = currentVisual?.history ?? [];
+    if (currentVisual?.image_url) {
+      newHistory = [
+        {
+          image_url: currentVisual.image_url,
+          prompt: currentVisual.prompt,
+          created_at: new Date().toISOString(),
+        },
+        ...newHistory,
+      ].slice(0, HISTORY_CAP);
     }
 
-    let visuals = [];
-    try {
-      visuals = JSON.parse(contentRow.script_visuals || "[]");
-    } catch {
-      visuals = [];
-    }
-
-    // Update the specific visual's image_url (and prompt if we composed a new one)
-    const updatedVisuals = visuals.map((v: { moment: string; prompt: string; image_url?: string }) =>
+    const updatedVisuals = visuals.map((v) =>
       v.moment === moment
-        ? { ...v, image_url: publicUrl, prompt: hasSubject ? finalPrompt : v.prompt }
+        ? { ...v, image_url: publicUrl, prompt: finalPrompt, error: null, history: newHistory }
         : v
     );
 
@@ -278,18 +308,16 @@ serve(async (req) => {
       .eq("id", content_id);
 
     if (updateError) {
-      console.error("Failed to update content:", updateError);
-      // Don't throw - image is uploaded, just DB update failed
+      console.error("DB update failed:", updateError);
     }
 
     return new Response(JSON.stringify({
       success: true,
       image_url: publicUrl,
       moment,
-      prompt: hasSubject ? finalPrompt : undefined,
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+      prompt: finalPrompt,
+      history: newHistory,
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
