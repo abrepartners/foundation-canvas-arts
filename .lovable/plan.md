@@ -1,31 +1,34 @@
 ## Goal
-A second mode of the app, on its own page `/trends`, that mirrors today's Botanical flow but works for **any subject** (octopuses, Roman history, espresso, etc.) and is seeded by **TikTok Creator Search Insights** trending topics rather than a hardcoded plant focus. Visuals reuse the existing 9:16 museum study-plate style. Posting reuses the existing `post-tiktok-carousel` function.
+After **Send to TikTok**, show real-time progress (not just a spinner) until TikTok confirms the carousel is actually sitting in the user's drafts/inbox, then mark complete. If TikTok reports a failure, surface the reason.
 
-## User flow
-1. User navigates to `/trends` (linked from a small nav in the header on `/`).
-2. Page shows a **Subject** input (free text, e.g. "deep-sea creatures") + a **Suggest trending topics** button.
-3. Clicking Suggest calls a new edge function `tiktok-trend-suggestions` that hits TikTok Creator Search Insights via the connector gateway and returns 6–10 trending keyword chips related to the typed subject (or general trending if empty). Clicking a chip fills the input.
-4. User clicks **Generate Carousel**. The same pipeline runs: AI picks one counterintuitive, verifiable fact about the subject, writes the 30-second script (HOOK/DANGLE/RE-HOOK/DANGLE/PAYOFF/CLOSE), generates 6 museum-plate 9:16 visuals, stores everything.
-5. ContentDisplay renders identically; user can regenerate visuals and **Send to TikTok** via the existing flow.
+## How TikTok signals "in drafts"
+`post/publish/content/init/` returns a `publish_id`. The real status comes from polling `post/publish/status/fetch/`, which returns a `status` enum that walks through: `PROCESSING_DOWNLOAD` → `PROCESSING_UPLOAD` → `SEND_TO_USER_INBOX` (terminal success — the post is now a draft in TikTok), or `FAILED` (terminal failure with `fail_reason`).
 
-## Backend
-- New edge function `tiktok-trend-suggestions` (verify_jwt=false, CORS): POST `{ subject?: string }`. Calls TikTok Creator Search Insights through the connector gateway (`https://connector-gateway.lovable.dev/tiktok/research/...`) using `LOVABLE_API_KEY` + `TIKTOK_API_KEY`. Returns `{ topics: string[] }`. Validates input with Zod.
-- New edge function `generate-trend-content` (verify_jwt=false, CORS): clone of `generate-botanical-content` parameterized by `subject`. Same JSON contract, same Gemini 2.0 Flash text + Gemini 2.5 Flash Image Preview visuals, same Zero-Memory rules, same museum study-plate prompt scaffolding (subject swapped for plant). Persists to a new `trend_content` table (same columns as `botanical_content` but `subject` instead of `plant_name`).
-- New migration: `trend_content` table mirroring `botanical_content` columns; GRANTs + RLS policies matching the existing public-read/write model used today. Uses the same `botanical-faceless-visuals` storage bucket (folder prefix `trends/`).
-- `post-tiktok-carousel` is reused as-is; the page passes the same content shape.
+## Backend changes
+- **`post-tiktok-carousel`**: also return `publish_id` (extracted from the TikTok response) alongside the existing payload so the client can start polling.
+- **New edge function `tiktok-publish-status`** (verify_jwt=false, CORS): POST `{ publish_id: string }`. Loads the most recent token from `tiktok_tokens` (same refresh logic as `post-tiktok-carousel`), calls TikTok `post/publish/status/fetch/`, returns `{ status, fail_reason?, raw }`. Zod-validates input.
 
-## Frontend
-- New route `/trends` registered in `App.tsx` above the catch-all.
-- New page `src/pages/Trends.tsx` modeled on `Index.tsx`: subject input, trending-chips row, Generate button, reuses `ContentDisplay`, has its own `HistorySidebar` reading from `trend_content`.
-- New hook `src/hooks/useTrendContent.ts` paralleling `useBotanicalContent.ts` but calling the new functions/table and accepting a `subject` argument.
-- Small header nav added to both pages: "Plants" / "Trends" links so the user can switch modes.
-- Reuses all existing UI components (`GenerateButton`, `ContentDisplay`, `HistorySidebar`) — `HistorySidebar` gets an optional `labelField` prop so it can show `subject` instead of `plant_name`.
+## Frontend changes (`src/components/ContentDisplay.tsx`)
+Replace the single boolean `sendingTikTok` with a small state machine:
+- `idle` → `initializing` (calling our function) → `uploading` (TikTok PROCESSING_DOWNLOAD/UPLOAD) → `in_drafts` (terminal success) → back to `idle` after a few seconds, or → `failed` (with reason).
 
-## Constraints honored
-- Zero-Memory policy: every visual prompt fully restates style; AI text outputs self-contained JSON, no markdown.
-- Museum botanical study-plate aesthetic applied verbatim to any subject (per your choice).
-- Same models, same JSON contract, same novelty guard pattern (last 5 entries from `trend_content`).
-- No changes to `botanical_content`, `post-tiktok-carousel`, `tiktok-oauth`, or `client.ts`.
+After `post-tiktok-carousel` returns a `publish_id`, poll `tiktok-publish-status` every 2s (cap ~60 polls / 2 min) and translate each status to a friendly label.
 
-## Open question (non-blocking, default chosen)
-TikTok Creator Search Insights requires a research/insights scope that the current OAuth connection may not have. Default plan: try the gateway call first; if the connector returns a scope error, the suggestions endpoint falls back to asking Gemini for "currently trending TikTok topics related to {subject}" so the UI always works. If you want hard-fail-with-reconnect instead, say so before I build.
+UI:
+- Replace the static spinner inside the **Send to TikTok** button with an inline progress block that appears under the button while the send is active. The block shows:
+  - A 4-step checkmark stepper: **Initializing → Uploading to TikTok → Processing → In your drafts**. Current step pulses, completed steps show a check, failed step shows an X.
+  - An indeterminate `Progress` bar while not terminal.
+  - On success: green check + "Open the TikTok app — the carousel is now a draft in your inbox." A small "Send another" button collapses the block.
+  - On failure: red X + the `fail_reason` from TikTok (e.g. "url_ownership_unverified", "spam_risk_user_banned_from_posting"). Retry button reappears.
+- Keep the existing toast for at-a-glance feedback, but the inline block is the primary signal.
+
+## What stays the same
+- No schema changes.
+- `tiktok-oauth` untouched.
+- `post-tiktok-carousel` keeps the same request shape; only the response gains `publish_id`.
+- No new secrets.
+
+## Edge cases
+- Polling timeout (over 2 min in PROCESSING_*): show "Still processing — check the TikTok app in a minute." (non-error end state).
+- Network/edge errors during polling: retry up to 3 times, then surface as failed with the underlying message.
+- Re-clicking Send while a previous send is mid-flight is blocked by the button's disabled state, as today.
