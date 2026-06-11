@@ -17,11 +17,18 @@ export interface ThumbnailPrompt {
   prompt: string;
 }
 
+export interface VisualHistoryEntry {
+  image_url: string;
+  prompt: string;
+  created_at: string;
+}
+
 export interface FacelessVisual {
   moment: "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
   prompt: string;
   image_url?: string | null;
   error?: string | null;
+  history?: VisualHistoryEntry[];
 }
 
 
@@ -51,9 +58,8 @@ export function useBotanicalContent() {
   const { toast } = useToast();
 
   const pollForImages = async (contentId: string) => {
-    const MAX_POLLS = 180; // 180 * 2s = 360s (6 min, covers sequential Replicate runs)
+    const MAX_POLLS = 180;
     const INTERVAL_MS = 2000;
-
 
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, INTERVAL_MS));
@@ -77,11 +83,9 @@ export function useBotanicalContent() {
 
       setContent((prev) => (prev && prev.id === contentId ? { ...prev, faceless_visuals: visuals } : prev));
 
-      // Stop when every plate has resolved (image_url OR error)
       if (visuals.length > 0 && visuals.every((v) => v.image_url || v.error)) {
         return;
       }
-
     }
   };
 
@@ -95,13 +99,8 @@ export function useBotanicalContent() {
         { body: { image_provider: imageProvider } }
       );
 
-      if (fnError) {
-        throw new Error(fnError.message);
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || "Failed to generate content");
-      }
+      if (fnError) throw new Error(fnError.message);
+      if (!data.success) throw new Error(data.error || "Failed to generate content");
 
       const generatedContent: ContentWithId = {
         ...data.content,
@@ -130,21 +129,11 @@ export function useBotanicalContent() {
 
   const regenerateVisual = async (
     moment: string,
-    prompt: string,
-    subject?: {
-      commonName: string;
-      binomial: string;
-      description: string;
-      specimenNote?: string;
-    },
-    imageProvider: "lovable" | "replicate" = "lovable"
+    imageProvider: "lovable" | "replicate" = "lovable",
+    options: { silent?: boolean } = {}
   ) => {
     if (!content?.id) {
-      toast({
-        title: "Cannot regenerate",
-        description: "No content ID available",
-        variant: "destructive",
-      });
+      toast({ title: "Cannot regenerate", description: "No content ID available", variant: "destructive" });
       return null;
     }
 
@@ -155,51 +144,84 @@ export function useBotanicalContent() {
           body: {
             content_id: content.id,
             moment,
-            prompt,
-            subject,
             image_provider: imageProvider,
           },
         }
       );
 
-      if (fnError) {
-        throw new Error(fnError.message);
-      }
+      if (fnError) throw new Error(fnError.message);
+      if (!data.success) throw new Error(data.error || "Failed to regenerate image");
 
-      if (!data.success) {
-        throw new Error(data.error || "Failed to regenerate image");
-      }
-
-      // Update local state with new image URL (and prompt if returned)
       setContent((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
           faceless_visuals: prev.faceless_visuals.map((v) =>
             v.moment === moment
-              ? {
-                  ...v,
-                  image_url: data.image_url,
-                  prompt: data.prompt ?? v.prompt,
-                }
+              ? { ...v, image_url: data.image_url, prompt: data.prompt ?? v.prompt, error: null, history: data.history ?? v.history }
               : v
           ),
         };
       });
 
-      toast({
-        title: "Image regenerated",
-        description: `${moment} visual updated.`,
-      });
+      if (!options.silent) {
+        toast({ title: "Image regenerated", description: `${moment} visual updated.` });
+      }
 
       return data.image_url;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      toast({
-        title: "Regeneration failed",
-        description: message,
-        variant: "destructive",
+      toast({ title: "Regeneration failed", description: message, variant: "destructive" });
+      return null;
+    }
+  };
+
+  const regenerateAllVisuals = async (imageProvider: "lovable" | "replicate" = "lovable") => {
+    const moments = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
+    for (const m of moments) {
+      await regenerateVisual(m, imageProvider, { silent: true });
+    }
+    toast({ title: "All visuals regenerated", description: "Refreshed with the latest plate style." });
+  };
+
+  const restoreVisualVersion = async (
+    moment: string,
+    entry: VisualHistoryEntry
+  ) => {
+    if (!content?.id) return null;
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke(
+        "regenerate-visual",
+        {
+          body: {
+            content_id: content.id,
+            moment,
+            action: "restore",
+            image_url: entry.image_url,
+            prompt: entry.prompt,
+          },
+        }
+      );
+      if (fnError) throw new Error(fnError.message);
+      if (!data.success) throw new Error(data.error || "Failed to restore version");
+
+      setContent((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          faceless_visuals: prev.faceless_visuals.map((v) =>
+            v.moment === moment
+              ? { ...v, image_url: data.image_url, prompt: data.prompt, error: null, history: data.history ?? [] }
+              : v
+          ),
+        };
       });
+
+      toast({ title: "Version restored", description: `${moment} reverted.` });
+      return data.image_url;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      toast({ title: "Restore failed", description: message, variant: "destructive" });
       return null;
     }
   };
@@ -222,7 +244,7 @@ export function useBotanicalContent() {
     });
   };
 
-  return { content, isLoading, error, generate, reset, loadFromHistory, regenerateVisual };
+  return { content, isLoading, error, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion };
 }
 
 export function useContentHistory() {
@@ -243,7 +265,6 @@ export function useContentHistory() {
     } else {
       setHistory(
         (data || []).map((item) => {
-          // Parse JSON strings back to objects
           let script: ScriptStructure;
           let thumbnail_prompt: ThumbnailPrompt;
           
@@ -302,17 +323,10 @@ export function useContentHistory() {
       .eq("id", id);
 
     if (error) {
-      toast({
-        title: "Delete failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
     } else {
       setHistory((prev) => prev.filter((item) => item.id !== id));
-      toast({
-        title: "Deleted",
-        description: "Content removed from history.",
-      });
+      toast({ title: "Deleted", description: "Content removed from history." });
     }
   };
 
