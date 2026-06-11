@@ -26,6 +26,8 @@ const Trends = () => {
     regenerateVisual,
     regenerateAllVisuals,
     restoreVisualVersion,
+    regenerateCaption,
+    isRegeneratingCaption,
   } = useTrendContent();
   const {
     history,
