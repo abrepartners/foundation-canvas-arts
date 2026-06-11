@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.post-tiktok-carousel]
 verify_jwt = false
+
+[functions.tiktok-oauth]
+verify_jwt = false
