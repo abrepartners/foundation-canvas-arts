@@ -1,98 +1,58 @@
 ## Goal
 
-Three connected upgrades:
+The locked Architectural Botanical Study Plate style says "Realistic botanical or organic specimen illustration," but the per-moment composition briefs for Re-hook, Dangle 2, and Verified Truth are pushing the model into pure graphite-sketch / line-drawing territory (see the circled Re-hook in the screenshot — it lost the photoreal carnation entirely).
 
-1. **One-click regenerate** — no dialog, no text fields. Pressing Regenerate immediately re-runs the image using the current locked Architectural Botanical Study Plate style + the correct moment brief + the plant already on the content.
-2. **Refresh old content with the new style** — give old generations a "Regenerate all 6 with new style" button so previously generated plates (made under the old style) can be brought up to current standards.
-3. **Per-slot version history** — keep previous generations for each moment so you can flip back to an earlier render if the new one is worse.
+Fix: tighten the style block and rewrite those three moment briefs so the *subject itself* must always be rendered photo-realistically. Diagonals, cross-sections, callouts, and evidence panels are layered ON TOP of realistic specimen art — never replacing it with a sketch.
 
-No changes to: JSON contract, Replicate routing, polling, retries, provider toggle, copy-button cleanup, script display, DB table schema (we'll reuse the existing `script_visuals` JSON column).
+No changes to: UI, JSON contract, DB schema, Replicate routing, regenerate buttons, history/versioning, polling, retries, provider toggle, copy-button cleanup, script display.
 
 ---
 
-## 1. One-click regenerate (no dialog)
+## Changes
 
-**`src/components/ContentDisplay.tsx`**
-- Remove the `RegenerateVisualDialog` open/close flow. The Regenerate button calls `onRegenerate(visual.moment)` directly.
-- Show a spinner overlay on that one tile while it runs (already wired).
+### 1. Strengthen the locked style block (3 files, identical wording)
 
-**`src/hooks/useBotanicalContent.ts`**
-- `regenerateVisual(moment)` — drop the `subject` and `prompt` arguments from the call site. Pass only `{ content_id, moment, image_provider }` to the edge function. The edge function already knows how to rebuild the locked prompt from the stored `plant_name`.
-
-**`supabase/functions/regenerate-visual/index.ts`**
-- Accept `{ content_id, moment, image_provider }`. Remove the `subject` / `prompt` inputs (keep them optional for backward compat but ignore).
-- Look up the row, read `plant_name`, call `buildPlatePrompt(plant_name, moment)` — always uses the current in-function style block + moment brief. This is what makes the regenerate "use the new updated style" automatically.
-
-**`src/components/RegenerateVisualDialog.tsx`** — delete (no longer used).
-**`src/lib/plateTemplate.ts`** — keep the file; just remove the `PlateSubject` re-export usage from the dialog. (No other consumers.)
-
----
-
-## 2. "Regenerate all with new style" for old content
-
-**`src/components/ContentDisplay.tsx`**
-- Add a single button in the Faceless Visuals header: **"Regenerate all with new style"**. Confirms once, then loops the 6 moments sequentially (sequential avoids Replicate 429 storms — matches the existing batch generator's pacing).
-- Per-tile state already shows spinner while each runs.
-
-**`src/hooks/useBotanicalContent.ts`**
-- Add `regenerateAllVisuals()` helper that awaits `regenerateVisual(moment)` for each of the 6 moments in order.
-
-No edge function changes needed — it just reuses the new one-click path above.
-
----
-
-## 3. Per-slot version history
-
-We extend the in-JSON shape of each visual without changing the DB column. Today each entry is:
+Add an explicit, non-negotiable rendering rule to `PLATE_STYLE_BLOCK`:
 
 ```
-{ moment, prompt, image_url, error }
+SPECIMEN RENDERING (NON-NEGOTIABLE): The botanical subject itself must always be rendered as a photo-realistic, museum-grade botanical illustration with true-to-life petal texture, depth, soft shadow, and dimensional form. Never a flat line drawing, never a graphite sketch, never a wireframe, never a pure blueprint outline of the subject. Blueprint construction lines, measurement brackets, callouts, leader lines, and annotations are layered AROUND and ON TOP of the realistic specimen — they never replace it.
 ```
 
-New shape (backward compatible — old entries are read as having no history):
+Add to the AVOID list:
+`flat sketch renderings of the subject, pencil-only drawings of the subject, wireframe-only specimens, line-art-only flowers or leaves`
 
-```
-{
-  moment,
-  prompt,            // current prompt
-  image_url,         // current active image (what UI shows)
-  error,
-  history: [         // newest first, capped at 5
-    { image_url, prompt, created_at }
-  ]
-}
-```
+### 2. Rewrite the three drifting moment briefs
 
-**`supabase/functions/regenerate-visual/index.ts`**
-- Before overwriting, push the existing `{image_url, prompt, created_at: now}` onto `history` (if `image_url` was set). Cap at 5. Then set the new `image_url` and `prompt` as current.
-- Storage: upload the new file to a versioned path `${content_id}/${moment}/${timestamp}.png` instead of overwriting `${moment}.png`. This guarantees old URLs in `history` keep working. (Existing flat `${moment}.png` files remain readable for legacy rows.)
+**Re-hook** — keep diagonal, kill the sketch:
+> MOMENT — RE-HOOK (SHOT TYPE: DIAGONAL HERO WITH HEAVY BLUEPRINT OVERLAY): The same photo-realistic specimen as the hook, rendered at full photoreal fidelity, but composed on a strong diagonal axis cutting across the frame at larger scale, with deeper shadow, higher contrast, and heavier blueprint measurement brackets, construction lines, and figure labels overlaid around it. The subject itself must remain a realistic botanical illustration — NOT a sketch, NOT a line drawing, NOT a graphite outline. Only the composition angle and overlay density change.
 
-**`src/hooks/useBotanicalContent.ts`**
-- Extend the `FacelessVisual` type with optional `history?: { image_url: string; prompt: string; created_at: string }[]`.
-- `regenerateVisual` response now also returns the updated visual entry (including history); merge it into local state.
+**Dangle 2** — keep cross-sections, but render them photoreal:
+> MOMENT — DANGLE 2 (SHOT TYPE: PHOTOREAL SCIENTIFIC BREAKDOWN): Multiple inset panels showing cross sections, internal anatomy, and magnified tissue — each panel rendered as a photo-realistic botanical illustration with true texture and depth, not as line drawings. Detail circles with leader lines and numeric markers connect the panels. Investigative and technical feel comes from the panel layout and annotations, not from flattening the specimen into a sketch.
 
-**`src/components/ContentDisplay.tsx`**
-- On each tile, when `history.length > 0`, show a small "History (N)" chevron under the image.
-- Expanding shows a horizontal strip of thumbnails. Clicking one shows a **"Use this version"** action that calls a new edge function action (or extends the existing one) with `{content_id, moment, action: "restore", image_url, prompt}` to swap current ↔ that history entry. The currently-active version always moves into history on swap so nothing is lost.
+**Verified Truth** — keep evidence layout, lock photoreal parts:
+> MOMENT — VERIFIED TRUTH (SHOT TYPE: PHOTOREAL EVIDENCE BOARD): A structured A, B, C, D row or grouped panels of separated specimen parts (petal, stem segment, bud, leaf, seed, etc.), each part rendered as a photo-realistic museum-grade botanical illustration. Figure callouts (Fig. 1, Fig. 2), measurement references, and labels sit beside the realistic parts. Most credible, research-based plate. The parts themselves are never sketches or outlines.
+
+### 3. Reinforce the variety rule
+
+Update `COMPOSITION_VARIETY_RULE`:
+> The six images MUST NOT look like six variations of the same full botanical poster. They must share the exact same visual style (paper, palette, typography, blueprint language, AND photoreal specimen rendering), but each moment must have a clearly different shot type and composition as specified in its moment brief. Composition variety must NEVER be achieved by switching the subject from photoreal to sketch — the specimen is always photoreal across all six plates.
 
 ---
 
-## Confirmations
+## Files touched (mirrored constants — same edit in all three)
 
-- Six moments unchanged.
-- Replicate routing, polling, retry logic untouched.
-- Provider toggle untouched.
-- Script copy-cleanup untouched.
-- DB schema unchanged (only JSON shape inside `script_visuals` is extended, and the change is backward compatible).
-- The dynamic subject still flows in — for new one-click regen it's read from `plant_name` on the stored row; for fresh generations nothing changes.
-- Each generated prompt is still fully standalone (built from `PLATE_STYLE_BLOCK` + moment brief + subject + variety rule + closing line).
+- `src/lib/architecturalPlate.ts`
+- `supabase/functions/regenerate-visual/index.ts`
+- `supabase/functions/generate-botanical-content/index.ts`
+
+No other files change.
 
 ---
 
-## Files touched
+## Verification after build
 
-- `supabase/functions/regenerate-visual/index.ts` — accept minimal payload, rebuild prompt from `plant_name`, write versioned storage path, append to `history`, add `restore` action.
-- `src/hooks/useBotanicalContent.ts` — slim `regenerateVisual` signature, add `regenerateAllVisuals` and `restoreVisualVersion`, extend type.
-- `src/components/ContentDisplay.tsx` — direct-click regenerate, "Regenerate all" button, history strip with "Use this version".
-- `src/components/RegenerateVisualDialog.tsx` — delete.
-- `src/pages/Index.tsx` — wire the two new hook methods through.
+1. Regenerate the Re-hook on the current carnation — confirm the flower is photoreal, just diagonal with heavier brackets.
+2. Regenerate Dangle 2 — cross-section panels render as realistic illustrations, not pencil sketches.
+3. Regenerate Verified Truth — A/B/C/D parts are realistic specimen art, not outlines.
+4. Confirm Hook, Dangle 1, and Close are unchanged in look.
+5. Confirm script copy cleanup, history strip, one-click regenerate, and "Regenerate all" still behave exactly as before.
