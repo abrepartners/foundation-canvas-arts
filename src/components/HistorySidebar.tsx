@@ -10,6 +10,7 @@ interface HistorySidebarProps {
   onSelect: (item: SavedContent) => void;
   onDelete: (id: string) => void;
   selectedId?: string;
+  className?: string;
 }
 
 export function HistorySidebar({
@@ -18,9 +19,10 @@ export function HistorySidebar({
   onSelect,
   onDelete,
   selectedId,
+  className = "w-72 border-r border-border",
 }: HistorySidebarProps) {
   return (
-    <div className="w-72 border-r border-border bg-card/50 flex flex-col h-full">
+    <div className={`${className} bg-card/50 flex flex-col h-full`}>
       <div className="p-4 border-b border-border flex items-center gap-2">
         <History className="h-4 w-4 text-muted-foreground" />
         <h2 className="font-serif text-sm text-foreground">History</h2>
@@ -68,7 +70,7 @@ export function HistorySidebar({
                     e.stopPropagation();
                     onDelete(item.id);
                   }}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>

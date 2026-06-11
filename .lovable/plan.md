@@ -1,111 +1,69 @@
 ## Goal
 
-Fix the caption template so every generated caption:
+Make the app comfortable on a phone (≤768px). Desktop layout stays unchanged. Pure frontend/presentation — no backend, no schema, no business logic.
 
-1. Starts with a **bold title line** (the attention-grabbing headline at the very top).
-2. Always ends with the **5 hashtags** block (currently sometimes missing).
+## Problems on mobile today
 
-This applies to both newly generated content and the "Regenerate caption" button.
+1. `HistorySidebar` is a fixed 288px column rendered inline and open by default — on a 440px screen it eats most of the width, squeezing the main content to a thin strip.
+2. Header row (sidebar toggle + title + Plants/Trends nav) is cramped; title wraps under the nav chips.
+3. Top action row in `ContentDisplay` ("Send to TikTok" + "Generate New" + plant name + fact) wraps awkwardly; buttons are small targets and not full-width.
+4. `FacelessVisualsSection` "Regenerate" overlay only appears on hover — invisible on touch devices. Per-card action row underneath is also dense (History / Prompt / Regen / Copy crammed in ~180px).
+5. `HistorySidebar` delete button is `opacity-0 group-hover:opacity-100` — unreachable on touch.
+6. Trends page: subject Input + "Suggest trends" button sit side-by-side; the suggest button gets squashed and the input shrinks below comfortable.
+7. Page padding (`container py-8`) and card padding (`p-4`) are fine but the outer `px` on mobile could come down a touch so cards don't feel pinched.
+8. `GenerateButton` provider Select is fixed `w-[220px]` — fine, but the wrapper should center cleanly.
 
-## Where the change lives
+## Changes
 
-The caption spec is duplicated in three edge functions. All three must be updated identically so behavior matches whether the caption is generated fresh or regenerated:
+### 1. Sidebar becomes a drawer on mobile
+- In `src/pages/Index.tsx` and `src/pages/Trends.tsx`: use `useIsMobile()` to decide.
+  - Desktop: keep current inline sidebar behavior (toggle collapses the column).
+  - Mobile: render `HistorySidebar` inside a shadcn `Sheet` (left side). The existing header toggle button opens the sheet instead of toggling the inline column. Default `sidebarOpen = !isMobile` so phones land on the content, not on history.
+- `HistorySidebar` itself: drop the fixed `w-72` when rendered inside the Sheet (accept an optional `className` prop, or wrap it). Keep desktop width unchanged.
+- Make the delete button always visible on touch: replace `opacity-0 group-hover:opacity-100` with `opacity-100 md:opacity-0 md:group-hover:opacity-100`.
+- Auto-close the sheet on item select (mobile only).
 
-- `supabase/functions/generate-botanical-content/index.ts`
-- `supabase/functions/generate-trend-content/index.ts`
-- `supabase/functions/regenerate-caption/index.ts`
+### 2. Header polish
+- In both `Index.tsx` and `Trends.tsx` headers:
+  - Shrink title on small screens (`text-xl md:text-2xl`) and hide the subtitle on `<sm` to free room.
+  - Keep Plants/Trends nav chips but ensure they don't wrap under the title (already fine once subtitle hides).
 
-## Spec changes (applied to all three)
+### 3. ContentDisplay top toolbar
+- Stack vertically on mobile: title/fact on top, action buttons in a row underneath that wraps to full-width buttons (`w-full sm:w-auto`).
+- "Send to TikTok ({n})" and "Generate New" become `flex-1 sm:flex-none` so each takes half-width on phones — bigger tap targets.
 
-Add a new **Section 0** at the top of the caption structure:
+### 4. Faceless visuals — touch-friendly
+- Replace the hover-only black overlay with: an always-visible small floating "Regenerate" icon button pinned to the top-right of each tile (rounded, semi-transparent background). Hover overlay can stay for desktop, but the floating button works on touch.
+- Per-tile action row: keep moment label on its own line, move the buttons (`History` / `Prompt` / `Regen` / `Copy`) to a second line with `justify-end` and slightly larger hit area (`h-8`). On mobile this prevents the squeeze.
+- Grid stays `grid-cols-2 md:grid-cols-3` (already mobile-correct).
 
-> **0. Bold title line.** A single short headline (4–10 words) that names the surprising angle of the post. Wrap it in `**double asterisks**` so it renders bold on platforms that support markdown and visually reads as a title on those that don't. No emojis. No trailing punctuation other than `.` or `?`. Followed by a blank line.
+### 5. Trends input row
+- Stack `Input` and "Suggest trends" button vertically on `<sm`, side-by-side from `sm` upward. Suggest button becomes full-width on mobile.
 
-Strengthen the hashtag rule (Section 12) to prevent omission:
+### 6. Spacing tweaks
+- `main > .container py-8` → `py-6 md:py-8`.
+- Cards: keep `p-4`, but reduce `space-y-6` between sections to `space-y-4 md:space-y-6` to lower scroll length on phones.
 
-> Hashtags are **mandatory**. The caption is invalid without exactly 5 hashtag lines at the very end. If unsure, default to: `#botany`, `#plantscience`, `#plantfacts`, `#botanicalclassification`, plus one topic-specific tag.
-
-Keep everything else (175–300 words, "This is why:" bullets, brand line, "Topics covered:", etc.) unchanged.
-
-## Deploy
-
-After the edits, redeploy the three functions:
-`generate-botanical-content`, `generate-trend-content`, `regenerate-caption`.
+### 7. Plant landing card (Index empty state)
+- The intro icon/title/paragraph are already centered and narrow — no change needed beyond inheriting the tighter outer padding.
 
 ## Out of scope
 
-- No UI changes. `ContentSection` already renders the caption as preformatted text, so the `**bold**` markers will appear as-is in the app and render bold when pasted into TikTok/Instagram drafts that support it. Say so if you'd like a markdown renderer in the app instead — that would be a follow-up.
-- No DB/schema changes.
-- Existing saved captions are not backfilled; use "Regenerate caption" on any old item to upgrade it.  
-  
-  
-ensure to follow this: and add it to your memory:  
-When generating a TikTok or Instagram carousel draft, automatically generate an SEO-style caption that matches the educational botanical verification style.
-  Caption goal:  
-  Create a caption that explains the carousel topic in a clear, searchable, educational format. The caption should help the post rank for search terms while still sounding natural and human.
-  Caption structure:
-  1. Start with a strong hook that sounds surprising or slightly counterintuitive.
-  2. Explain why the hook sounds wrong at first.
-  3. Clarify the scientific or factual reason behind it.
-  4. Use plain language, not academic wording.
-  5. Include the core educational takeaway.
-  6. Reinforce the difference between common understanding and scientific definition.
-  7. Add a short recurring brand line near the end:  
-  “My brother studies plants.  
-  I verify the facts.”
-  8. End with a simple promise of more verified explanations coming soon.
-  9. Include a “Topics covered” section with searchable keyword phrases.
-  10. End with relevant hashtags.
-  Caption tone:  
-  Educational, calm, confident, visually descriptive, and easy to understand.  
-  It should feel like a verified science explanation, not a random fun fact.  
-  Avoid hype, slang, and overly casual wording.
-  Caption length:  
-  Medium to long form, usually 175 to 300 words.
-  SEO requirements:  
-  The caption should naturally include searchable phrases related to the topic, such as:  
-  Botanical classification  
-  Plant structure  
-  Seeds vs fruits  
-  Fruit definitions  
-  Plant reproduction  
-  Why [topic] is classified this way  
-  How botanists define [topic]  
-  Common names vs scientific definitions  
-  Plant anatomy explained
-  Caption format example:
-  [Surprising fact statement.]
-  That sounds wrong until you understand how plants are actually classified.
-  This visual botanical classification study explains the difference between common names and botanical definitions. In botany, fruits and seeds are not defined by taste, size, tradition, or how we use them in the kitchen. They are defined by structure, development, and how the plant reproduces.
-  [Explain the specific plant fact clearly.]
-  Most confusion about plant facts comes from relying on common names instead of botanical structure.
-  This is why:  
-  – [Key fact 1]  
-  – [Key fact 2]  
-  – [Key fact 3]  
-  – [Key fact 4]
-  Botanical classification doesn’t care about flavor, sweetness, or grocery store categories. It focuses on anatomy, reproductive structure, and development.
-  This post is part of an ongoing botanical verification series designed to visually explain plant science concepts that often sound fake but are scientifically accurate.
-  My brother studies plants.  
-  I verify the facts.
-  More verified botanical explanations coming soon.
-  Topics covered:  
-  [SEO keyword]  
-  [SEO keyword]  
-  [SEO keyword]  
-  [SEO keyword]  
-  [SEO keyword]  
-  [SEO keyword]
-  #[hashtag]  
-  #[hashtag]  
-  #[hashtag]  
-  #[hashtag]  
-  #[hashtag]
-  Important:  
-  Do not generate a short generic caption.  
-  Do not only write a witty caption.  
-  Do not make it sound like an ad.  
-  Do not overuse hashtags.  
-  Do not use incorrect science claims.  
-  Always make the caption educational, searchable, and structured like a mini explanation.
-- &nbsp;
+- No backend changes.
+- No copy/wording changes.
+- No new features (e.g. no mobile-specific generate flow).
+- Caption template / edge functions untouched.
+- Desktop layout pixel-identical except where noted (delete-button visibility uses `md:` guard).
+
+## Files touched
+
+- `src/pages/Index.tsx`
+- `src/pages/Trends.tsx`
+- `src/components/HistorySidebar.tsx`
+- `src/components/ContentDisplay.tsx`
+
+## Verification
+
+After implementation: load preview at 390×844 (mobile) and 1280×800 (desktop) and confirm:
+- Phone: history opens as a drawer, content area uses full width, all action buttons are reachable without hover, no horizontal scroll.
+- Desktop: layout matches current behavior.

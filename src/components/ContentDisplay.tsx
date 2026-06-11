@@ -352,22 +352,19 @@ function FacelessVisualsSection({
                       className="w-full h-full object-cover"
                     />
                     {onRegenerate && (
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleRegen(visual.moment)}
-                          disabled={isRegenerating}
-                          className="text-xs"
-                        >
-                          {isRegenerating ? (
-                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                          ) : (
-                            <RefreshCw className="h-3 w-3 mr-1" />
-                          )}
-                          Regenerate
-                        </Button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRegen(visual.moment)}
+                        disabled={isRegenerating}
+                        title="Regenerate this image"
+                        className="absolute top-2 right-2 h-8 w-8 rounded-full bg-background/80 backdrop-blur border border-border flex items-center justify-center text-foreground hover:bg-background transition-colors disabled:opacity-50"
+                      >
+                        {isRegenerating ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                      </button>
                     )}
                   </>
                 ) : (
@@ -407,40 +404,28 @@ function FacelessVisualsSection({
                 )}
               </div>
 
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-xs font-medium text-primary">
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-primary block">
                   {momentLabels[visual.moment]}
                 </span>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center justify-end gap-1 flex-wrap">
                   {history.length > 0 && (
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => toggleHistory(visual.moment)}
-                      className="h-6 px-2 text-xs"
+                      className="h-8 px-2 text-xs"
                       title="Previous versions"
                     >
                       <History className="h-3 w-3 mr-0.5" />
                       {history.length}
                     </Button>
                   )}
-                  {onRegenerate && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRegen(visual.moment)}
-                      disabled={isRegenerating}
-                      className="h-6 px-2 text-xs"
-                      title="Regenerate this image"
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                    </Button>
-                  )}
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => togglePrompt(idx)}
-                    className="h-6 px-2 text-xs"
+                    className="h-8 px-2 text-xs"
                   >
                     {expandedPrompts.has(idx) ? "Hide" : "Prompt"}
                   </Button>
@@ -619,10 +604,10 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <h2 className="text-2xl font-serif text-foreground">{content.plant_name}</h2>
+    <div className="w-full max-w-4xl mx-auto space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-xl md:text-2xl font-serif text-foreground break-words">{content.plant_name}</h2>
           <p className="text-sm text-muted-foreground mt-1">{content.verified_fact}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -630,7 +615,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
             variant="default"
             onClick={handleSendTikTok}
             disabled={!canSendTikTok || sending}
-            className="font-body"
+            className="font-body flex-1 sm:flex-none"
             title={canSendTikTok ? "Send carousel to TikTok drafts" : "Generate all images first"}
           >
             {sending ? (
@@ -640,7 +625,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
             )}
             Send to TikTok ({imageUrls.length})
           </Button>
-          <Button variant="outline" onClick={onReset} className="font-body">
+          <Button variant="outline" onClick={onReset} className="font-body flex-1 sm:flex-none">
             <RotateCcw className="mr-2 h-4 w-4" />
             Generate New
           </Button>
