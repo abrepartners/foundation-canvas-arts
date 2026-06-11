@@ -5,6 +5,45 @@
 // Note: TikTok photo posts only support PULL_FROM_URL, and the image URL
 // prefix must be verified in the TikTok developer portal (URL properties).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decode as decodeImage } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
+
+const BUCKET = "botanical-faceless-visuals";
+
+async function ensureJpegUrl(
+  url: string,
+  supabase: ReturnType<typeof createClient>,
+  publicBase: string,
+): Promise<string> {
+  const lower = url.toLowerCase().split("?")[0];
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return url;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+
+  const img = await decodeImage(bytes);
+  // ImageScript returns Image | GIF; encodeJPEG exists on Image
+  // deno-lint-ignore no-explicit-any
+  const jpegBytes: Uint8Array = await (img as any).encodeJPEG(90);
+
+  // Derive path inside bucket: take the path after the bucket name
+  const marker = `/${BUCKET}/`;
+  const idx = url.indexOf(marker);
+  const originalPath = idx >= 0
+    ? url.slice(idx + marker.length).split("?")[0]
+    : `misc/${crypto.randomUUID()}.png`;
+  const jpegPath = `tiktok-jpeg/${originalPath.replace(/\.png$/i, "")}.jpg`;
+
+  const { error: upErr } = await supabase.storage
+    .from(BUCKET)
+    .upload(jpegPath, jpegBytes, {
+      contentType: "image/jpeg",
+      upsert: true,
+    });
+  if (upErr) throw new Error(`Upload failed for ${jpegPath}: ${upErr.message}`);
+
+  return `${publicBase}/${jpegPath}`;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
