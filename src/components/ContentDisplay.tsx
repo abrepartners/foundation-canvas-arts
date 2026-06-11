@@ -132,6 +132,8 @@ interface ContentDisplayProps {
   onRegenerateVisual?: (moment: string) => Promise<string | null>;
   onRegenerateAll?: () => Promise<void>;
   onRestoreVersion?: (moment: string, entry: VisualHistoryEntry) => Promise<string | null>;
+  onRegenerateCaption?: () => Promise<string | null>;
+  isRegeneratingCaption?: boolean;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -500,7 +502,7 @@ function ContentCard({ title, children, copyText }: { title: string; children: R
   );
 }
 
-export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegenerateAll, onRestoreVersion }: ContentDisplayProps) {
+export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegenerateAll, onRestoreVersion, onRegenerateCaption, isRegeneratingCaption }: ContentDisplayProps) {
   const { toast } = useToast();
   const [sendPhase, setSendPhase] = useState<SendPhase>("idle");
   const [sendDetail, setSendDetail] = useState<string | undefined>(undefined);
@@ -676,11 +678,34 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
           </p>
         </ContentCard>
 
-        <ContentCard title="Caption" copyText={content.caption}>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <h3 className="font-serif text-lg text-foreground">Caption</h3>
+            <div className="flex items-center gap-2">
+              {onRegenerateCaption && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRegenerateCaption()}
+                  disabled={isRegeneratingCaption}
+                  className="text-xs"
+                  title="Rewrite caption in the SEO long-form style"
+                >
+                  {isRegeneratingCaption ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3 w-3 mr-1" />
+                  )}
+                  Regenerate
+                </Button>
+              )}
+              <CopyButton text={content.caption} />
+            </div>
+          </div>
           <p className="text-sm text-foreground/90 font-body whitespace-pre-wrap">
             {content.caption}
           </p>
-        </ContentCard>
+        </div>
 
         <ContentCard title="Part 2 Hook" copyText={content.part2_hook}>
           <p className="text-sm text-foreground/90 font-body whitespace-pre-wrap">

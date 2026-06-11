@@ -26,6 +26,8 @@ const Trends = () => {
     regenerateVisual,
     regenerateAllVisuals,
     restoreVisualVersion,
+    regenerateCaption,
+    isRegeneratingCaption,
   } = useTrendContent();
   const {
     history,
@@ -242,6 +244,8 @@ const Trends = () => {
                 }
                 onRegenerateAll={() => regenerateAllVisuals(imageProvider)}
                 onRestoreVersion={restoreVisualVersion}
+                onRegenerateCaption={regenerateCaption}
+                isRegeneratingCaption={isRegeneratingCaption}
               />
             )}
           </div>

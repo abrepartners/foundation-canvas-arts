@@ -244,7 +244,35 @@ export function useBotanicalContent() {
     });
   };
 
-  return { content, isLoading, error, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion };
+  const [isRegeneratingCaption, setIsRegeneratingCaption] = useState(false);
+  const regenerateCaption = async () => {
+    if (!content?.id) {
+      toast({ title: "Cannot regenerate", description: "No content ID available", variant: "destructive" });
+      return null;
+    }
+    setIsRegeneratingCaption(true);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke(
+        "regenerate-caption",
+        { body: { table: "botanical_content", id: content.id } },
+      );
+      if (fnError) throw new Error(fnError.message);
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+      const newCaption = (data as { caption?: string })?.caption ?? "";
+      if (!newCaption) throw new Error("Empty caption");
+      setContent((prev) => (prev ? { ...prev, caption: newCaption } : prev));
+      toast({ title: "Caption regenerated", description: "Updated to the SEO long-form caption." });
+      return newCaption;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      toast({ title: "Caption regeneration failed", description: message, variant: "destructive" });
+      return null;
+    } finally {
+      setIsRegeneratingCaption(false);
+    }
+  };
+
+  return { content, isLoading, error, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion, regenerateCaption, isRegeneratingCaption };
 }
 
 export function useContentHistory() {

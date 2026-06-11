@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 
 const Index = () => {
-  const { content, isLoading, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion } =
+  const { content, isLoading, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion, regenerateCaption, isRegeneratingCaption } =
     useBotanicalContent();
   const {
     history,
@@ -151,6 +151,8 @@ const Index = () => {
                 onRegenerateVisual={(moment) => regenerateVisual(moment, imageProvider)}
                 onRegenerateAll={() => regenerateAllVisuals(imageProvider)}
                 onRestoreVersion={restoreVisualVersion}
+                onRegenerateCaption={regenerateCaption}
+                isRegeneratingCaption={isRegeneratingCaption}
               />
             )}
           </div>
