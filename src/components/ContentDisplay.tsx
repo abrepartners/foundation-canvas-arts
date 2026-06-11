@@ -132,6 +132,8 @@ interface ContentDisplayProps {
   onRegenerateVisual?: (moment: string) => Promise<string | null>;
   onRegenerateAll?: () => Promise<void>;
   onRestoreVersion?: (moment: string, entry: VisualHistoryEntry) => Promise<string | null>;
+  onRegenerateCaption?: () => Promise<string | null>;
+  isRegeneratingCaption?: boolean;
 }
 
 function CopyButton({ text }: { text: string }) {
