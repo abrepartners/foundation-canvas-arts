@@ -165,14 +165,16 @@ serve(async (req) => {
     }
 
     // === REGENERATE ACTION (default) ===
+    // Default to Replicate Flux 1.1 Pro for photoreal output.
+    // Only fall back to Lovable Gemini if explicitly requested.
     const imageProvider: "lovable" | "replicate" =
-      image_provider === "replicate" ? "replicate" : "lovable";
+      image_provider === "lovable" ? "lovable" : "replicate";
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
-      throw new Error("Replicate selected but REPLICATE_API_KEY not configured");
+      throw new Error("REPLICATE_API_KEY not configured — required for photoreal Flux rendering");
     }
 
     // Always build a fresh prompt from the current locked style + stored plant name.

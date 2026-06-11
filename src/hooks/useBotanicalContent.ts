@@ -89,14 +89,14 @@ export function useBotanicalContent() {
     }
   };
 
-  const generate = async (imageProvider: "lovable" | "replicate" = "lovable") => {
+  const generate = async (_imageProvider: "lovable" | "replicate" = "replicate") => {
     setIsLoading(true);
     setError(null);
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke(
         "generate-botanical-content",
-        { body: { image_provider: imageProvider } }
+        { body: { image_provider: "replicate" } }
       );
 
       if (fnError) throw new Error(fnError.message);
@@ -129,7 +129,7 @@ export function useBotanicalContent() {
 
   const regenerateVisual = async (
     moment: string,
-    imageProvider: "lovable" | "replicate" = "lovable",
+    _imageProvider: "lovable" | "replicate" = "replicate",
     options: { silent?: boolean } = {}
   ) => {
     if (!content?.id) {
@@ -144,7 +144,7 @@ export function useBotanicalContent() {
           body: {
             content_id: content.id,
             moment,
-            image_provider: imageProvider,
+            image_provider: "replicate",
           },
         }
       );
@@ -176,10 +176,10 @@ export function useBotanicalContent() {
     }
   };
 
-  const regenerateAllVisuals = async (imageProvider: "lovable" | "replicate" = "lovable") => {
+  const regenerateAllVisuals = async (_imageProvider: "lovable" | "replicate" = "replicate") => {
     const moments = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
     for (const m of moments) {
-      await regenerateVisual(m, imageProvider, { silent: true });
+      await regenerateVisual(m, "replicate", { silent: true });
     }
     toast({ title: "All visuals regenerated", description: "Refreshed with the latest plate style." });
   };

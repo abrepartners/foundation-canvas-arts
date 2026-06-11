@@ -298,15 +298,17 @@ serve(async (req) => {
       throw new Error("Supabase credentials not configured");
     }
 
-    let imageProvider: "lovable" | "replicate" = "lovable";
+    // Default to Replicate Flux 1.1 Pro for photoreal output.
+    // Only use Lovable Gemini if explicitly requested.
+    let imageProvider: "lovable" | "replicate" = "replicate";
     try {
       const body = await req.json();
-      if (body?.image_provider === "replicate") imageProvider = "replicate";
+      if (body?.image_provider === "lovable") imageProvider = "lovable";
     } catch {
-      // no body — default to lovable
+      // no body — default to replicate
     }
     if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
-      throw new Error("Replicate selected but REPLICATE_API_KEY not configured");
+      throw new Error("REPLICATE_API_KEY not configured — required for photoreal Flux rendering");
     }
     console.log(`Image provider: ${imageProvider}`);
 
