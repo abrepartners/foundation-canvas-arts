@@ -1,9 +1,6 @@
-// Sends a photo carousel to the connected TikTok account's inbox as a DRAFT
-// (post_mode MEDIA_UPLOAD). The user finishes and publishes inside TikTok.
-// Uses the app's own TikTok developer app via tokens stored by tiktok-oauth.
-// Requires secrets: TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET.
-// Note: TikTok photo posts only support PULL_FROM_URL, and the image URL
-// prefix must be verified in the TikTok developer portal (URL properties).
+// Polls TikTok publish status for a given publish_id and returns a normalized
+// status so the client can show progress until the carousel is in the user's
+// drafts/inbox (SEND_TO_USER_INBOX) or has failed.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -13,14 +10,8 @@ const corsHeaders = {
 };
 
 const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
-const CONTENT_INIT_URL =
-  "https://open.tiktokapis.com/v2/post/publish/content/init/";
-
-interface Body {
-  title?: string;
-  description?: string;
-  photo_images: string[];
-}
+const STATUS_URL =
+  "https://open.tiktokapis.com/v2/post/publish/status/fetch/";
 
 interface TokenRow {
   id: string;
@@ -55,9 +46,21 @@ Deno.serve(async (req) => {
     if (!SUPABASE_URL || !SERVICE_KEY) {
       throw new Error("Supabase credentials not configured");
     }
+
+    let body: { publish_id?: unknown } = {};
+    try {
+      body = await req.json();
+    } catch {
+      /* empty */
+    }
+    const publishId =
+      typeof body.publish_id === "string" ? body.publish_id.trim() : "";
+    if (!publishId || publishId.length > 200) {
+      return json({ error: "publish_id is required" }, 400);
+    }
+
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    // Most recently connected account
     const { data: tokenRow, error: tokenError } = await supabase
       .from("tiktok_tokens")
       .select("id, open_id, access_token, refresh_token, expires_at")
@@ -67,16 +70,9 @@ Deno.serve(async (req) => {
     if (tokenError)
       throw new Error(`Token lookup failed: ${tokenError.message}`);
     if (!tokenRow) {
-      return json(
-        {
-          error:
-            "TikTok not connected — open the tiktok-oauth function URL to connect",
-        },
-        400,
-      );
+      return json({ error: "TikTok not connected" }, 400);
     }
 
-    // Refresh if the access token expires within 2 minutes
     let accessToken = tokenRow.access_token;
     if (new Date(tokenRow.expires_at).getTime() < Date.now() + 120_000) {
       const refreshRes = await fetch(TOKEN_URL, {
@@ -92,11 +88,7 @@ Deno.serve(async (req) => {
       const refreshed = await refreshRes.json();
       if (!refreshRes.ok || !refreshed.access_token) {
         return json(
-          {
-            error:
-              "TikTok token refresh failed — reconnect via the tiktok-oauth function URL",
-            details: refreshed,
-          },
+          { error: "TikTok token refresh failed", details: refreshed },
           401,
         );
       }
@@ -114,70 +106,48 @@ Deno.serve(async (req) => {
         .eq("id", tokenRow.id);
     }
 
-    const body = (await req.json()) as Body;
-    const images = Array.isArray(body.photo_images)
-      ? body.photo_images.filter(
-          (u) => typeof u === "string" && u.startsWith("http"),
-        )
-      : [];
-    if (images.length < 2 || images.length > 35) {
-      return json({ error: "photo_images must contain 2-35 public URLs" }, 400);
-    }
-
-    const title = (body.title ?? "").toString().slice(0, 90);
-    const description = (body.description ?? "").toString().slice(0, 4000);
-
-    const payload = {
-      post_info: {
-        title,
-        description,
-      },
-      source_info: {
-        source: "PULL_FROM_URL",
-        photo_cover_index: 0,
-        photo_images: images,
-      },
-      post_mode: "MEDIA_UPLOAD",
-      media_type: "PHOTO",
-    };
-
-    const tiktokRes = await fetch(CONTENT_INIT_URL, {
+    const res = await fetch(STATUS_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ publish_id: publishId }),
     });
-
-    const text = await tiktokRes.text();
-    let result: unknown;
+    const text = await res.text();
+    let parsed: unknown;
     try {
-      result = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
-      result = { raw: text };
+      parsed = { raw: text };
     }
 
-    const errCode = (result as { error?: { code?: string } })?.error?.code;
-    if (!tiktokRes.ok || (errCode && errCode !== "ok")) {
-      console.error("TikTok rejected:", text);
+    const data =
+      (parsed as { data?: { status?: string; fail_reason?: string } })?.data ??
+      {};
+    const errCode = (parsed as { error?: { code?: string; message?: string } })
+      ?.error?.code;
+    if (!res.ok || (errCode && errCode !== "ok")) {
       return json(
         {
-          error: "TikTok rejected the request",
-          status: tiktokRes.status,
-          details: result,
+          status: "FAILED",
+          fail_reason:
+            (parsed as { error?: { message?: string } })?.error?.message ??
+            "TikTok status request failed",
+          raw: parsed,
         },
-        502,
+        200,
       );
     }
 
-    const publishId =
-      (result as { data?: { publish_id?: string } })?.data?.publish_id ?? null;
-
-    return json({ ok: true, publish_id: publishId, tiktok: result });
+    return json({
+      status: data.status ?? "UNKNOWN",
+      fail_reason: data.fail_reason ?? null,
+      raw: parsed,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
-    console.error("post-tiktok-carousel error:", msg);
+    console.error("tiktok-publish-status error:", msg);
     return json({ error: msg }, 500);
   }
 });

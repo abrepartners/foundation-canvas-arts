@@ -1,9 +1,130 @@
 import { Button } from "@/components/ui/button";
-import { RotateCcw, Copy, Check, RefreshCw, Loader2, History, Sparkles, Send } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { RotateCcw, Copy, Check, RefreshCw, Loader2, History, Sparkles, Send, X as XIcon } from "lucide-react";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { ContentWithId, FacelessVisual, VisualHistoryEntry } from "@/hooks/useBotanicalContent";
+
+type SendPhase =
+  | "idle"
+  | "initializing"
+  | "uploading"
+  | "processing"
+  | "in_drafts"
+  | "timeout"
+  | "failed";
+
+const SEND_STEPS: { key: SendPhase; label: string }[] = [
+  { key: "initializing", label: "Initializing" },
+  { key: "uploading", label: "Uploading to TikTok" },
+  { key: "processing", label: "Processing" },
+  { key: "in_drafts", label: "In your drafts" },
+];
+
+function SendProgress({
+  phase,
+  detail,
+  onDismiss,
+}: {
+  phase: SendPhase;
+  detail?: string;
+  onDismiss: () => void;
+}) {
+  if (phase === "idle") return null;
+  const currentIdx = SEND_STEPS.findIndex((s) => s.key === phase);
+  const isFailed = phase === "failed";
+  const isDone = phase === "in_drafts";
+  const isTimeout = phase === "timeout";
+  const progressValue = isDone
+    ? 100
+    : isFailed || isTimeout
+    ? 100
+    : Math.max(10, ((currentIdx + 0.5) / SEND_STEPS.length) * 100);
+
+  return (
+    <div className="w-full rounded-md border border-border bg-card/50 p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-body text-foreground">
+          {isDone
+            ? "Carousel is now a draft in your TikTok inbox."
+            : isFailed
+            ? "TikTok rejected the carousel."
+            : isTimeout
+            ? "Still processing on TikTok's side — check the app in a minute."
+            : "Sending to TikTok…"}
+        </p>
+        {(isDone || isFailed || isTimeout) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDismiss}
+            className="h-7 px-2 text-xs"
+          >
+            Dismiss
+          </Button>
+        )}
+      </div>
+      <Progress
+        value={progressValue}
+        className={isFailed ? "[&>div]:bg-destructive" : isDone ? "[&>div]:bg-green-600" : ""}
+      />
+      <ol className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-body">
+        {SEND_STEPS.map((step, i) => {
+          const done = !isFailed && (isDone || i < currentIdx);
+          const active = !isDone && !isFailed && !isTimeout && i === currentIdx;
+          const failedHere = isFailed && i === Math.max(currentIdx, 0);
+          return (
+            <li key={step.key} className="flex items-center gap-1.5">
+              <span
+                className={`inline-flex h-4 w-4 items-center justify-center rounded-full border ${
+                  failedHere
+                    ? "border-destructive bg-destructive text-destructive-foreground"
+                    : done
+                    ? "border-green-600 bg-green-600 text-white"
+                    : active
+                    ? "border-botanical text-botanical animate-pulse"
+                    : "border-border text-muted-foreground"
+                }`}
+              >
+                {failedHere ? (
+                  <XIcon className="h-3 w-3" />
+                ) : done ? (
+                  <Check className="h-3 w-3" />
+                ) : active ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <span className="h-1 w-1 rounded-full bg-current" />
+                )}
+              </span>
+              <span
+                className={
+                  failedHere
+                    ? "text-destructive"
+                    : done || active
+                    ? "text-foreground"
+                    : "text-muted-foreground"
+                }
+              >
+                {step.label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      {detail && (
+        <p
+          className={`text-xs font-body ${
+            isFailed ? "text-destructive" : "text-muted-foreground"
+          }`}
+        >
+          {detail}
+        </p>
+      )}
+    </div>
+  );
+}
+
 
 interface ContentDisplayProps {
   content: ContentWithId;
@@ -381,35 +502,117 @@ function ContentCard({ title, children, copyText }: { title: string; children: R
 
 export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegenerateAll, onRestoreVersion }: ContentDisplayProps) {
   const { toast } = useToast();
-  const [sendingTikTok, setSendingTikTok] = useState(false);
+  const [sendPhase, setSendPhase] = useState<SendPhase>("idle");
+  const [sendDetail, setSendDetail] = useState<string | undefined>(undefined);
 
   const imageUrls = (content.faceless_visuals ?? [])
     .map((v) => v.image_url)
     .filter((u): u is string => !!u);
   const canSendTikTok = imageUrls.length >= 2;
+  const sending =
+    sendPhase === "initializing" ||
+    sendPhase === "uploading" ||
+    sendPhase === "processing";
+
+  const pollStatus = async (publishId: string) => {
+    const MAX_POLLS = 60; // ~2 min @ 2s
+    let consecutiveErrors = 0;
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const { data, error } = await supabase.functions.invoke(
+          "tiktok-publish-status",
+          { body: { publish_id: publishId } },
+        );
+        if (error) throw new Error(error.message);
+        consecutiveErrors = 0;
+        const status: string = (data as { status?: string })?.status ?? "UNKNOWN";
+        const failReason: string | null =
+          (data as { fail_reason?: string | null })?.fail_reason ?? null;
+
+        if (status === "PROCESSING_DOWNLOAD") {
+          setSendPhase("uploading");
+        } else if (status === "PROCESSING_UPLOAD" || status === "PROCESSING") {
+          setSendPhase("processing");
+        } else if (
+          status === "SEND_TO_USER_INBOX" ||
+          status === "PUBLISH_COMPLETE"
+        ) {
+          setSendPhase("in_drafts");
+          setSendDetail(undefined);
+          toast({
+            title: "In your TikTok drafts",
+            description: "Open the TikTok app to review and publish.",
+          });
+          return;
+        } else if (status === "FAILED") {
+          setSendPhase("failed");
+          setSendDetail(failReason ?? "TikTok marked the post as failed.");
+          toast({
+            title: "TikTok send failed",
+            description: failReason ?? "Failed on TikTok's side.",
+            variant: "destructive",
+          });
+          return;
+        }
+      } catch (e) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= 3) {
+          const msg = e instanceof Error ? e.message : "Status check failed";
+          setSendPhase("failed");
+          setSendDetail(msg);
+          toast({
+            title: "Status check failed",
+            description: msg,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+    }
+    setSendPhase("timeout");
+    setSendDetail("TikTok is still processing — check the app shortly.");
+  };
 
   const handleSendTikTok = async () => {
     if (!canSendTikTok) return;
-    setSendingTikTok(true);
+    setSendPhase("initializing");
+    setSendDetail(undefined);
     try {
-      const { data, error } = await supabase.functions.invoke("post-tiktok-carousel", {
-        body: {
-          title: content.plant_name,
-          description: content.caption,
-          photo_images: imageUrls,
+      const { data, error } = await supabase.functions.invoke(
+        "post-tiktok-carousel",
+        {
+          body: {
+            title: content.plant_name,
+            description: content.caption,
+            photo_images: imageUrls,
+          },
         },
-      });
+      );
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
-      toast({
-        title: "Sent to TikTok",
-        description: "Open the TikTok app — the carousel is in your inbox as a draft.",
-      });
+      if ((data as { error?: string })?.error)
+        throw new Error((data as { error: string }).error);
+      const publishId = (data as { publish_id?: string })?.publish_id;
+      if (!publishId) {
+        // No publish_id returned — treat as success but cannot poll
+        setSendPhase("in_drafts");
+        toast({
+          title: "Sent to TikTok",
+          description: "Open the TikTok app to find the draft.",
+        });
+        return;
+      }
+      setSendPhase("uploading");
+      await pollStatus(publishId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to send to TikTok";
-      toast({ title: "TikTok send failed", description: msg, variant: "destructive" });
-    } finally {
-      setSendingTikTok(false);
+      setSendPhase("failed");
+      setSendDetail(msg);
+      toast({
+        title: "TikTok send failed",
+        description: msg,
+        variant: "destructive",
+      });
     }
   };
 
@@ -424,11 +627,11 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
           <Button
             variant="default"
             onClick={handleSendTikTok}
-            disabled={!canSendTikTok || sendingTikTok}
+            disabled={!canSendTikTok || sending}
             className="font-body"
             title={canSendTikTok ? "Send carousel to TikTok drafts" : "Generate all images first"}
           >
-            {sendingTikTok ? (
+            {sending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Send className="mr-2 h-4 w-4" />
@@ -441,6 +644,16 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
           </Button>
         </div>
       </div>
+
+      <SendProgress
+        phase={sendPhase}
+        detail={sendDetail}
+        onDismiss={() => {
+          setSendPhase("idle");
+          setSendDetail(undefined);
+        }}
+      />
+
 
       <div className="space-y-4">
         <ScriptSection script={content.script} />
