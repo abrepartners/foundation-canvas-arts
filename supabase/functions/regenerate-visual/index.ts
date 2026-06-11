@@ -197,7 +197,7 @@ serve(async (req) => {
       );
 
       await supabase
-        .from("botanical_content")
+        .from(table)
         .update({ script_visuals: JSON.stringify(updatedVisuals) })
         .eq("id", content_id);
 
