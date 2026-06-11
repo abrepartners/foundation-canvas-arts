@@ -228,8 +228,8 @@ serve(async (req) => {
       );
     }
 
-    // Always build a fresh prompt from the current locked style + stored plant name.
-    const subject = (contentRow.plant_name ?? "").trim();
+    // Always build a fresh prompt from the current locked style + stored subject.
+    const subject = (typeof subjectValue === "string" ? subjectValue : "").trim();
     const finalPrompt = buildPlatePrompt(subject, moment);
 
     console.log(
