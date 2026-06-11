@@ -166,15 +166,25 @@ Deno.serve(async (req) => {
     const title = (body.title ?? "").toString().slice(0, 90);
     const description = (body.description ?? "").toString().slice(0, 4000);
 
+    // Transcode any PNG inputs to JPEG (TikTok PHOTO only accepts JPEG)
+    const publicBase = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}`;
+    let jpegImages: string[];
+    try {
+      jpegImages = await Promise.all(
+        images.map((u) => ensureJpegUrl(u, supabase, publicBase)),
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "transcode failed";
+      console.error("JPEG transcode error:", msg);
+      return json({ error: `Image conversion failed: ${msg}` }, 502);
+    }
+
     const payload = {
-      post_info: {
-        title,
-        description,
-      },
+      post_info: { title, description },
       source_info: {
         source: "PULL_FROM_URL",
         photo_cover_index: 0,
-        photo_images: images,
+        photo_images: jpegImages,
       },
       post_mode: "MEDIA_UPLOAD",
       media_type: "PHOTO",
