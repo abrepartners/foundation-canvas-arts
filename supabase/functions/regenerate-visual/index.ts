@@ -335,7 +335,9 @@ serve(async (req) => {
 
     // Versioned storage path so previous renders remain reachable.
     const timestamp = Date.now();
-    const filePath = `${content_id}/${moment}/${timestamp}.png`;
+    const filePath = storagePrefix
+      ? `${storagePrefix}/${content_id}/${moment}/${timestamp}.png`
+      : `${content_id}/${moment}/${timestamp}.png`;
 
     const { error: uploadError } = await supabase.storage
       .from("botanical-faceless-visuals")
