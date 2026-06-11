@@ -1,0 +1,147 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+async function fallbackViaGemini(
+  subject: string,
+  lovableApiKey: string,
+): Promise<string[]> {
+  const sys = `You return ONLY a JSON array of 8 short trending TikTok-style topic keywords (2-5 words each) related to the user subject. No markdown, no commentary, no object — just the array.`;
+  const res = await fetch(
+    "https://ai.gateway.lovable.dev/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: sys },
+          {
+            role: "user",
+            content: subject
+              ? `Subject: ${subject}`
+              : "Subject: currently trending TikTok topics across all categories",
+          },
+        ],
+        temperature: 0.9,
+        max_tokens: 400,
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`Gemini fallback failed: ${res.status}`);
+  const data = await res.json();
+  const raw: string = data.choices?.[0]?.message?.content ?? "[]";
+  let cleaned = raw.trim();
+  if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);
+  else if (cleaned.startsWith("```")) cleaned = cleaned.slice(3);
+  if (cleaned.endsWith("```")) cleaned = cleaned.slice(0, -3);
+  try {
+    const arr = JSON.parse(cleaned.trim());
+    if (Array.isArray(arr)) {
+      return arr
+        .map((t) => String(t).trim())
+        .filter((t) => t.length > 0)
+        .slice(0, 10);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+async function tiktokInsights(
+  subject: string,
+  lovableApiKey: string,
+  tiktokApiKey: string,
+): Promise<string[] | null> {
+  try {
+    const url = `https://connector-gateway.lovable.dev/tiktok/research/topic/keywords/?keyword=${encodeURIComponent(subject || "trending")}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "X-Connection-Api-Key": tiktokApiKey,
+      },
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const list =
+      json?.data?.keywords ??
+      json?.data?.list ??
+      json?.keywords ??
+      json?.list ??
+      [];
+    if (!Array.isArray(list) || list.length === 0) return null;
+    return list
+      .map((item: unknown) =>
+        typeof item === "string"
+          ? item
+          : String((item as { keyword?: string; name?: string })?.keyword ??
+              (item as { name?: string })?.name ??
+              ""),
+      )
+      .filter((s: string) => s.trim().length > 0)
+      .slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const TIKTOK_API_KEY = Deno.env.get("TIKTOK_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+
+    let subject = "";
+    try {
+      const body = await req.json();
+      subject = String(body?.subject ?? "").trim().slice(0, 120);
+    } catch {
+      /* empty body */
+    }
+
+    let topics: string[] | null = null;
+    let source = "gemini";
+
+    if (TIKTOK_API_KEY) {
+      const t = await tiktokInsights(subject, LOVABLE_API_KEY, TIKTOK_API_KEY);
+      if (t && t.length > 0) {
+        topics = t;
+        source = "tiktok";
+      }
+    }
+
+    if (!topics || topics.length === 0) {
+      topics = await fallbackViaGemini(subject, LOVABLE_API_KEY);
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, topics, source }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return new Response(
+      JSON.stringify({ success: false, error: message, topics: [] }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  }
+});
