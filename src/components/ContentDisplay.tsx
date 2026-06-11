@@ -502,35 +502,117 @@ function ContentCard({ title, children, copyText }: { title: string; children: R
 
 export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegenerateAll, onRestoreVersion }: ContentDisplayProps) {
   const { toast } = useToast();
-  const [sendingTikTok, setSendingTikTok] = useState(false);
+  const [sendPhase, setSendPhase] = useState<SendPhase>("idle");
+  const [sendDetail, setSendDetail] = useState<string | undefined>(undefined);
 
   const imageUrls = (content.faceless_visuals ?? [])
     .map((v) => v.image_url)
     .filter((u): u is string => !!u);
   const canSendTikTok = imageUrls.length >= 2;
+  const sending =
+    sendPhase === "initializing" ||
+    sendPhase === "uploading" ||
+    sendPhase === "processing";
+
+  const pollStatus = async (publishId: string) => {
+    const MAX_POLLS = 60; // ~2 min @ 2s
+    let consecutiveErrors = 0;
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const { data, error } = await supabase.functions.invoke(
+          "tiktok-publish-status",
+          { body: { publish_id: publishId } },
+        );
+        if (error) throw new Error(error.message);
+        consecutiveErrors = 0;
+        const status: string = (data as { status?: string })?.status ?? "UNKNOWN";
+        const failReason: string | null =
+          (data as { fail_reason?: string | null })?.fail_reason ?? null;
+
+        if (status === "PROCESSING_DOWNLOAD") {
+          setSendPhase("uploading");
+        } else if (status === "PROCESSING_UPLOAD" || status === "PROCESSING") {
+          setSendPhase("processing");
+        } else if (
+          status === "SEND_TO_USER_INBOX" ||
+          status === "PUBLISH_COMPLETE"
+        ) {
+          setSendPhase("in_drafts");
+          setSendDetail(undefined);
+          toast({
+            title: "In your TikTok drafts",
+            description: "Open the TikTok app to review and publish.",
+          });
+          return;
+        } else if (status === "FAILED") {
+          setSendPhase("failed");
+          setSendDetail(failReason ?? "TikTok marked the post as failed.");
+          toast({
+            title: "TikTok send failed",
+            description: failReason ?? "Failed on TikTok's side.",
+            variant: "destructive",
+          });
+          return;
+        }
+      } catch (e) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= 3) {
+          const msg = e instanceof Error ? e.message : "Status check failed";
+          setSendPhase("failed");
+          setSendDetail(msg);
+          toast({
+            title: "Status check failed",
+            description: msg,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+    }
+    setSendPhase("timeout");
+    setSendDetail("TikTok is still processing — check the app shortly.");
+  };
 
   const handleSendTikTok = async () => {
     if (!canSendTikTok) return;
-    setSendingTikTok(true);
+    setSendPhase("initializing");
+    setSendDetail(undefined);
     try {
-      const { data, error } = await supabase.functions.invoke("post-tiktok-carousel", {
-        body: {
-          title: content.plant_name,
-          description: content.caption,
-          photo_images: imageUrls,
+      const { data, error } = await supabase.functions.invoke(
+        "post-tiktok-carousel",
+        {
+          body: {
+            title: content.plant_name,
+            description: content.caption,
+            photo_images: imageUrls,
+          },
         },
-      });
+      );
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
-      toast({
-        title: "Sent to TikTok",
-        description: "Open the TikTok app — the carousel is in your inbox as a draft.",
-      });
+      if ((data as { error?: string })?.error)
+        throw new Error((data as { error: string }).error);
+      const publishId = (data as { publish_id?: string })?.publish_id;
+      if (!publishId) {
+        // No publish_id returned — treat as success but cannot poll
+        setSendPhase("in_drafts");
+        toast({
+          title: "Sent to TikTok",
+          description: "Open the TikTok app to find the draft.",
+        });
+        return;
+      }
+      setSendPhase("uploading");
+      await pollStatus(publishId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to send to TikTok";
-      toast({ title: "TikTok send failed", description: msg, variant: "destructive" });
-    } finally {
-      setSendingTikTok(false);
+      setSendPhase("failed");
+      setSendDetail(msg);
+      toast({
+        title: "TikTok send failed",
+        description: msg,
+        variant: "destructive",
+      });
     }
   };
 
@@ -545,11 +627,11 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
           <Button
             variant="default"
             onClick={handleSendTikTok}
-            disabled={!canSendTikTok || sendingTikTok}
+            disabled={!canSendTikTok || sending}
             className="font-body"
             title={canSendTikTok ? "Send carousel to TikTok drafts" : "Generate all images first"}
           >
-            {sendingTikTok ? (
+            {sending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Send className="mr-2 h-4 w-4" />
@@ -562,6 +644,16 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
           </Button>
         </div>
       </div>
+
+      <SendProgress
+        phase={sendPhase}
+        detail={sendDetail}
+        onDismiss={() => {
+          setSendPhase("idle");
+          setSendDetail(undefined);
+        }}
+      />
+
 
       <div className="space-y-4">
         <ScriptSection script={content.script} />
