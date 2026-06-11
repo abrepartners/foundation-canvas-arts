@@ -1,6 +1,13 @@
 // Architectural Botanical Study Plate — locked visual style shared by all six plates.
 // Same style across every plate; only the per-moment composition / storytelling purpose changes.
 // Subject is dynamic and passed in at call time.
+//
+// PROMPT PHILOSOPHY (project knowledge — keep this OUT of the final Replicate prompt):
+// - The final prompt must be concise and image-directed. No meta instructions,
+//   no "non-negotiable" language, no paragraphs explaining why the plates differ.
+// - The specimen is always rendered photoreal; composition variety comes from
+//   the per-moment shot-type briefs (camera distance, crop, angle, layout,
+//   diagram density), never from switching photoreal to sketch.
 
 export type Moment =
   | "hook"
@@ -10,49 +17,64 @@ export type Moment =
   | "verified_truth"
   | "close";
 
-export const PLATE_STYLE_BLOCK = `ARCHITECTURAL BOTANICAL STUDY PLATE — LOCKED STYLE:
-Vertical 9:16 dark mode botanical study plate. Deep charcoal textured paper. Near black parchment background. Fine paper grain. Soft vignette. Cinematic upper left directional lighting. Muted ivory, bone, warm gray, sage, olive, faded green, graphite, and aged natural tones. Realistic botanical or organic specimen illustration. Architectural blueprint layout. Fine graphite construction lines. Measurement brackets. Scientific annotations. Figure labels. Small numeric markers. Subtle museum style serif typography. Premium archival research aesthetic.
+// Concise visual style sentence appended after "Create a vertical 9:16
+// Architectural Botanical Study Plate of {subject}."
+export const PLATE_STYLE_BLOCK =
+  "Dark charcoal textured paper, near-black parchment, fine grain, soft vignette, cinematic upper-left lighting, muted ivory, bone, warm gray, sage, olive, faded green, and graphite palette. Realistic botanical specimen with museum-grade depth and texture. Architectural blueprint layout with thin construction lines, measurement brackets, scientific annotations, figure labels, and small numeric markers.";
 
-SPECIMEN RENDERING (NON-NEGOTIABLE): The botanical subject itself must always be rendered as a photo-realistic, museum-grade botanical illustration with true-to-life petal texture, depth, soft shadow, and dimensional form. Never a flat line drawing, never a graphite sketch, never a wireframe, never a pure blueprint outline of the subject. Blueprint construction lines, measurement brackets, callouts, leader lines, and annotations are layered AROUND and ON TOP of the realistic specimen — they never replace it.
+export const PLATE_AVOID_LINE =
+  "Avoid people, modern objects, neon, cartoon style, bright colors, glossy ad style, Canva layouts, white backgrounds, clutter, text-heavy graphics, flat sketches, wireframe-only specimens, and line-art-only flowers or leaves.";
 
-AVOID: people, modern elements, neon, cartoon style, bright colors, glossy advertising style, Canva style layouts, white backgrounds, random decorative elements, clutter, text heavy graphics, flat sketch renderings of the subject, pencil-only drawings of the subject, wireframe-only specimens, and line-art-only flowers or leaves.`;
+export const PLATE_QUALITY_LINE =
+  "High-detail editorial botanical plate, premium archival research aesthetic, realistic specimen, 9:16 vertical.";
 
+export const PLATE_CONSISTENCY_LINE =
+  "Use the same Architectural Botanical Study Plate style across all six plates. Only the composition and storytelling purpose change.";
+
+// Per-moment composition briefs — the ONLY thing that changes between plates.
+// Shot-type language only; no meta instructions.
 export const MOMENT_BRIEFS: Record<Moment, string> = {
-  hook:
-    "MOMENT — HOOK (SHOT TYPE: FULL HERO SPECIMEN): One large complete photo-realistic botanical subject filling most of the vertical frame. Dramatic, mysterious, scroll stopping. This plate CAN show the full subject. Heavy upper left directional light, deep vignette.",
+  hook: "Full hero specimen. One large complete botanical subject filling most of the vertical frame. Dramatic, mysterious, scroll-stopping. This can show the full subject.",
   dangle_1:
-    "MOMENT — DANGLE 1 (SHOT TYPE: EXTREME MACRO CLUE ONLY): Do NOT show the full plant or full flower. Show only one tightly cropped photo-realistic detail such as a petal edge, bud texture, seed pod surface, leaf vein, thorn, root fiber, pollen structure, or stem surface. The image must feel incomplete, suspenseful, and partial. Strictly no full specimen visible. The cropped detail itself is still rendered as realistic botanical illustration — not a sketch.",
+    "Extreme macro clue only. Do not show the full plant or full flower. Show only one cropped detail such as petal edge, bud texture, seed pod, leaf vein, thorn, root fiber, pollen structure, or stem surface. Incomplete and suspenseful.",
   rehook:
-    "MOMENT — RE-HOOK (SHOT TYPE: DIAGONAL HERO WITH HEAVY BLUEPRINT OVERLAY): The same photo-realistic specimen as the hook, rendered at full photoreal fidelity, but composed on a strong diagonal axis cutting across the frame at larger scale, with deeper shadow, higher contrast, and heavier blueprint measurement brackets, construction lines, and figure labels overlaid around it. The subject itself must remain a realistic botanical illustration — NOT a sketch, NOT a line drawing, NOT a graphite outline. Only the composition angle and overlay density change.",
+    "Dynamic diagonal composition. The subject cuts across the frame at a clear diagonal angle. Larger scale, stronger shadow, higher contrast, more blueprint measurement brackets. More dramatic than the hook, but still archival.",
   dangle_2:
-    "MOMENT — DANGLE 2 (SHOT TYPE: PHOTOREAL SCIENTIFIC BREAKDOWN): Multiple inset panels showing cross sections, internal anatomy, and magnified tissue — each panel rendered as a photo-realistic botanical illustration with true texture, depth, and dimensional form, NOT as line drawings or pencil sketches. Detail circles with leader lines and numeric markers connect the panels. The investigative, technical feel comes from the panel layout and annotations, never from flattening the specimen into a sketch.",
+    "Scientific breakdown plate. Do not show a normal full specimen. Show cross sections, internal anatomy, magnified tissue panels, cutaway diagrams, detail circles, numeric markers, and measurement brackets. Investigative and technical.",
   verified_truth:
-    "MOMENT — VERIFIED TRUTH (SHOT TYPE: PHOTOREAL EVIDENCE BOARD): A structured A, B, C, D row or grouped panels of separated specimen parts (petal, stem segment, bud, leaf, seed, etc.), each part rendered as a photo-realistic museum-grade botanical illustration. Figure callouts (Fig. 1, Fig. 2), measurement references, and labels sit beside the realistic parts. Most credible, research based plate. The parts themselves are never sketches, wireframes, or outlines.",
+    "Evidence board layout. Structured A, B, C, D anatomical row or grouped detail panels. Labeled specimen parts, figure callouts, measurement references, clean organized reveal. Most credible and research-based.",
   close:
-    "MOMENT — CLOSE (SHOT TYPE: FINAL MINIMAL ARCHIVE PLATE): One clean centered photo-realistic specimen with significantly more negative space than the other plates, a subtle golden ratio diagram, a small archival footer, and minimal annotations. Calm, premium, resolved, quiet.",
+    "Final minimal archive plate. One clean centered specimen with more negative space, subtle golden-ratio diagram, small archival footer, minimal annotations. Calm, premium, resolved.",
 };
 
-export const COMPOSITION_VARIETY_RULE =
-  "The six images MUST NOT look like six variations of the same full botanical poster. They must share the exact same visual style (paper, palette, typography, blueprint language, AND photoreal specimen rendering), but each moment must have a clearly different shot type and composition as specified in its moment brief. Composition variety must NEVER be achieved by switching the subject from photoreal to sketch — the specimen is always photoreal across all six plates.";
+const MOMENT_NAMES: Record<Moment, string> = {
+  hook: "Hook",
+  dangle_1: "Dangle 1",
+  rehook: "Re-hook",
+  dangle_2: "Dangle 2",
+  verified_truth: "Verified Truth",
+  close: "Close",
+};
 
 export function buildPlatePrompt(subject: string, moment: Moment): string {
   const subj = (subject ?? "").trim() || "the selected botanical subject";
   return [
-    PLATE_STYLE_BLOCK,
+    `Subject: ${subj}`,
     "",
+    `Create a vertical 9:16 Architectural Botanical Study Plate of ${subj}. ${PLATE_STYLE_BLOCK}`,
+    "",
+    `Moment: ${MOMENT_NAMES[moment]}`,
     MOMENT_BRIEFS[moment],
     "",
-    `SUBJECT: ${subj}.`,
+    PLATE_AVOID_LINE,
     "",
-    COMPOSITION_VARIETY_RULE,
+    PLATE_QUALITY_LINE,
     "",
-    `Use the exact same Architectural Botanical Study Plate style across all six plates. Only the composition and storytelling purpose change. Subject: ${subj}.`,
+    PLATE_CONSISTENCY_LINE,
   ].join("\n");
 }
 
-export function buildAllPlatePrompts(
-  subject: string,
-): Record<Moment, string> {
+export function buildAllPlatePrompts(subject: string): Record<Moment, string> {
   return {
     hook: buildPlatePrompt(subject, "hook"),
     dangle_1: buildPlatePrompt(subject, "dangle_1"),

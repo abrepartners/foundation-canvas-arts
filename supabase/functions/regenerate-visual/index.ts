@@ -4,38 +4,55 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 // Architectural Botanical Study Plate — locked style. Same style across all six plates;
 // only the per-moment composition / storytelling purpose changes.
 // Mirrors src/lib/architecturalPlate.ts (edge functions may not import from src).
-type Moment = "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
+type Moment =
+  | "hook"
+  | "dangle_1"
+  | "rehook"
+  | "dangle_2"
+  | "verified_truth"
+  | "close";
 
-const PLATE_STYLE_BLOCK = `ARCHITECTURAL BOTANICAL STUDY PLATE — LOCKED STYLE:
-Vertical 9:16 dark mode botanical study plate. Deep charcoal textured paper. Near black parchment background. Fine paper grain. Soft vignette. Cinematic upper left directional lighting. Muted ivory, bone, warm gray, sage, olive, faded green, graphite, and aged natural tones. Realistic botanical or organic specimen illustration. Architectural blueprint layout. Fine graphite construction lines. Measurement brackets. Scientific annotations. Figure labels. Small numeric markers. Subtle museum style serif typography. Premium archival research aesthetic.
+const PLATE_STYLE_BLOCK =
+  "Dark charcoal textured paper, near-black parchment, fine grain, soft vignette, cinematic upper-left lighting, muted ivory, bone, warm gray, sage, olive, faded green, and graphite palette. Realistic botanical specimen with museum-grade depth and texture. Architectural blueprint layout with thin construction lines, measurement brackets, scientific annotations, figure labels, and small numeric markers.";
 
-SPECIMEN RENDERING (NON-NEGOTIABLE): The botanical subject itself must always be rendered as a photo-realistic, museum-grade botanical illustration with true-to-life petal texture, depth, soft shadow, and dimensional form. Never a flat line drawing, never a graphite sketch, never a wireframe, never a pure blueprint outline of the subject. Blueprint construction lines, measurement brackets, callouts, leader lines, and annotations are layered AROUND and ON TOP of the realistic specimen — they never replace it.
+const PLATE_AVOID_LINE =
+  "Avoid people, modern objects, neon, cartoon style, bright colors, glossy ad style, Canva layouts, white backgrounds, clutter, text-heavy graphics, flat sketches, wireframe-only specimens, and line-art-only flowers or leaves.";
 
-AVOID: people, modern elements, neon, cartoon style, bright colors, glossy advertising style, Canva style layouts, white backgrounds, random decorative elements, clutter, text heavy graphics, flat sketch renderings of the subject, pencil-only drawings of the subject, wireframe-only specimens, and line-art-only flowers or leaves.`;
+const PLATE_QUALITY_LINE =
+  "High-detail editorial botanical plate, premium archival research aesthetic, realistic specimen, 9:16 vertical.";
+
+const PLATE_CONSISTENCY_LINE =
+  "Use the same Architectural Botanical Study Plate style across all six plates. Only the composition and storytelling purpose change.";
 
 const MOMENT_BRIEFS: Record<Moment, string> = {
-  hook:
-    "MOMENT — HOOK (SHOT TYPE: FULL HERO SPECIMEN): One large complete photo-realistic botanical subject filling most of the vertical frame. Dramatic, mysterious, scroll stopping. This plate CAN show the full subject. Heavy upper left directional light, deep vignette.",
+  hook: "Full hero specimen. One large complete botanical subject filling most of the vertical frame. Dramatic, mysterious, scroll-stopping. This can show the full subject.",
   dangle_1:
-    "MOMENT — DANGLE 1 (SHOT TYPE: EXTREME MACRO CLUE ONLY): Do NOT show the full plant or full flower. Show only one tightly cropped photo-realistic detail such as a petal edge, bud texture, seed pod surface, leaf vein, thorn, root fiber, pollen structure, or stem surface. The image must feel incomplete, suspenseful, and partial. Strictly no full specimen visible. The cropped detail itself is still rendered as realistic botanical illustration — not a sketch.",
+    "Extreme macro clue only. Do not show the full plant or full flower. Show only one cropped detail such as petal edge, bud texture, seed pod, leaf vein, thorn, root fiber, pollen structure, or stem surface. Incomplete and suspenseful.",
   rehook:
-    "MOMENT — RE-HOOK (SHOT TYPE: DIAGONAL HERO WITH HEAVY BLUEPRINT OVERLAY): The same photo-realistic specimen as the hook, rendered at full photoreal fidelity, but composed on a strong diagonal axis cutting across the frame at larger scale, with deeper shadow, higher contrast, and heavier blueprint measurement brackets, construction lines, and figure labels overlaid around it. The subject itself must remain a realistic botanical illustration — NOT a sketch, NOT a line drawing, NOT a graphite outline. Only the composition angle and overlay density change.",
+    "Dynamic diagonal composition. The subject cuts across the frame at a clear diagonal angle. Larger scale, stronger shadow, higher contrast, more blueprint measurement brackets. More dramatic than the hook, but still archival.",
   dangle_2:
-    "MOMENT — DANGLE 2 (SHOT TYPE: PHOTOREAL SCIENTIFIC BREAKDOWN): Multiple inset panels showing cross sections, internal anatomy, and magnified tissue — each panel rendered as a photo-realistic botanical illustration with true texture, depth, and dimensional form, NOT as line drawings or pencil sketches. Detail circles with leader lines and numeric markers connect the panels. The investigative, technical feel comes from the panel layout and annotations, never from flattening the specimen into a sketch.",
+    "Scientific breakdown plate. Do not show a normal full specimen. Show cross sections, internal anatomy, magnified tissue panels, cutaway diagrams, detail circles, numeric markers, and measurement brackets. Investigative and technical.",
   verified_truth:
-    "MOMENT — VERIFIED TRUTH (SHOT TYPE: PHOTOREAL EVIDENCE BOARD): A structured A, B, C, D row or grouped panels of separated specimen parts (petal, stem segment, bud, leaf, seed, etc.), each part rendered as a photo-realistic museum-grade botanical illustration. Figure callouts (Fig. 1, Fig. 2), measurement references, and labels sit beside the realistic parts. Most credible, research based plate. The parts themselves are never sketches, wireframes, or outlines.",
+    "Evidence board layout. Structured A, B, C, D anatomical row or grouped detail panels. Labeled specimen parts, figure callouts, measurement references, clean organized reveal. Most credible and research-based.",
   close:
-    "MOMENT — CLOSE (SHOT TYPE: FINAL MINIMAL ARCHIVE PLATE): One clean centered photo-realistic specimen with significantly more negative space than the other plates, a subtle golden ratio diagram, a small archival footer, and minimal annotations. Calm, premium, resolved, quiet.",
+    "Final minimal archive plate. One clean centered specimen with more negative space, subtle golden-ratio diagram, small archival footer, minimal annotations. Calm, premium, resolved.",
 };
 
-const COMPOSITION_VARIETY_RULE =
-  "The six images MUST NOT look like six variations of the same full botanical poster. They must share the exact same visual style (paper, palette, typography, blueprint language, AND photoreal specimen rendering), but each moment must have a clearly different shot type and composition as specified in its moment brief. Composition variety must NEVER be achieved by switching the subject from photoreal to sketch — the specimen is always photoreal across all six plates.";
+const MOMENT_NAMES: Record<Moment, string> = {
+  hook: "Hook",
+  dangle_1: "Dangle 1",
+  rehook: "Re-hook",
+  dangle_2: "Dangle 2",
+  verified_truth: "Verified Truth",
+  close: "Close",
+};
 
 function isMoment(v: unknown): v is Moment {
   return (
@@ -51,15 +68,18 @@ function isMoment(v: unknown): v is Moment {
 function buildPlatePrompt(subject: string, moment: Moment): string {
   const subj = subject.trim() || "the selected botanical subject";
   return [
-    PLATE_STYLE_BLOCK,
+    `Subject: ${subj}`,
     "",
+    `Create a vertical 9:16 Architectural Botanical Study Plate of ${subj}. ${PLATE_STYLE_BLOCK}`,
+    "",
+    `Moment: ${MOMENT_NAMES[moment]}`,
     MOMENT_BRIEFS[moment],
     "",
-    `SUBJECT: ${subj}.`,
+    PLATE_AVOID_LINE,
     "",
-    COMPOSITION_VARIETY_RULE,
+    PLATE_QUALITY_LINE,
     "",
-    `Use the exact same Architectural Botanical Study Plate style across all six plates. Only the composition and storytelling purpose change. Subject: ${subj}.`,
+    PLATE_CONSISTENCY_LINE,
   ].join("\n");
 }
 
@@ -86,7 +106,14 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { content_id, moment, image_provider, action, image_url: restoreUrl, prompt: restorePrompt } = body;
+    const {
+      content_id,
+      moment,
+      image_provider,
+      action,
+      image_url: restoreUrl,
+      prompt: restorePrompt,
+    } = body;
 
     if (!content_id || !moment) {
       throw new Error("Missing required fields: content_id, moment");
@@ -146,8 +173,14 @@ serve(async (req) => {
 
       const updatedVisuals = visuals.map((v) =>
         v.moment === moment
-          ? { ...v, image_url: restoreUrl, prompt: restorePrompt, error: null, history: newHistory }
-          : v
+          ? {
+              ...v,
+              image_url: restoreUrl,
+              prompt: restorePrompt,
+              error: null,
+              history: newHistory,
+            }
+          : v,
       );
 
       await supabase
@@ -155,13 +188,16 @@ serve(async (req) => {
         .update({ script_visuals: JSON.stringify(updatedVisuals) })
         .eq("id", content_id);
 
-      return new Response(JSON.stringify({
-        success: true,
-        image_url: restoreUrl,
-        prompt: restorePrompt,
-        moment,
-        history: newHistory,
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          image_url: restoreUrl,
+          prompt: restorePrompt,
+          moment,
+          history: newHistory,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     // === REGENERATE ACTION (default) ===
@@ -174,43 +210,55 @@ serve(async (req) => {
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
-      throw new Error("REPLICATE_API_KEY not configured — required for photoreal Flux rendering");
+      throw new Error(
+        "REPLICATE_API_KEY not configured — required for photoreal Flux rendering",
+      );
     }
 
     // Always build a fresh prompt from the current locked style + stored plant name.
     const subject = (contentRow.plant_name ?? "").trim();
     const finalPrompt = buildPlatePrompt(subject, moment);
 
-    console.log(`Regenerating ${moment} for ${content_id} (provider: ${imageProvider})`);
+    console.log(
+      `Regenerating ${moment} for ${content_id} (provider: ${imageProvider})`,
+    );
 
     let imageBuffer: Uint8Array;
     if (imageProvider === "replicate") {
       const GW = "https://connector-gateway.lovable.dev/replicate/v1";
       let createRes: Response | null = null;
       for (let attempt = 0; attempt < 4; attempt++) {
-        createRes = await fetch(`${GW}/models/black-forest-labs/flux-1.1-pro/predictions`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-            "X-Connection-Api-Key": REPLICATE_API_KEY!,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            input: {
-              prompt: finalPrompt,
-              aspect_ratio: "9:16",
-              output_format: "png",
-              safety_tolerance: 2,
+        createRes = await fetch(
+          `${GW}/models/black-forest-labs/flux-1.1-pro/predictions`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              "X-Connection-Api-Key": REPLICATE_API_KEY!,
+              "Content-Type": "application/json",
             },
-          }),
-        });
+            body: JSON.stringify({
+              input: {
+                prompt: finalPrompt,
+                aspect_ratio: "9:16",
+                output_format: "png",
+                safety_tolerance: 2,
+              },
+            }),
+          },
+        );
         if (createRes.status !== 429) break;
         let waitSec = 12;
         try {
           const b = await createRes.clone().json();
-          if (typeof b?.retry_after === "number") waitSec = Math.max(b.retry_after + 2, 8);
-        } catch { /* ignore */ }
-        console.log(`Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`);
+          if (typeof b?.retry_after === "number")
+            waitSec = Math.max(b.retry_after + 2, 8);
+        } catch {
+          /* ignore */
+        }
+        console.log(
+          `Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`,
+        );
         await new Promise((r) => setTimeout(r, waitSec * 1000));
       }
       if (!createRes || !createRes.ok) {
@@ -224,7 +272,7 @@ serve(async (req) => {
         await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
         const pollRes = await fetch(`${GW}/predictions/${predId}`, {
           headers: {
-            "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
             "X-Connection-Api-Key": REPLICATE_API_KEY!,
           },
         });
@@ -240,26 +288,31 @@ serve(async (req) => {
       }
       if (!outputUrl) throw new Error("Replicate timed out");
       const imgRes = await fetch(outputUrl);
-      if (!imgRes.ok) throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
+      if (!imgRes.ok)
+        throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
       imageBuffer = new Uint8Array(await imgRes.arrayBuffer());
     } else {
-      const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
+      const imageResponse = await fetch(
+        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-image-preview",
+            messages: [{ role: "user", content: finalPrompt }],
+            modalities: ["image", "text"],
+          }),
         },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash-image-preview",
-          messages: [{ role: "user", content: finalPrompt }],
-          modalities: ["image", "text"],
-        }),
-      });
+      );
       if (!imageResponse.ok) {
         throw new Error(`Image generation failed: ${imageResponse.status}`);
       }
       const imageData = await imageResponse.json();
-      const base64Image = imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+      const base64Image =
+        imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
       if (!base64Image || typeof base64Image !== "string") {
         throw new Error("No image data received from AI");
       }
@@ -302,8 +355,14 @@ serve(async (req) => {
 
     const updatedVisuals = visuals.map((v) =>
       v.moment === moment
-        ? { ...v, image_url: publicUrl, prompt: finalPrompt, error: null, history: newHistory }
-        : v
+        ? {
+            ...v,
+            image_url: publicUrl,
+            prompt: finalPrompt,
+            error: null,
+            history: newHistory,
+          }
+        : v,
     );
 
     const { error: updateError } = await supabase
@@ -315,23 +374,28 @@ serve(async (req) => {
       console.error("DB update failed:", updateError);
     }
 
-    return new Response(JSON.stringify({
-      success: true,
-      image_url: publicUrl,
-      moment,
-      prompt: finalPrompt,
-      history: newHistory,
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
+    return new Response(
+      JSON.stringify({
+        success: true,
+        image_url: publicUrl,
+        moment,
+        prompt: finalPrompt,
+        history: newHistory,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error in regenerate-visual:", message);
-    return new Response(JSON.stringify({
-      success: false,
-      error: message
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: message,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 });

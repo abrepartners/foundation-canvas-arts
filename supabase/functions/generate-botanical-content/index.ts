@@ -4,7 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 // Generate an image and return raw bytes (PNG). Supports two providers.
@@ -18,7 +19,7 @@ async function generateImageBytes(
     if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
     const GW = "https://connector-gateway.lovable.dev/replicate/v1";
     const authHeaders = {
-      "Authorization": `Bearer ${lovableApiKey}`,
+      Authorization: `Bearer ${lovableApiKey}`,
       "X-Connection-Api-Key": replicateApiKey,
       "Content-Type": "application/json",
     };
@@ -26,26 +27,34 @@ async function generateImageBytes(
     // Create prediction with 429 backoff (Replicate enforces 6/min + burst 1 under $5 credit)
     let createRes: Response | null = null;
     for (let attempt = 0; attempt < 4; attempt++) {
-      createRes = await fetch(`${GW}/models/black-forest-labs/flux-1.1-pro/predictions`, {
-        method: "POST",
-        headers: authHeaders,
-        body: JSON.stringify({
-          input: {
-            prompt,
-            aspect_ratio: "9:16",
-            output_format: "png",
-            safety_tolerance: 2,
-            prompt_upsampling: false,
-          },
-        }),
-      });
+      createRes = await fetch(
+        `${GW}/models/black-forest-labs/flux-1.1-pro/predictions`,
+        {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            input: {
+              prompt,
+              aspect_ratio: "9:16",
+              output_format: "png",
+              safety_tolerance: 2,
+              prompt_upsampling: false,
+            },
+          }),
+        },
+      );
       if (createRes.status !== 429) break;
       let waitSec = 12;
       try {
         const body = await createRes.clone().json();
-        if (typeof body?.retry_after === "number") waitSec = Math.max(body.retry_after + 2, 8);
-      } catch { /* ignore */ }
-      console.log(`Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`);
+        if (typeof body?.retry_after === "number")
+          waitSec = Math.max(body.retry_after + 2, 8);
+      } catch {
+        /* ignore */
+      }
+      console.log(
+        `Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`,
+      );
       await new Promise((r) => setTimeout(r, waitSec * 1000));
     }
     if (!createRes || !createRes.ok) {
@@ -62,7 +71,7 @@ async function generateImageBytes(
       await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
       const pollRes = await fetch(`${GW}/predictions/${predId}`, {
         headers: {
-          "Authorization": `Bearer ${lovableApiKey}`,
+          Authorization: `Bearer ${lovableApiKey}`,
           "X-Connection-Api-Key": replicateApiKey,
         },
       });
@@ -80,28 +89,33 @@ async function generateImageBytes(
     const url = Array.isArray(output) ? output[0] : output;
     if (typeof url !== "string") throw new Error("Replicate: invalid output");
     const imgRes = await fetch(url);
-    if (!imgRes.ok) throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
+    if (!imgRes.ok)
+      throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
     return new Uint8Array(await imgRes.arrayBuffer());
   }
 
   // Default: Lovable AI (Nano Banana)
-  const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${lovableApiKey}`,
-      "Content-Type": "application/json",
+  const imageResponse = await fetch(
+    "https://ai.gateway.lovable.dev/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-image-preview",
+        messages: [{ role: "user", content: prompt }],
+        modalities: ["image", "text"],
+      }),
     },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash-image-preview",
-      messages: [{ role: "user", content: prompt }],
-      modalities: ["image", "text"],
-    }),
-  });
+  );
   if (!imageResponse.ok) {
     throw new Error(`Lovable image API error: ${imageResponse.status}`);
   }
   const imageData = await imageResponse.json();
-  const base64Image = imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+  const base64Image =
+    imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
   if (!base64Image || typeof base64Image !== "string") {
     throw new Error("No image data from Lovable AI");
   }
@@ -109,13 +123,20 @@ async function generateImageBytes(
   return Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
 }
 
-
-
 const EXCLUDE_COUNT = 5;
 const REQUIRED_VISUAL_COUNT = 6;
-const REQUIRED_MOMENTS = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;
+const REQUIRED_MOMENTS = [
+  "hook",
+  "dangle_1",
+  "rehook",
+  "dangle_2",
+  "verified_truth",
+  "close",
+] as const;
 
-const buildSystemPrompt = (noveltyBlock: string) => `You are a zero-memory botanical discovery engine.
+const buildSystemPrompt = (
+  noveltyBlock: string,
+) => `You are a zero-memory botanical discovery engine.
 
 ${noveltyBlock}
 
@@ -203,48 +224,37 @@ Two lines: Line 1 is calm disbelief, Line 2 is reinforcing insight. No hashtags.
 
 One sentence teasing a deeper pattern without resolving it.
 
-## GLOBAL FACELESS VISUAL STYLE LOCK (MANDATORY)
-
-ALL six faceless visuals MUST use ONE locked visual style:
-"Architectural Botanical Study Plate"
-
-Same style across all six plates. Different composition and storytelling purpose per moment.
-
-### Architectural Botanical Study Plate — Locked Style
-
-Vertical 9:16 dark mode botanical study plate. Deep charcoal textured paper. Near black parchment background. Fine paper grain. Soft vignette. Cinematic upper left directional lighting. Muted ivory, bone, warm gray, sage, olive, faded green, graphite, and aged natural tones. Realistic botanical or organic specimen illustration. Architectural blueprint layout. Fine graphite construction lines. Measurement brackets. Scientific annotations. Figure labels. Small numeric markers. Subtle museum style serif typography. Premium archival research aesthetic.
-
-SPECIMEN RENDERING (NON-NEGOTIABLE): The botanical subject itself must always be rendered as a photo-realistic, museum-grade botanical illustration with true-to-life petal texture, depth, soft shadow, and dimensional form. Never a flat line drawing, never a graphite sketch, never a wireframe, never a pure blueprint outline of the subject. Blueprint construction lines, measurement brackets, callouts, leader lines, and annotations are layered AROUND and ON TOP of the realistic specimen — they never replace it.
-
-AVOID: people, modern elements, neon, cartoon style, bright colors, glossy advertising style, Canva style layouts, white backgrounds, random decorative elements, clutter, text heavy graphics, flat sketch renderings of the subject, pencil-only drawings of the subject, wireframe-only specimens, and line-art-only flowers or leaves.
-
-### Per-Moment Composition Briefs (the ONLY thing that changes between plates)
-
-- hook (SHOT TYPE: FULL HERO SPECIMEN): One large complete photo-realistic botanical subject filling most of the vertical frame. Dramatic, mysterious, scroll stopping. This plate CAN show the full subject. Heavy upper left directional light, deep vignette.
-- dangle_1 (SHOT TYPE: EXTREME MACRO CLUE ONLY): Do NOT show the full plant or full flower. Show only one tightly cropped photo-realistic detail such as a petal edge, bud texture, seed pod surface, leaf vein, thorn, root fiber, pollen structure, or stem surface. Must feel incomplete, suspenseful, partial. Strictly no full specimen visible. The cropped detail itself is still rendered as realistic botanical illustration — not a sketch.
-- rehook (SHOT TYPE: DIAGONAL HERO WITH HEAVY BLUEPRINT OVERLAY): The same photo-realistic specimen as the hook, rendered at full photoreal fidelity, but composed on a strong diagonal axis cutting across the frame at larger scale, with deeper shadow, higher contrast, and heavier blueprint measurement brackets, construction lines, and figure labels overlaid around it. The subject itself must remain a realistic botanical illustration — NOT a sketch, NOT a line drawing, NOT a graphite outline. Only the composition angle and overlay density change.
-- dangle_2 (SHOT TYPE: PHOTOREAL SCIENTIFIC BREAKDOWN): Multiple inset panels showing cross sections, internal anatomy, and magnified tissue — each panel rendered as a photo-realistic botanical illustration with true texture, depth, and dimensional form, NOT as line drawings or pencil sketches. Detail circles with leader lines and numeric markers connect the panels. The investigative, technical feel comes from the panel layout and annotations, never from flattening the specimen into a sketch.
-- verified_truth (SHOT TYPE: PHOTOREAL EVIDENCE BOARD): A structured A, B, C, D row or grouped panels of separated specimen parts (petal, stem segment, bud, leaf, seed, etc.), each part rendered as a photo-realistic museum-grade botanical illustration. Figure callouts (Fig. 1, Fig. 2), measurement references, and labels sit beside the realistic parts. Most credible, research based. The parts themselves are never sketches, wireframes, or outlines.
-- close (SHOT TYPE: FINAL MINIMAL ARCHIVE PLATE): One clean centered photo-realistic specimen with significantly more negative space than the other plates, a subtle golden ratio diagram, a small archival footer, and minimal annotations. Calm, premium, resolved, quiet.
-
-CRITICAL COMPOSITION VARIETY RULE: The six images MUST NOT look like six variations of the same full botanical poster. They must share the exact same visual style (paper, palette, typography, blueprint language, AND photoreal specimen rendering), but each moment must have a clearly different shot type and composition as specified in its moment brief above. Composition variety must NEVER be achieved by switching the subject from photoreal to sketch — the specimen is always photoreal across all six plates.
-
 ## FACELESS VISUALS (STYLE-LOCKED, MOMENT-VARIED)
 
 Generate EXACTLY 6 faceless visual prompts — one for EACH of these moments, in this exact set:
 hook, dangle_1, rehook, dangle_2, verified_truth, close
 
-Each faceless_visuals[i].prompt MUST be a fully standalone, Replicate-ready image prompt that:
-- Restates the ENTIRE Architectural Botanical Study Plate locked style block above (zero memory — assume the image model has never seen any previous prompt).
-- Applies the correct per-moment composition brief from the list above for that moment.
-- Names the chosen botanical SUBJECT explicitly (the same subject across all six prompts).
-- Includes the AVOID list.
-- Ends with this exact consistency line, with {subject} replaced by the chosen subject:
-  "Use the exact same Architectural Botanical Study Plate style across all six plates. Only the composition and storytelling purpose change. Subject: {subject}."
+Each faceless_visuals[i].prompt must be a fully standalone Replicate-ready prompt. Build each one by filling this exact template — replace {subject} with the chosen plant, {moment name} with the moment's display name (Hook, Dangle 1, Re-hook, Dangle 2, Verified Truth, Close), and {moment brief} with that moment's composition brief from the list below. Do not add anything else: no meta instructions, no implementation notes, no explanations of why the plates differ.
+
+Subject: {subject}
+
+Create a vertical 9:16 Architectural Botanical Study Plate of {subject}. Dark charcoal textured paper, near-black parchment, fine grain, soft vignette, cinematic upper-left lighting, muted ivory, bone, warm gray, sage, olive, faded green, and graphite palette. Realistic botanical specimen with museum-grade depth and texture. Architectural blueprint layout with thin construction lines, measurement brackets, scientific annotations, figure labels, and small numeric markers.
+
+Moment: {moment name}
+{moment brief}
+
+Avoid people, modern objects, neon, cartoon style, bright colors, glossy ad style, Canva layouts, white backgrounds, clutter, text-heavy graphics, flat sketches, wireframe-only specimens, and line-art-only flowers or leaves.
+
+High-detail editorial botanical plate, premium archival research aesthetic, realistic specimen, 9:16 vertical.
+
+Use the same Architectural Botanical Study Plate style across all six plates. Only the composition and storytelling purpose change.
+
+### Moment Composition Briefs (the ONLY thing that changes between plates)
+
+- hook: Full hero specimen. One large complete botanical subject filling most of the vertical frame. Dramatic, mysterious, scroll-stopping. This can show the full subject.
+- dangle_1: Extreme macro clue only. Do not show the full plant or full flower. Show only one cropped detail such as petal edge, bud texture, seed pod, leaf vein, thorn, root fiber, pollen structure, or stem surface. Incomplete and suspenseful.
+- rehook: Dynamic diagonal composition. The subject cuts across the frame at a clear diagonal angle. Larger scale, stronger shadow, higher contrast, more blueprint measurement brackets. More dramatic than the hook, but still archival.
+- dangle_2: Scientific breakdown plate. Do not show a normal full specimen. Show cross sections, internal anatomy, magnified tissue panels, cutaway diagrams, detail circles, numeric markers, and measurement brackets. Investigative and technical.
+- verified_truth: Evidence board layout. Structured A, B, C, D anatomical row or grouped detail panels. Labeled specimen parts, figure callouts, measurement references, clean organized reveal. Most credible and research-based.
+- close: Final minimal archive plate. One clean centered specimen with more negative space, subtle golden-ratio diagram, small archival footer, minimal annotations. Calm, premium, resolved.
 
 Rules:
-- Same locked visual style across all 6 plates. Same palette, paper, lighting, typography system.
-- Different composition / camera / crop / storytelling purpose per moment, following its brief.
+- Same locked visual style across all 6 plates. Different composition / camera / crop / storytelling purpose per moment, following its brief.
 - Exactly 6 visuals — NO MORE, NO LESS. NO duplicate moments. All 6 moments above MUST be present.
 - Each visual MUST map to a DIFFERENT script moment.
 - The subject is dynamic — use the plant you selected for this package. Do not hard-code any example subject.
@@ -308,12 +318,14 @@ serve(async (req) => {
       // no body — default to replicate
     }
     if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
-      throw new Error("REPLICATE_API_KEY not configured — required for photoreal Flux rendering");
+      throw new Error(
+        "REPLICATE_API_KEY not configured — required for photoreal Flux rendering",
+      );
     }
     console.log(`Image provider: ${imageProvider}`);
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    
+
     // Fetch recent plants for novelty constraint
     const { data: recentPlants, error: fetchError } = await supabase
       .from("botanical_content")
@@ -359,22 +371,28 @@ Repetition is NOT allowed.
     const systemPrompt = buildSystemPrompt(PLANT_NOVELTY_BLOCK);
 
     console.log("Calling AI for content generation...");
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
+    const response = await fetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: "Generate a complete botanical content package now.",
+            },
+          ],
+          temperature: 0.8,
+          max_tokens: 4000,
+        }),
       },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: "Generate a complete botanical content package now." }
-        ],
-        temperature: 0.8,
-        max_tokens: 4000,
-      }),
-    });
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -404,7 +422,7 @@ Repetition is NOT allowed.
         cleanedContent = cleanedContent.slice(0, -3);
       }
       cleanedContent = cleanedContent.trim();
-      
+
       parsed = JSON.parse(cleanedContent);
       console.log("JSON parsed successfully, keys:", Object.keys(parsed));
     } catch (e) {
@@ -420,10 +438,17 @@ Repetition is NOT allowed.
     }
 
     // Validate faceless_visuals — must be exactly 6, one per required moment
-    if (!Array.isArray(parsed.faceless_visuals) ||
-        parsed.faceless_visuals.length !== REQUIRED_VISUAL_COUNT) {
-      console.error("faceless_visuals invalid count:", parsed.faceless_visuals?.length);
-      throw new Error(`faceless_visuals must contain exactly ${REQUIRED_VISUAL_COUNT} items`);
+    if (
+      !Array.isArray(parsed.faceless_visuals) ||
+      parsed.faceless_visuals.length !== REQUIRED_VISUAL_COUNT
+    ) {
+      console.error(
+        "faceless_visuals invalid count:",
+        parsed.faceless_visuals?.length,
+      );
+      throw new Error(
+        `faceless_visuals must contain exactly ${REQUIRED_VISUAL_COUNT} items`,
+      );
     }
 
     const usedMoments = new Set<string>();
@@ -448,17 +473,30 @@ Repetition is NOT allowed.
     console.log("faceless_visuals validated: 6 unique moments");
 
     // Novelty guard
-    if (recentPlants?.some(p =>
-      p.plant_name?.toLowerCase() === parsed.plant_name?.toLowerCase()
-    )) {
-      console.error("Novelty violation: AI selected recently used plant:", parsed.plant_name);
+    if (
+      recentPlants?.some(
+        (p) => p.plant_name?.toLowerCase() === parsed.plant_name?.toLowerCase(),
+      )
+    ) {
+      console.error(
+        "Novelty violation: AI selected recently used plant:",
+        parsed.plant_name,
+      );
       throw new Error("Novelty violation: repeated plant");
     }
 
     // Sort visuals by script order; initialize with image_url: null
     const visualsInitial = [...parsed.faceless_visuals]
-      .sort((a, b) => REQUIRED_MOMENTS.indexOf(a.moment) - REQUIRED_MOMENTS.indexOf(b.moment))
-      .map((v) => ({ moment: v.moment, prompt: v.prompt, image_url: null as string | null }));
+      .sort(
+        (a, b) =>
+          REQUIRED_MOMENTS.indexOf(a.moment) -
+          REQUIRED_MOMENTS.indexOf(b.moment),
+      )
+      .map((v) => ({
+        moment: v.moment,
+        prompt: v.prompt,
+        image_url: null as string | null,
+      }));
 
     // INSERT content to DB immediately (with empty image_urls)
     console.log("Inserting content to database...");
@@ -486,7 +524,7 @@ Repetition is NOT allowed.
     console.log("Content saved with ID:", contentId);
 
     // Background image generation — parallel for lovable, sequential for replicate (rate-limited)
-    const generateOne = async (visual: typeof visualsInitial[number]) => {
+    const generateOne = async (visual: (typeof visualsInitial)[number]) => {
       try {
         const imageBuffer = await generateImageBytes(
           imageProvider,
@@ -505,7 +543,10 @@ Repetition is NOT allowed.
 
         if (uploadError) {
           console.error(`Upload failed for ${visual.moment}:`, uploadError);
-          await mergeVisual(visual.moment, { image_url: null, error: `upload: ${uploadError.message}` });
+          await mergeVisual(visual.moment, {
+            image_url: null,
+            error: `upload: ${uploadError.message}`,
+          });
           return { ...visual, image_url: null };
         }
 
@@ -514,12 +555,18 @@ Repetition is NOT allowed.
           .getPublicUrl(filePath);
 
         console.log(`Image complete for ${visual.moment}`);
-        await mergeVisual(visual.moment, { image_url: urlData.publicUrl, error: null });
+        await mergeVisual(visual.moment, {
+          image_url: urlData.publicUrl,
+          error: null,
+        });
         return { ...visual, image_url: urlData.publicUrl };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`Image error for ${visual.moment}:`, msg);
-        await mergeVisual(visual.moment, { image_url: null, error: msg.slice(0, 240) });
+        await mergeVisual(visual.moment, {
+          image_url: null,
+          error: msg.slice(0, 240),
+        });
         return { ...visual, image_url: null };
       }
     };
@@ -537,12 +584,17 @@ Repetition is NOT allowed.
       let arr = visualsInitial as Array<Record<string, unknown>>;
       if (currentRow?.script_visuals) {
         try {
-          arr = typeof currentRow.script_visuals === "string"
-            ? JSON.parse(currentRow.script_visuals)
-            : currentRow.script_visuals;
-        } catch { /* fallback */ }
+          arr =
+            typeof currentRow.script_visuals === "string"
+              ? JSON.parse(currentRow.script_visuals)
+              : currentRow.script_visuals;
+        } catch {
+          /* fallback */
+        }
       }
-      const next = arr.map((v) => v.moment === moment ? { ...v, ...patch } : v);
+      const next = arr.map((v) =>
+        v.moment === moment ? { ...v, ...patch } : v,
+      );
       await supabase
         .from("botanical_content")
         .update({ script_visuals: JSON.stringify(next) })
@@ -550,10 +602,14 @@ Repetition is NOT allowed.
     };
 
     const generateAllImages = async () => {
-      console.log(`Background: generating ${visualsInitial.length} images via ${imageProvider} (parallel)...`);
+      console.log(
+        `Background: generating ${visualsInitial.length} images via ${imageProvider} (parallel)...`,
+      );
       const results = await Promise.all(visualsInitial.map(generateOne));
       const successCount = results.filter((v) => v.image_url).length;
-      console.log(`Background image generation complete: ${successCount} of ${visualsInitial.length}`);
+      console.log(
+        `Background image generation complete: ${successCount} of ${visualsInitial.length}`,
+      );
     };
 
     // Fire and forget via EdgeRuntime.waitUntil (keeps function alive)
@@ -566,29 +622,33 @@ Repetition is NOT allowed.
       generateAllImages();
     }
 
-
     // Return immediately with all 6 visual slots (image_url: null) so UI renders all plates
     parsed.faceless_visuals = visualsInitial;
 
-    return new Response(JSON.stringify({
-      success: true,
-      content: parsed,
-      content_id: contentId,
-      raw: rawContent,
-    }), {
-      status: 202,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-
+    return new Response(
+      JSON.stringify({
+        success: true,
+        content: parsed,
+        content_id: contentId,
+        raw: rawContent,
+      }),
+      {
+        status: 202,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error: unknown) {
     console.error("Error in generate-botanical-content:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: message 
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: message,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 });
