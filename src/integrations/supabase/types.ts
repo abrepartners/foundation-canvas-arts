@@ -89,6 +89,45 @@ export type Database = {
         }
         Relationships: []
       }
+      trend_content: {
+        Row: {
+          caption: string | null
+          created_at: string
+          id: string
+          part2_hook: string | null
+          raw_content: string | null
+          script: string
+          script_visuals: string | null
+          subject: string | null
+          thumbnail: string | null
+          verified_fact: string | null
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          part2_hook?: string | null
+          raw_content?: string | null
+          script: string
+          script_visuals?: string | null
+          subject?: string | null
+          thumbnail?: string | null
+          verified_fact?: string | null
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          part2_hook?: string | null
+          raw_content?: string | null
+          script?: string
+          script_visuals?: string | null
+          subject?: string | null
+          thumbnail?: string | null
+          verified_fact?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

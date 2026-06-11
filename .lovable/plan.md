@@ -1,57 +1,31 @@
-
 ## Goal
+A second mode of the app, on its own page `/trends`, that mirrors today's Botanical flow but works for **any subject** (octopuses, Roman history, espresso, etc.) and is seeded by **TikTok Creator Search Insights** trending topics rather than a hardcoded plant focus. Visuals reuse the existing 9:16 museum study-plate style. Posting reuses the existing `post-tiktok-carousel` function.
 
-Add a one-click button on the generation result screen that sends the 6 generated 9:16 botanical plate images to the user's TikTok as a **photo carousel draft** (inbox draft — nothing is published publicly until the user opens TikTok and taps Post).
+## User flow
+1. User navigates to `/trends` (linked from a small nav in the header on `/`).
+2. Page shows a **Subject** input (free text, e.g. "deep-sea creatures") + a **Suggest trending topics** button.
+3. Clicking Suggest calls a new edge function `tiktok-trend-suggestions` that hits TikTok Creator Search Insights via the connector gateway and returns 6–10 trending keyword chips related to the typed subject (or general trending if empty). Clicking a chip fills the input.
+4. User clicks **Generate Carousel**. The same pipeline runs: AI picks one counterintuitive, verifiable fact about the subject, writes the 30-second script (HOOK/DANGLE/RE-HOOK/DANGLE/PAYOFF/CLOSE), generates 6 museum-plate 9:16 visuals, stores everything.
+5. ContentDisplay renders identically; user can regenerate visuals and **Send to TikTok** via the existing flow.
 
-## How it works
+## Backend
+- New edge function `tiktok-trend-suggestions` (verify_jwt=false, CORS): POST `{ subject?: string }`. Calls TikTok Creator Search Insights through the connector gateway (`https://connector-gateway.lovable.dev/tiktok/research/...`) using `LOVABLE_API_KEY` + `TIKTOK_API_KEY`. Returns `{ topics: string[] }`. Validates input with Zod.
+- New edge function `generate-trend-content` (verify_jwt=false, CORS): clone of `generate-botanical-content` parameterized by `subject`. Same JSON contract, same Gemini 2.0 Flash text + Gemini 2.5 Flash Image Preview visuals, same Zero-Memory rules, same museum study-plate prompt scaffolding (subject swapped for plant). Persists to a new `trend_content` table (same columns as `botanical_content` but `subject` instead of `plant_name`).
+- New migration: `trend_content` table mirroring `botanical_content` columns; GRANTs + RLS policies matching the existing public-read/write model used today. Uses the same `botanical-faceless-visuals` storage bucket (folder prefix `trends/`).
+- `post-tiktok-carousel` is reused as-is; the page passes the same content shape.
 
-1. **UI** — In `ContentDisplay.tsx`, next to "Regenerate all with new style", add a "Send to TikTok (draft)" button. Disabled until all 6 images have `image_url`. Shows loading + success/error toast.
+## Frontend
+- New route `/trends` registered in `App.tsx` above the catch-all.
+- New page `src/pages/Trends.tsx` modeled on `Index.tsx`: subject input, trending-chips row, Generate button, reuses `ContentDisplay`, has its own `HistorySidebar` reading from `trend_content`.
+- New hook `src/hooks/useTrendContent.ts` paralleling `useBotanicalContent.ts` but calling the new functions/table and accepting a `subject` argument.
+- Small header nav added to both pages: "Plants" / "Trends" links so the user can switch modes.
+- Reuses all existing UI components (`GenerateButton`, `ContentDisplay`, `HistorySidebar`) — `HistorySidebar` gets an optional `labelField` prop so it can show `subject` instead of `plant_name`.
 
-2. **New edge function** `post-tiktok-carousel` (`verify_jwt = false`, CORS enabled):
-   - Input: array of 6 public image URLs + caption + title (plant name).
-   - Calls TikTok via the Lovable connector gateway:
-     `POST https://connector-gateway.lovable.dev/tiktok/post/publish/content/init/`
-   - Body uses TikTok's photo-mode payload:
-     ```json
-     {
-       "post_info": {
-         "title": "<plant name>",
-         "description": "<caption>",
-         "disable_comment": false,
-         "auto_add_music": true
-       },
-       "source_info": {
-         "source": "PULL_FROM_URL",
-         "photo_cover_index": 0,
-         "photo_images": ["<url1>", ..., "<url6>"]
-       },
-       "post_mode": "MEDIA_UPLOAD",
-       "media_type": "PHOTO"
-     }
-     ```
-   - `MEDIA_UPLOAD` = lands in the user's TikTok inbox as a draft (not auto-published).
-   - Returns TikTok's `publish_id` to the client.
+## Constraints honored
+- Zero-Memory policy: every visual prompt fully restates style; AI text outputs self-contained JSON, no markdown.
+- Museum botanical study-plate aesthetic applied verbatim to any subject (per your choice).
+- Same models, same JSON contract, same novelty guard pattern (last 5 entries from `trend_content`).
+- No changes to `botanical_content`, `post-tiktok-carousel`, `tiktok-oauth`, or `client.ts`.
 
-3. **Headers** sent to the gateway:
-   - `Authorization: Bearer ${LOVABLE_API_KEY}`
-   - `X-Connection-Api-Key: ${TIKTOK_API_KEY}`
-   (Both are already auto-injected since the TikTok connector is linked.)
-
-4. **Image hosting requirement** — TikTok pulls images from the URLs we send, so the URLs must be publicly reachable. The images are already stored in the Supabase storage bucket with public URLs, so this works as-is. No re-upload needed.
-
-5. **No publishing, no scopes beyond what the connector already grants.** The user finishes the post manually inside the TikTok app.
-
-## Files touched
-
-- `supabase/functions/post-tiktok-carousel/index.ts` — new
-- `supabase/config.toml` — add `[functions.post-tiktok-carousel] verify_jwt = false`
-- `src/components/ContentDisplay.tsx` — add button + handler + toast
-- (optional) `src/hooks/useBotanicalContent.ts` — thin wrapper `sendToTikTok(content)` if you'd rather keep the call out of the component
-
-## Not in scope
-
-- Auto-publishing (would require `video.publish` scope + review).
-- Video assembly.
-- Posting history tracking in the DB.
-
-Confirm and I'll switch to build.
+## Open question (non-blocking, default chosen)
+TikTok Creator Search Insights requires a research/insights scope that the current OAuth connection may not have. Default plan: try the gateway call first; if the connector returns a scope error, the suggestions endpoint falls back to asking Gemini for "currently trending TikTok topics related to {subject}" so the UI always works. If you want hard-fail-with-reconnect instead, say so before I build.
