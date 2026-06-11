@@ -8,6 +8,8 @@ import { GenerateButton, type ImageProvider } from "@/components/GenerateButton"
 import { ContentDisplay } from "@/components/ContentDisplay";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 
 const Index = () => {
@@ -19,13 +21,16 @@ const Index = () => {
     refetch,
     deleteItem,
   } = useContentHistory();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = useIsMobile();
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [imageProvider, setImageProvider] = useState<ImageProvider>("lovable");
 
   const handleSelect = (item: (typeof history)[0]) => {
     setSelectedId(item.id);
     loadFromHistory(item);
+    if (isMobile) setMobileSheetOpen(false);
   };
 
   const handleGenerate = async () => {
@@ -39,10 +44,17 @@ const Index = () => {
     reset();
   };
 
+  const toggleSidebar = () => {
+    if (isMobile) setMobileSheetOpen((v) => !v);
+    else setDesktopSidebarOpen((v) => !v);
+  };
+
+  const sidebarOpen = isMobile ? mobileSheetOpen : desktopSidebarOpen;
+
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Sidebar */}
-      {sidebarOpen && (
+      {/* Desktop sidebar */}
+      {!isMobile && desktopSidebarOpen && (
         <HistorySidebar
           history={history}
           isLoading={historyLoading}
@@ -50,6 +62,22 @@ const Index = () => {
           onDelete={deleteItem}
           selectedId={selectedId}
         />
+      )}
+
+      {/* Mobile drawer sidebar */}
+      {isMobile && (
+        <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
+          <SheetContent side="left" className="p-0 w-[85vw] max-w-sm">
+            <HistorySidebar
+              history={history}
+              isLoading={historyLoading}
+              onSelect={handleSelect}
+              onDelete={deleteItem}
+              selectedId={selectedId}
+              className="w-full"
+            />
+          </SheetContent>
+        </Sheet>
       )}
 
       {/* Main area */}
@@ -60,8 +88,8 @@ const Index = () => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="h-8 w-8"
+              onClick={toggleSidebar}
+              className="h-8 w-8 flex-shrink-0"
             >
               {sidebarOpen ? (
                 <PanelLeftClose className="h-4 w-4" />
@@ -70,14 +98,14 @@ const Index = () => {
               )}
             </Button>
             <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-serif text-foreground tracking-tight">
+              <h1 className="text-xl md:text-2xl font-serif text-foreground tracking-tight truncate">
                 Botanical Content Generator
               </h1>
-              <p className="text-muted-foreground font-body text-xs">
+              <p className="text-muted-foreground font-body text-xs hidden sm:block">
                 Autonomous discovery of verifiable botanical facts
               </p>
             </div>
-            <nav className="flex items-center gap-1 text-sm font-body">
+            <nav className="flex items-center gap-1 text-sm font-body flex-shrink-0">
               <Link
                 to="/"
                 className="px-3 py-1.5 rounded-md bg-secondary text-foreground"
@@ -96,9 +124,9 @@ const Index = () => {
 
         {/* Main content */}
         <main className="flex-1 overflow-auto">
-          <div className="container py-8">
+          <div className="container py-6 md:py-8">
             {!content ? (
-              <div className="flex flex-col items-center justify-center py-16 space-y-8">
+              <div className="flex flex-col items-center justify-center py-12 md:py-16 space-y-8">
                 <div className="text-center space-y-4 max-w-lg">
                   <div className="w-16 h-16 mx-auto rounded-full bg-parchment flex items-center justify-center">
                     <svg

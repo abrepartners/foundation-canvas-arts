@@ -6,6 +6,8 @@ import { ContentDisplay } from "@/components/ContentDisplay";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   PanelLeftClose,
   PanelLeft,
@@ -37,7 +39,9 @@ const Trends = () => {
   } = useTrendHistory();
   const { toast } = useToast();
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = useIsMobile();
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [imageProvider] = useState<ImageProvider>("replicate");
   const [subject, setSubject] = useState("");
@@ -89,6 +93,7 @@ const Trends = () => {
   const handleSelect = (item: (typeof history)[0]) => {
     setSelectedId(item.id);
     loadFromHistory(item);
+    if (isMobile) setMobileSheetOpen(false);
   };
 
   const handleReset = () => {
@@ -96,9 +101,16 @@ const Trends = () => {
     reset();
   };
 
+  const toggleSidebar = () => {
+    if (isMobile) setMobileSheetOpen((v) => !v);
+    else setDesktopSidebarOpen((v) => !v);
+  };
+
+  const sidebarOpen = isMobile ? mobileSheetOpen : desktopSidebarOpen;
+
   return (
     <div className="min-h-screen bg-background flex">
-      {sidebarOpen && (
+      {!isMobile && desktopSidebarOpen && (
         <HistorySidebar
           history={history}
           isLoading={historyLoading}
@@ -108,14 +120,29 @@ const Trends = () => {
         />
       )}
 
+      {isMobile && (
+        <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
+          <SheetContent side="left" className="p-0 w-[85vw] max-w-sm">
+            <HistorySidebar
+              history={history}
+              isLoading={historyLoading}
+              onSelect={handleSelect}
+              onDelete={deleteItem}
+              selectedId={selectedId}
+              className="w-full"
+            />
+          </SheetContent>
+        </Sheet>
+      )}
+
       <div className="flex-1 flex flex-col min-w-0">
         <header className="border-b border-border">
           <div className="flex items-center gap-3 px-4 py-4">
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="h-8 w-8"
+              onClick={toggleSidebar}
+              className="h-8 w-8 flex-shrink-0"
             >
               {sidebarOpen ? (
                 <PanelLeftClose className="h-4 w-4" />
@@ -124,14 +151,14 @@ const Trends = () => {
               )}
             </Button>
             <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-serif text-foreground tracking-tight">
+              <h1 className="text-xl md:text-2xl font-serif text-foreground tracking-tight truncate">
                 Trend Carousel Generator
               </h1>
-              <p className="text-muted-foreground font-body text-xs">
+              <p className="text-muted-foreground font-body text-xs hidden sm:block">
                 Any subject — TikTok-inspired, verified-fact carousels
               </p>
             </div>
-            <nav className="flex items-center gap-1 text-sm font-body">
+            <nav className="flex items-center gap-1 text-sm font-body flex-shrink-0">
               <Link
                 to="/"
                 className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground"
@@ -149,9 +176,9 @@ const Trends = () => {
         </header>
 
         <main className="flex-1 overflow-auto">
-          <div className="container py-8">
+          <div className="container py-6 md:py-8">
             {!content ? (
-              <div className="flex flex-col items-center justify-center py-12 space-y-8">
+              <div className="flex flex-col items-center justify-center py-8 md:py-12 space-y-8">
                 <div className="text-center space-y-4 max-w-xl">
                   <div className="w-16 h-16 mx-auto rounded-full bg-parchment flex items-center justify-center">
                     <TrendingUp className="w-8 h-8 text-botanical" />
@@ -168,7 +195,7 @@ const Trends = () => {
                 </div>
 
                 <div className="w-full max-w-xl space-y-3">
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Input
                       value={subject}
                       onChange={(e) => setSubject(e.target.value)}
@@ -183,7 +210,7 @@ const Trends = () => {
                       variant="outline"
                       onClick={handleSuggest}
                       disabled={topicsLoading || isLoading}
-                      className="font-body whitespace-nowrap"
+                      className="font-body whitespace-nowrap w-full sm:w-auto"
                     >
                       {topicsLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
