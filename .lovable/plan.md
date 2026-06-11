@@ -1,45 +1,57 @@
-# Why your Hook & Dangle 1 look real but Re-hook went sketchy
 
-Yes — a different *tool* generated them. The app has two image providers wired in:
+## Goal
 
-- **Replicate → Flux 1.1 Pro** (photoreal, what you see in Hook + Dangle 1)
-- **Lovable AI → Gemini 2.5 Flash Image Preview** (cheaper/faster, but tends to slide into sketch/diagram style on prompts that mention "architectural blueprint", "scientific annotations", "graphite construction lines" — exactly our plate style)
+Add a one-click button on the generation result screen that sends the 6 generated 9:16 botanical plate images to the user's TikTok as a **photo carousel draft** (inbox draft — nothing is published publicly until the user opens TikTok and taps Post).
 
-The Hook and Dangle 1 cards you like were rendered by **Flux 1.1 Pro**. The Re-hook card you circled was rendered by **Gemini**, which is why even with our new photoreal rules it still drifted into a flat illustration. Same prompt, different model, different aesthetic. No prompt rewrite will fully fix that — Gemini's image preview just doesn't render this style photoreal.
+## How it works
 
-## The fix
+1. **UI** — In `ContentDisplay.tsx`, next to "Regenerate all with new style", add a "Send to TikTok (draft)" button. Disabled until all 6 images have `image_url`. Shows loading + success/error toast.
 
-Lock the entire pipeline (initial generation + every regenerate path) to **Replicate Flux 1.1 Pro** so every plate looks like Hook / Dangle 1.
+2. **New edge function** `post-tiktok-carousel` (`verify_jwt = false`, CORS enabled):
+   - Input: array of 6 public image URLs + caption + title (plant name).
+   - Calls TikTok via the Lovable connector gateway:
+     `POST https://connector-gateway.lovable.dev/tiktok/post/publish/content/init/`
+   - Body uses TikTok's photo-mode payload:
+     ```json
+     {
+       "post_info": {
+         "title": "<plant name>",
+         "description": "<caption>",
+         "disable_comment": false,
+         "auto_add_music": true
+       },
+       "source_info": {
+         "source": "PULL_FROM_URL",
+         "photo_cover_index": 0,
+         "photo_images": ["<url1>", ..., "<url6>"]
+       },
+       "post_mode": "MEDIA_UPLOAD",
+       "media_type": "PHOTO"
+     }
+     ```
+   - `MEDIA_UPLOAD` = lands in the user's TikTok inbox as a draft (not auto-published).
+   - Returns TikTok's `publish_id` to the client.
 
-### Changes
+3. **Headers** sent to the gateway:
+   - `Authorization: Bearer ${LOVABLE_API_KEY}`
+   - `X-Connection-Api-Key: ${TIKTOK_API_KEY}`
+   (Both are already auto-injected since the TikTok connector is linked.)
 
-1. **`src/hooks/useBotanicalContent.ts`**
-   - Default `imageProvider` state to `"replicate"` instead of `"lovable"`.
-   - In `regenerateVisual`, `regenerateAllVisuals`, and the initial generate call, always send `image_provider: "replicate"` regardless of the toggle state. (Toggle stays in the UI for debugging but no longer affects output.)
+4. **Image hosting requirement** — TikTok pulls images from the URLs we send, so the URLs must be publicly reachable. The images are already stored in the Supabase storage bucket with public URLs, so this works as-is. No re-upload needed.
 
-2. **`supabase/functions/regenerate-visual/index.ts`**
-   - Flip the provider resolution so it defaults to `"replicate"` unless explicitly overridden with `image_provider === "lovable"`. Same line, inverted condition.
+5. **No publishing, no scopes beyond what the connector already grants.** The user finishes the post manually inside the TikTok app.
 
-3. **`supabase/functions/generate-botanical-content/index.ts`**
-   - Same flip: default to `"replicate"` unless `image_provider === "lovable"` is explicitly passed.
+## Files touched
 
-4. **Preflight guard**: if `REPLICATE_API_KEY` is missing, both edge functions return a clear error instead of silently falling back to Gemini. (Today they fall back, which is how Re-hook ended up sketchy.)
+- `supabase/functions/post-tiktok-carousel/index.ts` — new
+- `supabase/config.toml` — add `[functions.post-tiktok-carousel] verify_jwt = false`
+- `src/components/ContentDisplay.tsx` — add button + handler + toast
+- (optional) `src/hooks/useBotanicalContent.ts` — thin wrapper `sendToTikTok(content)` if you'd rather keep the call out of the component
 
-5. **Backfill the old cards**: no schema change needed. You just hit **Regenerate** on Re-hook (and any other moment that looks off) and it'll re-render through Flux with the photoreal prompt rules we already added. Previous versions stay in the history strip so you can compare or revert.
+## Not in scope
 
-### Not changing
+- Auto-publishing (would require `video.publish` scope + review).
+- Video assembly.
+- Posting history tracking in the DB.
 
-- The prompt content (PLATE_STYLE_BLOCK, MOMENT_BRIEFS, COMPOSITION_VARIETY_RULE) — already updated last turn.
-- UI, regenerate buttons, history strip, copy buttons, script display, polling, retries, DB schema.
-- Replicate rate-limit backoff logic (stays as-is — 6/min cap still applies).
-
-### Verification
-
-- Regenerate Re-hook → confirm photoreal carnation with diagonal composition.
-- Regenerate Verified Truth and Dangle 2 → confirm photoreal A/B/C/D parts and cross-sections.
-- Generate a brand-new plant from scratch → confirm all 6 plates render via Flux.
-- Confirm the history strip still shows the prior (Gemini) versions so you can compare side-by-side.
-
-## Open question
-
-Do you want me to **remove the Lovable/Gemini toggle from the UI entirely**, or **keep it as a hidden debug option** (default Replicate, but you can flip it if Replicate is down or out of credits)? I'd recommend keeping it hidden-but-available — costs nothing and gives you a fallback.
+Confirm and I'll switch to build.

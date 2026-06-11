@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.regenerate-visual]
 verify_jwt = false
+
+[functions.post-tiktok-carousel]
+verify_jwt = false
