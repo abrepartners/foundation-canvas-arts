@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
   useBotanicalContent,
   useContentHistory,
@@ -68,7 +69,7 @@ const Index = () => {
                 <PanelLeft className="h-4 w-4" />
               )}
             </Button>
-            <div>
+            <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-serif text-foreground tracking-tight">
                 Botanical Content Generator
               </h1>
@@ -76,6 +77,20 @@ const Index = () => {
                 Autonomous discovery of verifiable botanical facts
               </p>
             </div>
+            <nav className="flex items-center gap-1 text-sm font-body">
+              <Link
+                to="/"
+                className="px-3 py-1.5 rounded-md bg-secondary text-foreground"
+              >
+                Plants
+              </Link>
+              <Link
+                to="/trends"
+                className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground"
+              >
+                Trends
+              </Link>
+            </nav>
           </div>
         </header>
 
