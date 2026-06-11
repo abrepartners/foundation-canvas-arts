@@ -216,9 +216,39 @@ NEVER INCLUDE:
 
 The prompt MUST be fully self-contained (zero memory): restate subject, lighting, palette, composition, typography, and constraints every time.
 
-## CAPTION
+## CAPTION (SEO long-form, replaces any short caption)
 
-Two lines: Line 1 is calm disbelief, Line 2 is reinforcing insight. No hashtags.
+The "caption" field MUST be a long-form, SEO-structured educational caption written in the calm "verified botanical explanation" voice. This caption is published as the post description on TikTok and Instagram, so it must be search-friendly while still sounding natural and human.
+
+Length: 175–300 words. Not shorter. Not a witty one-liner.
+
+Tone: educational, calm, confident, visually descriptive, easy to understand. Reads like a verified science explanation. Never hype, never slang, never ad copy, never emojis.
+
+Structure (follow in this exact order, with blank lines between sections, using real newline characters \n inside the JSON string):
+
+1. A strong, surprising or slightly counterintuitive hook statement about the selected plant/topic. One short paragraph.
+2. A line that says some variation of: "That sounds wrong until you understand how plants are actually classified."
+3. A paragraph that explains, in plain language, the botanical classification principle at play (structure, development, reproduction — not taste, size, tradition, or kitchen use). Reference "botanical classification", "plant structure", "plant reproduction", or "common names vs scientific definitions" naturally.
+4. A short paragraph stating the specific plant fact clearly.
+5. The line: "Most confusion about plant facts comes from relying on common names instead of botanical structure."
+6. A "This is why:" header followed by EXACTLY 4 bullet lines. Each bullet starts with the en-dash + space: "– ". Each bullet is one concrete fact about the chosen plant.
+7. A paragraph reinforcing that botanical classification focuses on anatomy, reproductive structure, and development — not flavor, sweetness, or grocery categories.
+8. A paragraph framing the post as part of an ongoing botanical verification series that visually explains plant science concepts that often sound fake but are scientifically accurate.
+9. The brand line, on two separate lines, EXACTLY:
+My brother studies plants.
+I verify the facts.
+10. The line: "More verified botanical explanations coming soon."
+11. A "Topics covered:" header followed by EXACTLY 6 searchable keyword phrases, one per line, no bullets, no hashtags. Mix general families (botanical classification, plant structure, seeds vs fruits, fruit definitions, plant reproduction, plant anatomy explained, common names vs scientific definitions, how botanists define [topic], why [topic] is classified this way) with topic-specific variants using the actual plant name.
+12. EXACTLY 5 hashtags, one per line, each starting with "#", lowercase or camelCase, relevant to the plant and to botany/plant science. No spaces inside a hashtag. Do not exceed 5.
+
+Hard rules:
+- Do NOT generate a short generic caption.
+- Do NOT write a witty-only caption.
+- Do NOT make it sound like an ad.
+- Do NOT overuse hashtags (max 5 total).
+- Do NOT include incorrect or unverified science claims.
+- Do NOT use markdown bold/italics or emojis.
+- Embed real "\n" newline characters in the JSON string so the structure renders when displayed.
 
 ## PART 2 HOOK
 

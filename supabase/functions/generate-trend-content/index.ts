@@ -210,9 +210,39 @@ NEVER INCLUDE:
 
 The prompt MUST be fully self-contained (zero memory): restate subject, lighting, palette, composition, typography, and constraints every time.
 
-## CAPTION
+## CAPTION (SEO long-form, replaces any short caption)
 
-Two lines: Line 1 is calm disbelief, Line 2 is reinforcing insight. No hashtags.
+The "caption" field MUST be a long-form, SEO-structured educational caption written in the calm "verified explanation" voice. This caption is published as the post description on TikTok and Instagram, so it must be search-friendly while still sounding natural and human.
+
+Length: 175–300 words. Not shorter. Not a witty one-liner.
+
+Tone: educational, calm, confident, visually descriptive, easy to understand. Reads like a verified science explanation. Never hype, never slang, never ad copy, never emojis.
+
+Structure (follow in this exact order, with blank lines between sections, using real newline characters \n inside the JSON string):
+
+1. A strong, surprising or slightly counterintuitive hook statement about the selected topic. One short paragraph.
+2. A line that says some variation of: "That sounds wrong until you understand how this is actually classified."
+3. A paragraph that explains, in plain language, the underlying scientific or structural principle at play (anatomy, development, mechanism — not popular usage or convenience). Reference botanical/scientific classification, structure, or "common names vs scientific definitions" naturally where the topic allows.
+4. A short paragraph stating the specific topic fact clearly.
+5. The line: "Most confusion about this topic comes from relying on common names instead of how it is actually structured."
+6. A "This is why:" header followed by EXACTLY 4 bullet lines. Each bullet starts with the en-dash + space: "– ". Each bullet is one concrete fact about the chosen topic.
+7. A paragraph reinforcing that real classification focuses on structure, mechanism, and development — not flavor, popularity, or marketing categories.
+8. A paragraph framing the post as part of an ongoing verification series that visually explains concepts that often sound fake but are scientifically accurate.
+9. The brand line, on two separate lines, EXACTLY:
+My brother studies plants.
+I verify the facts.
+10. The line: "More verified explanations coming soon."
+11. A "Topics covered:" header followed by EXACTLY 6 searchable keyword phrases, one per line, no bullets, no hashtags. Mix general families (botanical classification, plant structure, plant anatomy explained, common names vs scientific definitions, how botanists define [topic], why [topic] is classified this way) with topic-specific variants using the actual topic name.
+12. EXACTLY 5 hashtags, one per line, each starting with "#", lowercase or camelCase, relevant to the topic and to plant/science. No spaces inside a hashtag. Do not exceed 5.
+
+Hard rules:
+- Do NOT generate a short generic caption.
+- Do NOT write a witty-only caption.
+- Do NOT make it sound like an ad.
+- Do NOT overuse hashtags (max 5 total).
+- Do NOT include incorrect or unverified science claims.
+- Do NOT use markdown bold/italics or emojis.
+- Embed real "\n" newline characters in the JSON string so the structure renders when displayed.
 
 ## PART 2 HOOK
 
