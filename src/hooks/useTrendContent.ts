@@ -100,6 +100,18 @@ export function useTrendContent() {
     options: { silent?: boolean } = {},
   ) => {
     if (!content?.id) return null;
+
+    setContent((prev) =>
+      prev
+        ? {
+            ...prev,
+            faceless_visuals: prev.faceless_visuals.map((v) =>
+              v.moment === moment ? { ...v, status: "generating", error: null } : v,
+            ),
+          }
+        : prev,
+    );
+
     try {
       const { data, error: fnError } = await supabase.functions.invoke(
         "regenerate-visual",
@@ -128,6 +140,7 @@ export function useTrendContent() {
                       image_url: data.image_url,
                       prompt: data.prompt ?? v.prompt,
                       error: null,
+                      status: "done",
                       history: data.history ?? v.history,
                     }
                   : v,
@@ -144,6 +157,16 @@ export function useTrendContent() {
       return data.image_url;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+      setContent((prev) =>
+        prev
+          ? {
+              ...prev,
+              faceless_visuals: prev.faceless_visuals.map((v) =>
+                v.moment === moment ? { ...v, status: "error", error: message } : v,
+              ),
+            }
+          : prev,
+      );
       toast({
         title: "Regeneration failed",
         description: message,
