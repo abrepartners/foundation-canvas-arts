@@ -430,7 +430,7 @@ function FacelessVisualsSection({
                 )}
 
 
-                {isRegenerating && (
+                {isRegenerating && hasImage && (
                   <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                   </div>
