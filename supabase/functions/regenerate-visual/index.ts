@@ -347,6 +347,14 @@ serve(async (req) => {
       );
       if (!res.ok) {
         const txt = await res.text();
+        if (
+          (res.status === 402 || res.status === 403) &&
+          /credit_limit|credit limit|insufficient.*credit/i.test(txt)
+        ) {
+          throw new Error(
+            "CREDIT_LIMIT: AI Gateway credits exhausted. Daily free credits reset every 24h, or the workspace owner can add top-up credits in Settings → Plans & credits.",
+          );
+        }
         throw new Error(`OpenAI image API error: ${res.status} ${txt}`);
       }
       const json = await res.json();
@@ -372,6 +380,15 @@ serve(async (req) => {
         },
       );
       if (!imageResponse.ok) {
+        const txt = await imageResponse.text();
+        if (
+          (imageResponse.status === 402 || imageResponse.status === 403) &&
+          /credit_limit|credit limit|insufficient.*credit/i.test(txt)
+        ) {
+          throw new Error(
+            "CREDIT_LIMIT: AI Gateway credits exhausted. Daily free credits reset every 24h, or the workspace owner can add top-up credits in Settings → Plans & credits.",
+          );
+        }
         throw new Error(`Image generation failed: ${imageResponse.status}`);
       }
       const imageData = await imageResponse.json();

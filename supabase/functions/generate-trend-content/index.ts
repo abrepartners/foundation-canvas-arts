@@ -441,6 +441,19 @@ Rules:
     if (!response.ok) {
       const errorText = await response.text();
       console.error("AI Gateway error:", errorText);
+      if (
+        (response.status === 402 || response.status === 403) &&
+        /credit_limit|credit limit|insufficient.*credit/i.test(errorText)
+      ) {
+        throw new Error(
+          "CREDIT_LIMIT: AI Gateway credits exhausted. Daily free credits reset every 24h, or the workspace owner can add top-up credits in Settings → Plans & credits.",
+        );
+      }
+      if (response.status === 429) {
+        throw new Error(
+          "RATE_LIMIT: AI Gateway is rate-limiting requests. Wait a minute and try again.",
+        );
+      }
       throw new Error(`AI Gateway request failed: ${response.status}`);
     }
 
