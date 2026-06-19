@@ -505,6 +505,7 @@ Rules:
         moment: v.moment,
         prompt: v.prompt,
         image_url: null as string | null,
+        status: "queued" as "queued" | "generating" | "done" | "error",
       }));
 
     const { data: insertedRow, error: insertError } = await supabase
@@ -531,7 +532,11 @@ Rules:
 
     const mergeVisual = async (
       moment: string,
-      patch: { image_url: string | null; error?: string | null },
+      patch: {
+        image_url?: string | null;
+        error?: string | null;
+        status?: "queued" | "generating" | "done" | "error";
+      },
     ) => {
       const { data: currentRow } = await supabase
         .from("trend_content")
@@ -559,6 +564,7 @@ Rules:
     };
 
     const generateOne = async (visual: (typeof visualsInitial)[number]) => {
+      await mergeVisual(visual.moment, { status: "generating", error: null });
       try {
         const imageBuffer = await generateImageBytes(
           imageProvider,
@@ -577,8 +583,9 @@ Rules:
           await mergeVisual(visual.moment, {
             image_url: null,
             error: `upload: ${uploadError.message}`,
+            status: "error",
           });
-          return { ...visual, image_url: null };
+          return;
         }
         const { data: urlData } = supabase.storage
           .from("botanical-faceless-visuals")
@@ -586,27 +593,50 @@ Rules:
         await mergeVisual(visual.moment, {
           image_url: urlData.publicUrl,
           error: null,
+          status: "done",
         });
-        return { ...visual, image_url: urlData.publicUrl };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         await mergeVisual(visual.moment, {
           image_url: null,
           error: msg.slice(0, 240),
+          status: "error",
         });
-        return { ...visual, image_url: null };
       }
     };
 
-    const generateAllImages = async () => {
-      const STAGGER_MS = imageProvider === "replicate" ? 12000 : 0;
-      await Promise.all(
-        visualsInitial.map((visual, i) =>
-          new Promise((resolve) => setTimeout(resolve, i * STAGGER_MS)).then(
-            () => generateOne(visual),
-          ),
-        ),
+    const runWithConcurrency = async (
+      items: typeof visualsInitial,
+      limit: number,
+    ) => {
+      let idx = 0;
+      const runners = Array.from(
+        { length: Math.min(limit, items.length) },
+        async () => {
+          while (idx < items.length) {
+            const i = idx++;
+            await generateOne(items[i]);
+          }
+        },
       );
+      await Promise.all(runners);
+    };
+
+    const generateAllImages = async () => {
+      if (imageProvider === "replicate") {
+        const STAGGER_MS = 12000;
+        await Promise.all(
+          visualsInitial.map((visual, i) =>
+            new Promise((resolve) => setTimeout(resolve, i * STAGGER_MS)).then(
+              () => generateOne(visual),
+            ),
+          ),
+        );
+      } else if (imageProvider === "openai") {
+        await runWithConcurrency(visualsInitial, 2);
+      } else {
+        await Promise.all(visualsInitial.map((v) => generateOne(v)));
+      }
     };
 
     // @ts-ignore EdgeRuntime

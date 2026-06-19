@@ -95,6 +95,7 @@ interface Visual {
   image_url?: string | null;
   error?: string | null;
   history?: HistoryEntry[];
+  status?: "queued" | "generating" | "done" | "error";
 }
 
 const HISTORY_CAP = 5;
@@ -241,6 +242,21 @@ serve(async (req) => {
     console.log(
       `Regenerating ${moment} for ${content_id} (provider: ${imageProvider})`,
     );
+
+    // Mark this slot as generating BEFORE calling the provider so the UI
+    // (which polls script_visuals) shows the in-flight state and disables
+    // the regenerate button — preventing duplicate credit spend.
+    {
+      const generatingVisuals = visuals.map((v) =>
+        v.moment === moment
+          ? { ...v, status: "generating" as const, error: null }
+          : v,
+      );
+      await supabase
+        .from(table)
+        .update({ script_visuals: JSON.stringify(generatingVisuals) })
+        .eq("id", content_id);
+    }
 
     let imageBuffer: Uint8Array;
     if (imageProvider === "replicate") {
@@ -413,6 +429,7 @@ serve(async (req) => {
             prompt: finalPrompt,
             error: null,
             history: newHistory,
+            status: "done" as const,
           }
         : v,
     );
@@ -439,6 +456,47 @@ serve(async (req) => {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error in regenerate-visual:", message);
+    // Best-effort: clear the "generating" flag so the UI re-enables the button.
+    try {
+      const body = await req.clone().json().catch(() => ({}));
+      const errMoment = body?.moment;
+      const errContentId = body?.content_id;
+      const errTable =
+        body?.table === "trend_content" ? "trend_content" : "botanical_content";
+      if (errMoment && errContentId) {
+        const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(
+          "SUPABASE_SERVICE_ROLE_KEY",
+        );
+        if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+          const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+          const { data: row } = await sb
+            .from(errTable)
+            .select("script_visuals")
+            .eq("id", errContentId)
+            .single();
+          if (row?.script_visuals) {
+            let arr: Visual[] = [];
+            try {
+              arr = JSON.parse(row.script_visuals);
+            } catch {
+              /* ignore */
+            }
+            const next = arr.map((v) =>
+              v.moment === errMoment
+                ? { ...v, status: "error" as const, error: message.slice(0, 240) }
+                : v,
+            );
+            await sb
+              .from(errTable)
+              .update({ script_visuals: JSON.stringify(next) })
+              .eq("id", errContentId);
+          }
+        }
+      }
+    } catch {
+      /* swallow */
+    }
     return new Response(
       JSON.stringify({
         success: false,

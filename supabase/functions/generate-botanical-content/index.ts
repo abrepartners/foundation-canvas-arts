@@ -550,7 +550,7 @@ Repetition is NOT allowed.
       throw new Error("Novelty violation: repeated plant");
     }
 
-    // Sort visuals by script order; initialize with image_url: null
+    // Sort visuals by script order; initialize with status: "queued"
     const visualsInitial = [...parsed.faceless_visuals]
       .sort(
         (a, b) =>
@@ -561,6 +561,7 @@ Repetition is NOT allowed.
         moment: v.moment,
         prompt: v.prompt,
         image_url: null as string | null,
+        status: "queued" as "queued" | "generating" | "done" | "error",
       }));
 
     // INSERT content to DB immediately (with empty image_urls)
@@ -588,61 +589,14 @@ Repetition is NOT allowed.
     const contentId = insertedRow.id;
     console.log("Content saved with ID:", contentId);
 
-    // Background image generation — parallel for lovable, sequential for replicate (rate-limited)
-    const generateOne = async (visual: (typeof visualsInitial)[number]) => {
-      try {
-        const imageBuffer = await generateImageBytes(
-          imageProvider,
-          visual.prompt,
-          LOVABLE_API_KEY,
-          REPLICATE_API_KEY,
-        );
-        // Replicate outputs jpg (TikTok-compatible); the Lovable/Gemini path
-        // returns png bytes, so keep the extension truthful per provider.
-        const ext = imageProvider === "replicate" ? "jpg" : "png";
-        const filePath = `${contentId}/${visual.moment}.${ext}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("botanical-faceless-visuals")
-          .upload(filePath, imageBuffer, {
-            contentType: ext === "jpg" ? "image/jpeg" : "image/png",
-            upsert: true,
-          });
-
-        if (uploadError) {
-          console.error(`Upload failed for ${visual.moment}:`, uploadError);
-          await mergeVisual(visual.moment, {
-            image_url: null,
-            error: `upload: ${uploadError.message}`,
-          });
-          return { ...visual, image_url: null };
-        }
-
-        const { data: urlData } = supabase.storage
-          .from("botanical-faceless-visuals")
-          .getPublicUrl(filePath);
-
-        console.log(`Image complete for ${visual.moment}`);
-        await mergeVisual(visual.moment, {
-          image_url: urlData.publicUrl,
-          error: null,
-        });
-        return { ...visual, image_url: urlData.publicUrl };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`Image error for ${visual.moment}:`, msg);
-        await mergeVisual(visual.moment, {
-          image_url: null,
-          error: msg.slice(0, 240),
-        });
-        return { ...visual, image_url: null };
-      }
-    };
-
     // Re-read latest row and patch a single visual, preserving siblings' progress
     const mergeVisual = async (
       moment: string,
-      patch: { image_url: string | null; error?: string | null },
+      patch: {
+        image_url?: string | null;
+        error?: string | null;
+        status?: "queued" | "generating" | "done" | "error";
+      },
     ) => {
       const { data: currentRow } = await supabase
         .from("botanical_content")
@@ -669,25 +623,95 @@ Repetition is NOT allowed.
         .eq("id", contentId);
     };
 
+    const generateOne = async (visual: (typeof visualsInitial)[number]) => {
+      await mergeVisual(visual.moment, { status: "generating", error: null });
+      try {
+        const imageBuffer = await generateImageBytes(
+          imageProvider,
+          visual.prompt,
+          LOVABLE_API_KEY,
+          REPLICATE_API_KEY,
+        );
+        const ext = imageProvider === "replicate" ? "jpg" : "png";
+        const filePath = `${contentId}/${visual.moment}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("botanical-faceless-visuals")
+          .upload(filePath, imageBuffer, {
+            contentType: ext === "jpg" ? "image/jpeg" : "image/png",
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error(`Upload failed for ${visual.moment}:`, uploadError);
+          await mergeVisual(visual.moment, {
+            image_url: null,
+            error: `upload: ${uploadError.message}`,
+            status: "error",
+          });
+          return;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from("botanical-faceless-visuals")
+          .getPublicUrl(filePath);
+
+        console.log(`Image complete for ${visual.moment}`);
+        await mergeVisual(visual.moment, {
+          image_url: urlData.publicUrl,
+          error: null,
+          status: "done",
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`Image error for ${visual.moment}:`, msg);
+        await mergeVisual(visual.moment, {
+          image_url: null,
+          error: msg.slice(0, 240),
+          status: "error",
+        });
+      }
+    };
+
+    const runWithConcurrency = async (
+      items: typeof visualsInitial,
+      limit: number,
+    ) => {
+      let idx = 0;
+      const runners = Array.from(
+        { length: Math.min(limit, items.length) },
+        async () => {
+          while (idx < items.length) {
+            const i = idx++;
+            await generateOne(items[i]);
+          }
+        },
+      );
+      await Promise.all(runners);
+    };
+
     const generateAllImages = async () => {
       console.log(
         `Background: generating ${visualsInitial.length} images via ${imageProvider}...`,
       );
-      // Replicate enforces ~6 requests/min with a small burst, so stagger the
-      // six starts ~12s apart instead of firing all at once. Lovable has no
-      // such limit and can run fully parallel.
-      const STAGGER_MS = imageProvider === "replicate" ? 12000 : 0;
-      const results = await Promise.all(
-        visualsInitial.map((visual, i) =>
-          new Promise((resolve) => setTimeout(resolve, i * STAGGER_MS)).then(
-            () => generateOne(visual),
+      if (imageProvider === "replicate") {
+        // Replicate enforces ~6/min — stagger starts 12s apart.
+        const STAGGER_MS = 12000;
+        await Promise.all(
+          visualsInitial.map((visual, i) =>
+            new Promise((resolve) => setTimeout(resolve, i * STAGGER_MS)).then(
+              () => generateOne(visual),
+            ),
           ),
-        ),
-      );
-      const successCount = results.filter((v) => v.image_url).length;
-      console.log(
-        `Background image generation complete: ${successCount} of ${visualsInitial.length}`,
-      );
+        );
+      } else if (imageProvider === "openai") {
+        // gpt-image-2 HQ is slow + tightly rate-limited — cap at 2 concurrent.
+        await runWithConcurrency(visualsInitial, 2);
+      } else {
+        // Lovable / Gemini has no tight limit — full parallel.
+        await Promise.all(visualsInitial.map((v) => generateOne(v)));
+      }
+      console.log(`Background image generation complete for ${contentId}`);
     };
 
     // Fire and forget via EdgeRuntime.waitUntil (keeps function alive)

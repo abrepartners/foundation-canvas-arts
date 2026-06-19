@@ -23,12 +23,15 @@ export interface VisualHistoryEntry {
   created_at: string;
 }
 
+export type VisualStatus = "queued" | "generating" | "done" | "error";
+
 export interface FacelessVisual {
   moment: "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
   prompt: string;
   image_url?: string | null;
   error?: string | null;
   history?: VisualHistoryEntry[];
+  status?: VisualStatus;
 }
 
 
@@ -83,7 +86,12 @@ export function useBotanicalContent() {
 
       setContent((prev) => (prev && prev.id === contentId ? { ...prev, faceless_visuals: visuals } : prev));
 
-      if (visuals.length > 0 && visuals.every((v) => v.image_url || v.error)) {
+      if (
+        visuals.length > 0 &&
+        visuals.every(
+          (v) => v.status === "done" || v.status === "error" || v.image_url || v.error,
+        )
+      ) {
         return;
       }
     }
@@ -137,6 +145,18 @@ export function useBotanicalContent() {
       return null;
     }
 
+    // Optimistic: flag this slot as generating immediately so the UI
+    // disables its button even before the edge function writes status.
+    setContent((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        faceless_visuals: prev.faceless_visuals.map((v) =>
+          v.moment === moment ? { ...v, status: "generating", error: null } : v,
+        ),
+      };
+    });
+
     try {
       const { data, error: fnError } = await supabase.functions.invoke(
         "regenerate-visual",
@@ -158,7 +178,7 @@ export function useBotanicalContent() {
           ...prev,
           faceless_visuals: prev.faceless_visuals.map((v) =>
             v.moment === moment
-              ? { ...v, image_url: data.image_url, prompt: data.prompt ?? v.prompt, error: null, history: data.history ?? v.history }
+              ? { ...v, image_url: data.image_url, prompt: data.prompt ?? v.prompt, error: null, status: "done", history: data.history ?? v.history }
               : v
           ),
         };
@@ -171,6 +191,15 @@ export function useBotanicalContent() {
       return data.image_url;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+      setContent((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          faceless_visuals: prev.faceless_visuals.map((v) =>
+            v.moment === moment ? { ...v, status: "error", error: message } : v,
+          ),
+        };
+      });
       toast({ title: "Regeneration failed", description: message, variant: "destructive" });
       return null;
     }

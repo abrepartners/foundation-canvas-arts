@@ -305,6 +305,10 @@ function FacelessVisualsSection({
   };
 
   const imagesGenerated = sortedVisuals.filter((v) => v.image_url).length;
+  const inFlightCount = sortedVisuals.filter(
+    (v) => (v.status === "queued" || v.status === "generating") && !v.image_url,
+  ).length;
+  const anyInFlight = inFlightCount > 0 || regenerating.size > 0;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
@@ -316,7 +320,7 @@ function FacelessVisualsSection({
               variant="outline"
               size="sm"
               onClick={handleRegenAll}
-              disabled={regenAllRunning || regenerating.size > 0}
+              disabled={regenAllRunning || anyInFlight}
               className="text-xs"
             >
               {regenAllRunning ? (
@@ -331,19 +335,45 @@ function FacelessVisualsSection({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        {visuals.length} unique moments • {imagesGenerated} images generated
+        {visuals.length} unique moments • {imagesGenerated} ready
+        {inFlightCount > 0 && ` • ${inFlightCount} in progress`}
       </p>
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {sortedVisuals.map((visual, idx) => {
           const isRegenerating = regenerating.has(visual.moment);
           const hasImage = !!visual.image_url;
-          const hasError = !!visual.error;
+          const hasError = !!visual.error || visual.status === "error";
           const history = visual.history ?? [];
           const historyOpen = expandedHistory.has(visual.moment);
+          // A slot is "busy" if backend says queued/generating OR local UI click.
+          const backendBusy =
+            (visual.status === "queued" || visual.status === "generating") &&
+            !hasImage;
+          const busy = isRegenerating || backendBusy;
+          const statusLabel: { text: string; tone: string } | null = backendBusy
+            ? visual.status === "queued"
+              ? { text: "Queued", tone: "bg-muted text-muted-foreground border-border" }
+              : { text: "Generating…", tone: "bg-primary/15 text-primary border-primary/30 animate-pulse" }
+            : hasError
+              ? { text: "Failed", tone: "bg-destructive/15 text-destructive border-destructive/30" }
+              : hasImage
+                ? null
+                : null;
 
           return (
             <div key={idx} className="space-y-2">
               <div className="aspect-[9/16] rounded-lg overflow-hidden bg-muted/50 border border-border relative group">
+                {statusLabel && (
+                  <span
+                    className={`absolute top-2 left-2 z-10 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-body backdrop-blur ${statusLabel.tone}`}
+                  >
+                    {visual.status === "generating" && (
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    )}
+                    {statusLabel.text}
+                  </span>
+                )}
                 {hasImage ? (
                   <>
                     <img
@@ -355,11 +385,11 @@ function FacelessVisualsSection({
                       <button
                         type="button"
                         onClick={() => handleRegen(visual.moment)}
-                        disabled={isRegenerating}
-                        title="Regenerate this image"
-                        className="absolute top-2 right-2 h-8 w-8 rounded-full bg-background/80 backdrop-blur border border-border flex items-center justify-center text-foreground hover:bg-background transition-colors disabled:opacity-50"
+                        disabled={busy}
+                        title={busy ? "Already generating — please wait" : "Regenerate this image"}
+                        className="absolute top-2 right-2 h-8 w-8 rounded-full bg-background/80 backdrop-blur border border-border flex items-center justify-center text-foreground hover:bg-background transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isRegenerating ? (
+                        {busy ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <RefreshCw className="h-3.5 w-3.5" />
@@ -373,6 +403,8 @@ function FacelessVisualsSection({
                       <p className="text-[10px] text-destructive font-body leading-tight line-clamp-3">
                         {visual.error}
                       </p>
+                    ) : backendBusy ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-primary/60" />
                     ) : (
                       <span className="text-xs text-muted-foreground">
                         {onRegenerate ? "Pending…" : "No image"}
@@ -383,21 +415,22 @@ function FacelessVisualsSection({
                         variant={hasError ? "default" : "ghost"}
                         size="sm"
                         onClick={() => handleRegen(visual.moment)}
-                        disabled={isRegenerating}
+                        disabled={busy}
                         className="text-xs"
                       >
-                        {isRegenerating ? (
+                        {busy ? (
                           <Loader2 className="h-3 w-3 animate-spin mr-1" />
                         ) : (
                           <RefreshCw className="h-3 w-3 mr-1" />
                         )}
-                        {hasError ? "Retry" : "Generate"}
+                        {busy ? "Working…" : hasError ? "Retry" : "Generate"}
                       </Button>
                     )}
                   </div>
                 )}
 
-                {isRegenerating && (
+
+                {isRegenerating && hasImage && (
                   <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                   </div>
