@@ -95,6 +95,7 @@ interface Visual {
   image_url?: string | null;
   error?: string | null;
   history?: HistoryEntry[];
+  status?: "queued" | "generating" | "done" | "error";
 }
 
 const HISTORY_CAP = 5;
