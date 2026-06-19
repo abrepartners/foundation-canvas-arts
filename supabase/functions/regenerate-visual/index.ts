@@ -456,6 +456,47 @@ serve(async (req) => {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error in regenerate-visual:", message);
+    // Best-effort: clear the "generating" flag so the UI re-enables the button.
+    try {
+      const body = await req.clone().json().catch(() => ({}));
+      const errMoment = body?.moment;
+      const errContentId = body?.content_id;
+      const errTable =
+        body?.table === "trend_content" ? "trend_content" : "botanical_content";
+      if (errMoment && errContentId) {
+        const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(
+          "SUPABASE_SERVICE_ROLE_KEY",
+        );
+        if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+          const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+          const { data: row } = await sb
+            .from(errTable)
+            .select("script_visuals")
+            .eq("id", errContentId)
+            .single();
+          if (row?.script_visuals) {
+            let arr: Visual[] = [];
+            try {
+              arr = JSON.parse(row.script_visuals);
+            } catch {
+              /* ignore */
+            }
+            const next = arr.map((v) =>
+              v.moment === errMoment
+                ? { ...v, status: "error" as const, error: message.slice(0, 240) }
+                : v,
+            );
+            await sb
+              .from(errTable)
+              .update({ script_visuals: JSON.stringify(next) })
+              .eq("id", errContentId);
+          }
+        }
+      }
+    } catch {
+      /* swallow */
+    }
     return new Response(
       JSON.stringify({
         success: false,
