@@ -53,14 +53,14 @@ export function useTrendContent() {
 
   const generate = async (
     subject: string,
-    _imageProvider: "lovable" | "replicate" = "replicate",
+    imageProvider: "lovable" | "replicate" | "openai" = "replicate",
   ) => {
     setIsLoading(true);
     setError(null);
     try {
       const { data, error: fnError } = await supabase.functions.invoke(
         "generate-trend-content",
-        { body: { subject, image_provider: "replicate" } },
+        { body: { subject, image_provider: imageProvider } },
       );
       if (fnError) throw new Error(fnError.message);
       if (!data.success)
@@ -91,7 +91,7 @@ export function useTrendContent() {
 
   const regenerateVisual = async (
     moment: string,
-    _imageProvider: "lovable" | "replicate" = "replicate",
+    imageProvider: "lovable" | "replicate" | "openai" = "replicate",
     options: { silent?: boolean } = {},
   ) => {
     if (!content?.id) return null;
@@ -102,7 +102,7 @@ export function useTrendContent() {
           body: {
             content_id: content.id,
             moment,
-            image_provider: "replicate",
+            image_provider: imageProvider,
             table: "trend_content",
             storage_prefix: "trends",
           },
@@ -149,7 +149,7 @@ export function useTrendContent() {
   };
 
   const regenerateAllVisuals = async (
-    _imageProvider: "lovable" | "replicate" = "replicate",
+    imageProvider: "lovable" | "replicate" | "openai" = "replicate",
   ) => {
     const moments = [
       "hook",
@@ -160,7 +160,7 @@ export function useTrendContent() {
       "close",
     ];
     for (const m of moments) {
-      await regenerateVisual(m, "replicate", { silent: true });
+      await regenerateVisual(m, imageProvider, { silent: true });
     }
     toast({
       title: "All visuals regenerated",

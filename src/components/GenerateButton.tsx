@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type ImageProvider = "lovable" | "replicate";
+export type ImageProvider = "lovable" | "replicate" | "openai";
 
 interface GenerateButtonProps {
   onClick: () => void;
@@ -44,23 +44,31 @@ export function GenerateButton({
         )}
       </Button>
 
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground font-body">
-          Image model:
-        </span>
-        <Select
-          value={provider}
-          onValueChange={(v) => onProviderChange?.(v as ImageProvider)}
-          disabled={isLoading}
-        >
-          <SelectTrigger className="h-8 w-[220px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="lovable">Lovable AI (Nano Banana)</SelectItem>
-            <SelectItem value="replicate">Replicate (FLUX 1.1 Pro)</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex flex-col items-center gap-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground font-body">
+            Image model:
+          </span>
+          <Select
+            value={provider}
+            onValueChange={(v) => onProviderChange?.(v as ImageProvider)}
+            disabled={isLoading}
+          >
+            <SelectTrigger className="h-8 w-[240px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="lovable">Lovable AI (Nano Banana)</SelectItem>
+              <SelectItem value="replicate">Replicate (FLUX 1.1 Pro)</SelectItem>
+              <SelectItem value="openai">OpenAI (gpt-image-2 HQ)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {provider === "openai" && (
+          <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
+            HQ tier — slower and more expensive than the other two. Output is 2:3 (1024×1536), not true 9:16.
+          </p>
+        )}
       </div>
     </div>
   );
