@@ -311,6 +311,34 @@ serve(async (req) => {
       if (!imgRes.ok)
         throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
       imageBuffer = new Uint8Array(await imgRes.arrayBuffer());
+    } else if (imageProvider === "openai") {
+      const res = await fetch(
+        "https://ai.gateway.lovable.dev/v1/images/generations",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "openai/gpt-image-2",
+            prompt: finalPrompt,
+            quality: "high",
+            size: "1024x1536",
+            n: 1,
+          }),
+        },
+      );
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`OpenAI image API error: ${res.status} ${txt}`);
+      }
+      const json = await res.json();
+      const b64 = json?.data?.[0]?.b64_json;
+      if (!b64 || typeof b64 !== "string") {
+        throw new Error("No image data from OpenAI");
+      }
+      imageBuffer = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     } else {
       const imageResponse = await fetch(
         "https://ai.gateway.lovable.dev/v1/chat/completions",
