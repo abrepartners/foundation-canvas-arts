@@ -158,7 +158,8 @@ export function useTrendContent() {
       }
       return data.image_url;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
+      const raw = err instanceof Error ? err.message : "Unknown error";
+      const { title, message } = formatGatewayError(raw, "Regeneration failed");
       setContent((prev) =>
         prev
           ? {
@@ -169,11 +170,7 @@ export function useTrendContent() {
             }
           : prev,
       );
-      toast({
-        title: "Regeneration failed",
-        description: message,
-        variant: "destructive",
-      });
+      toast({ title, description: message, variant: "destructive" });
       return null;
     }
   };
