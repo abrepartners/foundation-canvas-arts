@@ -243,6 +243,21 @@ serve(async (req) => {
       `Regenerating ${moment} for ${content_id} (provider: ${imageProvider})`,
     );
 
+    // Mark this slot as generating BEFORE calling the provider so the UI
+    // (which polls script_visuals) shows the in-flight state and disables
+    // the regenerate button — preventing duplicate credit spend.
+    {
+      const generatingVisuals = visuals.map((v) =>
+        v.moment === moment
+          ? { ...v, status: "generating" as const, error: null }
+          : v,
+      );
+      await supabase
+        .from(table)
+        .update({ script_visuals: JSON.stringify(generatingVisuals) })
+        .eq("id", content_id);
+    }
+
     let imageBuffer: Uint8Array;
     if (imageProvider === "replicate") {
       const GW = "https://connector-gateway.lovable.dev/replicate/v1";
