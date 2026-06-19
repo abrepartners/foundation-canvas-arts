@@ -305,6 +305,10 @@ function FacelessVisualsSection({
   };
 
   const imagesGenerated = sortedVisuals.filter((v) => v.image_url).length;
+  const inFlightCount = sortedVisuals.filter(
+    (v) => (v.status === "queued" || v.status === "generating") && !v.image_url,
+  ).length;
+  const anyInFlight = inFlightCount > 0 || regenerating.size > 0;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
@@ -316,7 +320,7 @@ function FacelessVisualsSection({
               variant="outline"
               size="sm"
               onClick={handleRegenAll}
-              disabled={regenAllRunning || regenerating.size > 0}
+              disabled={regenAllRunning || anyInFlight}
               className="text-xs"
             >
               {regenAllRunning ? (
@@ -331,8 +335,10 @@ function FacelessVisualsSection({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        {visuals.length} unique moments • {imagesGenerated} images generated
+        {visuals.length} unique moments • {imagesGenerated} ready
+        {inFlightCount > 0 && ` • ${inFlightCount} in progress`}
       </p>
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {sortedVisuals.map((visual, idx) => {
           const isRegenerating = regenerating.has(visual.moment);
