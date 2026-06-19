@@ -215,9 +215,13 @@ serve(async (req) => {
 
     // === REGENERATE ACTION (default) ===
     // Default to Replicate Flux 1.1 Pro for photoreal output.
-    // Only fall back to Lovable Gemini if explicitly requested.
-    const imageProvider: "lovable" | "replicate" =
-      image_provider === "lovable" ? "lovable" : "replicate";
+    // Accept "lovable" (Gemini) or "openai" (gpt-image-2 HQ) overrides.
+    const imageProvider: "lovable" | "replicate" | "openai" =
+      image_provider === "lovable"
+        ? "lovable"
+        : image_provider === "openai"
+          ? "openai"
+          : "replicate";
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
