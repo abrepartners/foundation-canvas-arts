@@ -46,7 +46,12 @@ export function useTrendContent() {
           ? { ...prev, faceless_visuals: visuals }
           : prev,
       );
-      if (visuals.length > 0 && visuals.every((v) => v.image_url || v.error))
+      if (
+        visuals.length > 0 &&
+        visuals.every(
+          (v) => v.status === "done" || v.status === "error" || v.image_url || v.error,
+        )
+      )
         return;
     }
   };
