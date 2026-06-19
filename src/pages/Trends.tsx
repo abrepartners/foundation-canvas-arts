@@ -6,6 +6,13 @@ import { ContentDisplay } from "@/components/ContentDisplay";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -43,7 +50,7 @@ const Trends = () => {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [imageProvider] = useState<ImageProvider>("replicate");
+  const [imageProvider, setImageProvider] = useState<ImageProvider>("replicate");
   const [subject, setSubject] = useState("");
   const [topics, setTopics] = useState<string[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
