@@ -2,6 +2,27 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+export function formatGatewayError(
+  raw: string,
+  fallbackTitle: string,
+): { title: string; message: string } {
+  if (/CREDIT_LIMIT/i.test(raw) || /credit_limit_reached/i.test(raw)) {
+    return {
+      title: "AI credits exhausted",
+      message:
+        "The workspace has hit its AI Gateway credit limit. Daily free credits reset every 24h, or the workspace owner can add top-up credits in Settings → Plans & credits.",
+    };
+  }
+  if (/RATE_LIMIT/i.test(raw) || /\b429\b/.test(raw)) {
+    return {
+      title: "Rate limited",
+      message:
+        "The AI Gateway is throttling requests. Wait a minute and try again.",
+    };
+  }
+  return { title: fallbackTitle, message: raw.replace(/^CREDIT_LIMIT:\s*/, "") };
+}
+
 export interface ScriptStructure {
   hook: string;
   dangle_1: string;
