@@ -23,12 +23,15 @@ export interface VisualHistoryEntry {
   created_at: string;
 }
 
+export type VisualStatus = "queued" | "generating" | "done" | "error";
+
 export interface FacelessVisual {
   moment: "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
   prompt: string;
   image_url?: string | null;
   error?: string | null;
   history?: VisualHistoryEntry[];
+  status?: VisualStatus;
 }
 
 
