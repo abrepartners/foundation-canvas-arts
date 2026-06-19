@@ -6,6 +6,13 @@ import { ContentDisplay } from "@/components/ContentDisplay";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -43,7 +50,7 @@ const Trends = () => {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [imageProvider] = useState<ImageProvider>("replicate");
+  const [imageProvider, setImageProvider] = useState<ImageProvider>("replicate");
   const [subject, setSubject] = useState("");
   const [topics, setTopics] = useState<string[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
@@ -256,6 +263,33 @@ const Trends = () => {
                       </>
                     )}
                   </Button>
+
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground font-body">
+                        Image model:
+                      </span>
+                      <Select
+                        value={imageProvider}
+                        onValueChange={(v) => setImageProvider(v as ImageProvider)}
+                        disabled={isLoading}
+                      >
+                        <SelectTrigger className="h-8 w-[240px] text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="lovable">Lovable AI (Nano Banana)</SelectItem>
+                          <SelectItem value="replicate">Replicate (FLUX 1.1 Pro)</SelectItem>
+                          <SelectItem value="openai">OpenAI (gpt-image-2 HQ)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {imageProvider === "openai" && (
+                      <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
+                        HQ tier — slower and more expensive. Output is 2:3 (1024×1536), not true 9:16.
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <p className="text-xs text-graphite font-body">

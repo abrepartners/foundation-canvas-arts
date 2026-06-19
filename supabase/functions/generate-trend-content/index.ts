@@ -10,11 +10,41 @@ const corsHeaders = {
 
 // Generate an image and return raw bytes (PNG). Supports two providers.
 async function generateImageBytes(
-  provider: "lovable" | "replicate",
+  provider: "lovable" | "replicate" | "openai",
   prompt: string,
   lovableApiKey: string,
   replicateApiKey: string | undefined,
 ): Promise<Uint8Array> {
+  if (provider === "openai") {
+    const res = await fetch(
+      "https://ai.gateway.lovable.dev/v1/images/generations",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${lovableApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-image-2",
+          prompt,
+          quality: "high",
+          size: "1024x1536",
+          n: 1,
+        }),
+      },
+    );
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`OpenAI image API error: ${res.status} ${txt}`);
+    }
+    const json = await res.json();
+    const b64 = json?.data?.[0]?.b64_json;
+    if (!b64 || typeof b64 !== "string") {
+      throw new Error("No image data from OpenAI");
+    }
+    return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  }
+
   if (provider === "replicate") {
     if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
     const GW = "https://connector-gateway.lovable.dev/replicate/v1";
@@ -349,8 +379,9 @@ serve(async (req) => {
       );
     }
 
-    let imageProvider: "lovable" | "replicate" = "replicate";
+    let imageProvider: "lovable" | "replicate" | "openai" = "replicate";
     if (body.image_provider === "lovable") imageProvider = "lovable";
+    else if (body.image_provider === "openai") imageProvider = "openai";
     if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
       throw new Error("REPLICATE_API_KEY not configured");
     }
