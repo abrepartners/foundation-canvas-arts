@@ -379,8 +379,9 @@ serve(async (req) => {
       );
     }
 
-    let imageProvider: "lovable" | "replicate" = "replicate";
+    let imageProvider: "lovable" | "replicate" | "openai" = "replicate";
     if (body.image_provider === "lovable") imageProvider = "lovable";
+    else if (body.image_provider === "openai") imageProvider = "openai";
     if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
       throw new Error("REPLICATE_API_KEY not configured");
     }
