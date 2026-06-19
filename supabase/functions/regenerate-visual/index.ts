@@ -429,6 +429,7 @@ serve(async (req) => {
             prompt: finalPrompt,
             error: null,
             history: newHistory,
+            status: "done" as const,
           }
         : v,
     );
