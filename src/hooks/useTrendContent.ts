@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import type {
-  ContentWithId,
-  FacelessVisual,
-  ScriptStructure,
-  ThumbnailPrompt,
-  VisualHistoryEntry,
+import {
+  formatGatewayError,
+  type ContentWithId,
+  type FacelessVisual,
+  type ScriptStructure,
+  type ThumbnailPrompt,
+  type VisualHistoryEntry,
 } from "@/hooks/useBotanicalContent";
 
 export interface SavedTrendContent extends ContentWithId {
@@ -82,10 +83,11 @@ export function useTrendContent() {
       });
       pollForImages(data.content_id);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
+      const raw = err instanceof Error ? err.message : "Unknown error";
+      const { title, message } = formatGatewayError(raw, "Generation failed");
       setError(message);
       toast({
-        title: "Generation failed",
+        title,
         description: message,
         variant: "destructive",
       });
