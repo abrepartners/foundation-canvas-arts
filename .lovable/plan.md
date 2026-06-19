@@ -1,74 +1,36 @@
-# Add OpenAI gpt-image-2 as a third image model
+Plan: Better credit-error surfacing for AI Gateway failures
 
-## Goal
-Add OpenAI's `gpt-image-2` (high quality, 1024×1536 portrait) as a selectable image provider, alongside the existing Lovable Nano Banana (Gemini) and Replicate Flux 1.1 Pro options. No existing behavior changes — purely additive.
+Problem
+-------
+The generate-trend-content (and generate-botanical-content / regenerate-visual) edge functions return a generic 500 when the Lovable AI Gateway responds with a 402/403 credit-limit error. The UI shows "AI Gateway request failed: 403" which looks like a bug rather than a billing issue.
 
-## Why this is a small change
-The codebase already has clean provider-switching seams:
-- `GenerateButton.tsx` has a `Select` for image model
-- Both `generate-*-content` edge functions and `regenerate-visual` already branch on an `image_provider` string
-- `LOVABLE_API_KEY` already covers the new endpoint — no new secret needed
+What to build
+-------------
+1. **Edge-function error classification**
+   In all three edge functions, when an AI Gateway call fails with status 402 or 403, read the response body and check for `credit_limit_reached` or `credit_limit` in the error JSON. If matched, throw a dedicated `CreditLimitError` with a clear message.
 
-## Changes
+2. **Catch-block mapping**
+   In the top-level `catch` of each edge function, detect `CreditLimitError` and return:
+   - HTTP status 402 (Payment Required)
+   - JSON body: `{ success: false, error: "AI credits exhausted", error_code: "CREDIT_LIMIT", details: "Daily credit limit reached. Total remaining: N credits. Wait for daily reset or add top-up credits." }`
 
-### 1. Frontend selector (`src/components/GenerateButton.tsx`)
-- Extend `ImageProvider` type to `"lovable" | "replicate" | "openai"`
-- Add a third `<SelectItem value="openai">OpenAI (gpt-image-2 HQ)</SelectItem>`
+3. **UI toast + state handling**
+   In `useBotanicalContent.ts` and `useTrendContent.ts`, when `fnError` or the response contains `error_code === "CREDIT_LIMIT"`, set `error` state to the human-readable message and show a `destructive` toast that explicitly says credits are exhausted and hints at waiting for the daily reset.
 
-### 2. Pipe provider through hooks/pages
-- `useBotanicalContent.ts` / `useTrendContent.ts` / `Index.tsx` / `Trends.tsx` / `ContentDisplay.tsx` already forward `image_provider`. Just widen the union type — no logic change.
+4. **Optional: credit-aware generate button**
+   In `GenerateButton.tsx`, add a small tooltip or inline text when the `openai` provider is selected, noting its higher credit cost. (The OpenAI/gpt-image-2 path is the most expensive provider — a single 6-image generation can burn 6 credits or more, easily exhausting a 5-credit daily cap in one click.)
 
-### 3. Edge function: `regenerate-visual/index.ts`
-Add a third branch after the existing Replicate / Lovable branches:
+Files to touch
+--------------
+- supabase/functions/generate-trend-content/index.ts
+- supabase/functions/generate-botanical-content/index.ts
+- supabase/functions/regenerate-visual/index.ts
+- src/hooks/useBotanicalContent.ts
+- src/hooks/useTrendContent.ts
+- src/components/GenerateButton.tsx
 
-```ts
-} else if (imageProvider === "openai") {
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/images/generations", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "openai/gpt-image-2",
-      prompt: finalPrompt,
-      quality: "high",       // user picked HQ tier
-      size: "1024x1536",     // closest portrait, ~2:3
-      n: 1,
-      // non-streaming — edge function only needs the final PNG to upload
-    }),
-  });
-  const json = await res.json();
-  const b64 = json?.data?.[0]?.b64_json;
-  imageBuffer = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-}
-```
-
-- Save as `.png` (OpenAI returns PNG). TikTok publish pipeline already transcodes PNGs where needed.
-- Note: output is 2:3, not 9:16 — slight letterbox vs the existing Flux/Gemini 9:16 outputs. Per your answer, we keep 1024×1536 as-is (no auto-crop).
-
-### 4. Edge functions: `generate-botanical-content/index.ts` and `generate-trend-content/index.ts`
-Apply the same third branch in the per-moment image loop where the current `imageProvider` switch lives. Same body, same upload path (`botanical-faceless-visuals` bucket, versioned path).
-
-### 5. Cost/quality note surfaced in UI
-Add a small helper line under the select: *"HQ tier — slower and more expensive than the other two."* So you don't accidentally burn credits on a 6-tile carousel.
-
-## Out of scope (explicitly NOT changing)
-- Lovable Nano Banana path
-- Replicate Flux 1.1 Pro path
-- Prompt content (`architecturalPlate.ts` stays as-is)
-- 9:16 ratio for the other providers
-- Storage paths, history, regenerate flow, captions, TikTok publish
-
-## Files touched
-- `src/components/GenerateButton.tsx`
-- `src/hooks/useBotanicalContent.ts`
-- `src/hooks/useTrendContent.ts`
-- `src/pages/Index.tsx`
-- `src/pages/Trends.tsx`
-- `src/components/ContentDisplay.tsx` (type widening only)
-- `supabase/functions/generate-botanical-content/index.ts`
-- `supabase/functions/generate-trend-content/index.ts`
-- `supabase/functions/regenerate-visual/index.ts`
-
-## Verification after build
-1. Switch model to "OpenAI" → generate one content package → confirm 6 tiles render
-2. Switch back to Replicate → confirm Flux path still works
-3. Per-tile regenerate with OpenAI selected → confirm history is preserved
+Out of scope
+------------
+- Adding a live credit-balance API call on every page load.
+- Changing AI models or providers.
+- Adjusting workspace billing settings (only the workspace owner can do that).
