@@ -227,9 +227,12 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
-    if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
+    if (
+      (imageProvider === "replicate" || imageProvider === "openai") &&
+      !REPLICATE_API_KEY
+    ) {
       throw new Error(
-        "REPLICATE_API_KEY not configured — required for photoreal Flux rendering",
+        "REPLICATE_API_KEY not configured — required for Replicate-hosted image models",
       );
     }
 
