@@ -274,7 +274,7 @@ serve(async (req) => {
           ? {
               prompt: finalPrompt,
               quality: "high",
-              aspect_ratio: "2:3",
+              aspect_ratio: "9:16",
               output_format: "jpeg",
             }
           : {
