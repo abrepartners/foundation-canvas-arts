@@ -70,6 +70,54 @@ async function runReplicatePrediction(
   throw new Error("Replicate timed out");
 }
 
+async function runReplicateTextCompletion(
+  input: Record<string, unknown>,
+  lovableApiKey: string,
+  replicateApiKey: string,
+): Promise<string> {
+  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const model = "google/gemini-2.5-flash";
+  const createRes = await fetch(`${GW}/models/${model}/predictions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${lovableApiKey}`,
+      "X-Connection-Api-Key": replicateApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ input }),
+  });
+  if (!createRes.ok) {
+    const txt = await createRes.text();
+    throw new Error(`Replicate text create failed: ${createRes.status} ${txt}`);
+  }
+  const pred = await createRes.json();
+  const predId = pred.id;
+  if (!predId) throw new Error("Replicate text: no prediction id");
+
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2500));
+    const pollRes = await fetch(`${GW}/predictions/${predId}`, {
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "X-Connection-Api-Key": replicateApiKey,
+      },
+    });
+    if (!pollRes.ok) continue;
+    const p = await pollRes.json();
+    if (p.status === "succeeded") {
+      const output = Array.isArray(p.output) ? p.output.join("") : p.output;
+      if (typeof output !== "string" || output.trim().length === 0) {
+        throw new Error("Replicate text: empty output");
+      }
+      return output;
+    }
+    if (p.status === "failed" || p.status === "canceled") {
+      throw new Error(`Replicate text prediction ${p.status}: ${p.error ?? ""}`);
+    }
+  }
+  throw new Error("Replicate text timed out");
+}
+
 // Generate an image and return raw bytes. Supports three providers.
 async function generateImageBytes(
   provider: "lovable" | "replicate" | "openai",
@@ -373,11 +421,8 @@ serve(async (req) => {
     let imageProvider: "lovable" | "replicate" | "openai" = "replicate";
     if (body.image_provider === "lovable") imageProvider = "lovable";
     else if (body.image_provider === "openai") imageProvider = "openai";
-    if (
-      (imageProvider === "replicate" || imageProvider === "openai") &&
-      !REPLICATE_API_KEY
-    ) {
-      throw new Error("REPLICATE_API_KEY not configured");
+    if (!REPLICATE_API_KEY) {
+      throw new Error("REPLICATE_API_KEY not configured — required for Replicate-hosted generation");
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -409,50 +454,17 @@ Rules:
 
     const systemPrompt = buildSystemPrompt(subject, NOVELTY_BLOCK);
 
-    const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
+    const rawContent = await runReplicateTextCompletion(
       {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            { role: "system", content: systemPrompt },
-            {
-              role: "user",
-              content: `Generate a complete content package for the subject: ${subject}`,
-            },
-          ],
-          temperature: 0.8,
-          max_tokens: 4000,
-        }),
+        system_instruction: systemPrompt,
+        prompt: `Generate a complete content package for the subject: ${subject}`,
+        temperature: 0.8,
+        max_output_tokens: 8000,
+        thinking_budget: 0,
       },
+      LOVABLE_API_KEY,
+      REPLICATE_API_KEY,
     );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("AI Gateway error:", errorText);
-      if (
-        (response.status === 402 || response.status === 403) &&
-        /credit_limit|credit limit|insufficient.*credit/i.test(errorText)
-      ) {
-        throw new Error(
-          "CREDIT_LIMIT: Workspace credit limit reached. The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits.",
-        );
-      }
-      if (response.status === 429) {
-        throw new Error(
-          "RATE_LIMIT: AI Gateway is rate-limiting requests. Wait a minute and try again.",
-        );
-      }
-      throw new Error(`AI Gateway request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content;
     if (!rawContent) throw new Error("No content received from AI");
 
     let parsed: Record<string, unknown> & {
@@ -579,11 +591,12 @@ Rules:
           LOVABLE_API_KEY,
           REPLICATE_API_KEY,
         );
-        const filePath = `trends/${contentId}/${visual.moment}.png`;
+        const ext = imageProvider === "lovable" ? "png" : "jpg";
+        const filePath = `trends/${contentId}/${visual.moment}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from("botanical-faceless-visuals")
           .upload(filePath, imageBuffer, {
-            contentType: "image/png",
+            contentType: ext === "jpg" ? "image/jpeg" : "image/png",
             upsert: true,
           });
         if (uploadError) {

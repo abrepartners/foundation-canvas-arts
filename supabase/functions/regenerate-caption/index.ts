@@ -54,6 +54,57 @@ function json(payload: unknown, status = 200): Response {
   });
 }
 
+async function runReplicateCaption(
+  systemInstruction: string,
+  prompt: string,
+  lovableApiKey: string,
+  replicateApiKey: string,
+): Promise<string> {
+  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const createRes = await fetch(`${GW}/models/google/gemini-2.5-flash/predictions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${lovableApiKey}`,
+      "X-Connection-Api-Key": replicateApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      input: {
+        system_instruction: systemInstruction,
+        prompt,
+        temperature: 0.7,
+        max_output_tokens: 2500,
+        thinking_budget: 0,
+      },
+    }),
+  });
+  if (!createRes.ok) throw new Error(`Replicate caption failed: ${createRes.status}`);
+  const pred = await createRes.json();
+  if (!pred.id) throw new Error("Replicate caption failed: no prediction id");
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2500));
+    const pollRes = await fetch(`${GW}/predictions/${pred.id}`, {
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "X-Connection-Api-Key": replicateApiKey,
+      },
+    });
+    if (!pollRes.ok) continue;
+    const p = await pollRes.json();
+    if (p.status === "succeeded") {
+      const output = Array.isArray(p.output) ? p.output.join("") : p.output;
+      if (typeof output !== "string" || output.trim().length === 0) {
+        throw new Error("Replicate caption returned empty output");
+      }
+      return output.trim();
+    }
+    if (p.status === "failed" || p.status === "canceled") {
+      throw new Error(`Replicate caption ${p.status}: ${p.error ?? ""}`);
+    }
+  }
+  throw new Error("Replicate caption timed out");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -61,9 +112,11 @@ serve(async (req) => {
 
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    if (!REPLICATE_API_KEY) throw new Error("REPLICATE_API_KEY not configured");
     if (!SUPABASE_URL || !SERVICE_KEY)
       throw new Error("Supabase credentials not configured");
 
@@ -119,47 +172,12 @@ serve(async (req) => {
       .filter(Boolean)
       .join("\n\n");
 
-    const aiRes = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            { role: "system", content: CAPTION_SPEC },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.7,
-          max_tokens: 1500,
-        }),
-      },
+    let caption = await runReplicateCaption(
+      CAPTION_SPEC,
+      userPrompt,
+      LOVABLE_API_KEY,
+      REPLICATE_API_KEY,
     );
-
-    if (aiRes.status === 429) {
-      return json(
-        { error: "AI rate limit hit — try again in a moment." },
-        429,
-      );
-    }
-    if (aiRes.status === 402) {
-      return json(
-        { error: "AI credits exhausted — add credits in workspace settings." },
-        402,
-      );
-    }
-    if (!aiRes.ok) {
-      const t = await aiRes.text();
-      console.error("AI Gateway error:", t);
-      return json({ error: `AI request failed (${aiRes.status})` }, 502);
-    }
-
-    const aiJson = await aiRes.json();
-    let caption: string =
-      aiJson?.choices?.[0]?.message?.content?.toString().trim() ?? "";
     if (!caption) return json({ error: "Empty AI response" }, 502);
 
     // Strip accidental fences
