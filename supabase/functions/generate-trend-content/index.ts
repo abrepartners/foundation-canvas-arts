@@ -137,12 +137,12 @@ async function generateImageBytes(
             prompt,
             quality: "high",
             aspect_ratio: "2:3",
-            output_format: "jpg",
+            output_format: "jpeg",
           }
         : {
             prompt,
             aspect_ratio: "9:16",
-            output_format: "jpg",
+            output_format: "jpeg",
             safety_tolerance: 2,
             prompt_upsampling: false,
           };

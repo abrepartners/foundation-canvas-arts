@@ -1,37 +1,20 @@
-## Switch OpenAI image generation from Lovable AI Gateway to Replicate
+## Problem
 
-### Problem
-The `openai` image provider currently routes `gpt-image-2` through the Lovable AI Gateway, consuming ~0.95 Lovable credits per image and hitting the workspace credit cap. Replicate also hosts `openai/gpt-image-2` and the project already has the Replicate connector (`REPLICATE_API_KEY`) configured.
+Replicate is rejecting every image request with:
 
-### Solution
-Route the `openai` provider through the Replicate connector instead. This bills to the user's Replicate account and frees Lovable workspace credits for build/plan usage.
+> `output_format must be one of the following: "png", "jpeg", "webp"`
 
-### Changes
+We were sending `output_format: "jpg"`, which Replicate doesn't accept (their valid values are `png`, `jpeg`, `webp`). This affects both the OpenAI (`openai/gpt-image-2`) path and the FLUX path.
 
-**1. Edge functions — image generation routing**
-Update the `provider === "openai"` branch in:
-- `supabase/functions/generate-botanical-content/index.ts`
-- `supabase/functions/generate-trend-content/index.ts`
-- `supabase/functions/regenerate-visual/index.ts`
+## Fix
 
-Replace the direct Lovable AI Gateway (`ai.gateway.lovable.dev/v1/images/generations`) call with the Replicate connector pattern (`connector-gateway.lovable.dev/replicate/v1/models/openai/gpt-image-2/predictions`), including create → poll → fetch output. Reuse the same retry/backoff logic already present for FLUX 1.1 Pro.
+1. In all three edge functions, change the Replicate input from `output_format: "jpg"` to `output_format: "jpeg"`:
+   - `supabase/functions/generate-botanical-content/index.ts`
+   - `supabase/functions/generate-trend-content/index.ts`
+   - `supabase/functions/regenerate-visual/index.ts`
 
-Input parameters for Replicate's `openai/gpt-image-2`:
-- `prompt`
-- `quality: "high"`
-- `aspect_ratio: "9:16"`
-- `output_format: "jpg"`
+2. Keep the saved file extension as `.jpg` with `image/jpeg` content type — that's just a filename, browsers and TikTok don't care.
 
-**2. UI cost hints**
-Update `src/components/GenerateButton.tsx`:
-- Change the "openai" option label/hint to indicate it now bills to Replicate (not Lovable credits).
-- Keep the existing ~5× cost comparison relative to FLUX since gpt-image-2 is still significantly more expensive per image than FLUX 1.1 Pro.
+3. Deploy the three functions and run one OpenAI generation through the edge function to confirm Replicate accepts the payload and an image lands in storage.
 
-**3. No client-side changes needed**
-The `ImageProvider` type (`"lovable" | "replicate" | "openai"`) stays the same; only the backend routing changes.
-
-### Acceptance criteria
-- Selecting "OpenAI (gpt-image-2)" generates images via Replicate.
-- The generation succeeds end-to-end (create → poll → storage → public URL).
-- Lovable workspace credits are not consumed for `openai` provider image calls.
-- Cost hint in the UI accurately reflects Replicate billing.
+No UI, pricing, or provider-selection changes — this is a one-character payload fix (`jpg` → `jpeg`) in three files.
