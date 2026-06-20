@@ -8,6 +8,71 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+// Run a Replicate prediction for any official model, return output URL.
+async function runReplicatePrediction(
+  model: string, // e.g. "black-forest-labs/flux-1.1-pro" or "openai/gpt-image-2"
+  input: Record<string, unknown>,
+  lovableApiKey: string,
+  replicateApiKey: string,
+): Promise<string> {
+  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const authHeaders = {
+    Authorization: `Bearer ${lovableApiKey}`,
+    "X-Connection-Api-Key": replicateApiKey,
+    "Content-Type": "application/json",
+  };
+
+  let createRes: Response | null = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    createRes = await fetch(`${GW}/models/${model}/predictions`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ input }),
+    });
+    if (createRes.status !== 429) break;
+    let waitSec = 12;
+    try {
+      const body = await createRes.clone().json();
+      if (typeof body?.retry_after === "number")
+        waitSec = Math.max(body.retry_after + 2, 8);
+    } catch {
+      /* ignore */
+    }
+    console.log(
+      `Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`,
+    );
+    await new Promise((r) => setTimeout(r, waitSec * 1000));
+  }
+  if (!createRes || !createRes.ok) {
+    const txt = createRes ? await createRes.text() : "no response";
+    throw new Error(`Replicate create failed: ${createRes?.status} ${txt}`);
+  }
+  const pred = await createRes.json();
+  const predId = pred.id;
+  if (!predId) throw new Error("Replicate: no prediction id");
+
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
+    const pollRes = await fetch(`${GW}/predictions/${predId}`, {
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "X-Connection-Api-Key": replicateApiKey,
+      },
+    });
+    if (!pollRes.ok) continue;
+    const p = await pollRes.json();
+    if (p.status === "succeeded") {
+      const url = Array.isArray(p.output) ? p.output[0] : p.output;
+      if (typeof url !== "string") throw new Error("Replicate: invalid output");
+      return url;
+    }
+    if (p.status === "failed" || p.status === "canceled") {
+      throw new Error(`Replicate prediction ${p.status}: ${p.error ?? ""}`);
+    }
+  }
+  throw new Error("Replicate timed out");
+}
+
 // Generate an image and return raw bytes. Supports three providers.
 async function generateImageBytes(
   provider: "lovable" | "replicate" | "openai",
@@ -15,110 +80,33 @@ async function generateImageBytes(
   lovableApiKey: string,
   replicateApiKey: string | undefined,
 ): Promise<Uint8Array> {
-  if (provider === "openai") {
-    const res = await fetch(
-      "https://ai.gateway.lovable.dev/v1/images/generations",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${lovableApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "openai/gpt-image-2",
-          prompt,
-          quality: "high",
-          size: "1024x1536",
-          n: 1,
-        }),
-      },
-    );
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`OpenAI image API error: ${res.status} ${txt}`);
-    }
-    const json = await res.json();
-    const b64 = json?.data?.[0]?.b64_json;
-    if (!b64 || typeof b64 !== "string") {
-      throw new Error("No image data from OpenAI");
-    }
-    return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  }
-
-  if (provider === "replicate") {
+  if (provider === "openai" || provider === "replicate") {
     if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
-    const GW = "https://connector-gateway.lovable.dev/replicate/v1";
-    const authHeaders = {
-      Authorization: `Bearer ${lovableApiKey}`,
-      "X-Connection-Api-Key": replicateApiKey,
-      "Content-Type": "application/json",
-    };
-
-    // Create prediction with 429 backoff (Replicate enforces 6/min + burst 1 under $5 credit)
-    let createRes: Response | null = null;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      createRes = await fetch(
-        `${GW}/models/black-forest-labs/flux-1.1-pro/predictions`,
-        {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify({
-            input: {
-              prompt,
-              aspect_ratio: "9:16",
-              // TikTok's photo API only accepts JPEG/WebP pulls — keep jpg
-              output_format: "jpg",
-              safety_tolerance: 2,
-              prompt_upsampling: false,
-            },
-          }),
-        },
-      );
-      if (createRes.status !== 429) break;
-      let waitSec = 12;
-      try {
-        const body = await createRes.clone().json();
-        if (typeof body?.retry_after === "number")
-          waitSec = Math.max(body.retry_after + 2, 8);
-      } catch {
-        /* ignore */
-      }
-      console.log(
-        `Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`,
-      );
-      await new Promise((r) => setTimeout(r, waitSec * 1000));
-    }
-    if (!createRes || !createRes.ok) {
-      const txt = createRes ? await createRes.text() : "no response";
-      throw new Error(`Replicate create failed: ${createRes?.status} ${txt}`);
-    }
-    const pred = await createRes.json();
-    const predId = pred.id;
-    if (!predId) throw new Error("Replicate: no prediction id");
-
-    // Poll
-    let output: string | string[] | null = null;
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
-      const pollRes = await fetch(`${GW}/predictions/${predId}`, {
-        headers: {
-          Authorization: `Bearer ${lovableApiKey}`,
-          "X-Connection-Api-Key": replicateApiKey,
-        },
-      });
-      if (!pollRes.ok) continue;
-      const p = await pollRes.json();
-      if (p.status === "succeeded") {
-        output = p.output;
-        break;
-      }
-      if (p.status === "failed" || p.status === "canceled") {
-        throw new Error(`Replicate prediction ${p.status}: ${p.error ?? ""}`);
-      }
-    }
-    if (!output) throw new Error("Replicate timed out");
-    const url = Array.isArray(output) ? output[0] : output;
-    if (typeof url !== "string") throw new Error("Replicate: invalid output");
+    const model =
+      provider === "openai"
+        ? "openai/gpt-image-2"
+        : "black-forest-labs/flux-1.1-pro";
+    const input: Record<string, unknown> =
+      provider === "openai"
+        ? {
+            prompt,
+            quality: "high",
+            aspect_ratio: "2:3",
+            output_format: "jpg",
+          }
+        : {
+            prompt,
+            aspect_ratio: "9:16",
+            output_format: "jpg",
+            safety_tolerance: 2,
+            prompt_upsampling: false,
+          };
+    const url = await runReplicatePrediction(
+      model,
+      input,
+      lovableApiKey,
+      replicateApiKey,
+    );
     const imgRes = await fetch(url);
     if (!imgRes.ok)
       throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
@@ -381,9 +369,12 @@ serve(async (req) => {
     } catch {
       // no body — default to replicate
     }
-    if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
+    if (
+      (imageProvider === "replicate" || imageProvider === "openai") &&
+      !REPLICATE_API_KEY
+    ) {
       throw new Error(
-        "REPLICATE_API_KEY not configured — required for photoreal Flux rendering",
+        "REPLICATE_API_KEY not configured — required for Replicate-hosted image models",
       );
     }
     console.log(`Image provider: ${imageProvider}`);

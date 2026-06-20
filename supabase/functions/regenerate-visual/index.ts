@@ -227,9 +227,12 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
-    if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
+    if (
+      (imageProvider === "replicate" || imageProvider === "openai") &&
+      !REPLICATE_API_KEY
+    ) {
       throw new Error(
-        "REPLICATE_API_KEY not configured — required for photoreal Flux rendering",
+        "REPLICATE_API_KEY not configured — required for Replicate-hosted image models",
       );
     }
 
@@ -259,30 +262,39 @@ serve(async (req) => {
     }
 
     let imageBuffer: Uint8Array;
-    if (imageProvider === "replicate") {
+    let outputExt: "jpg" | "png" = "png";
+    if (imageProvider === "replicate" || imageProvider === "openai") {
       const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+      const model =
+        imageProvider === "openai"
+          ? "openai/gpt-image-2"
+          : "black-forest-labs/flux-1.1-pro";
+      const input: Record<string, unknown> =
+        imageProvider === "openai"
+          ? {
+              prompt: finalPrompt,
+              quality: "high",
+              aspect_ratio: "2:3",
+              output_format: "jpg",
+            }
+          : {
+              prompt: finalPrompt,
+              aspect_ratio: "9:16",
+              output_format: "jpg",
+              safety_tolerance: 2,
+            };
+
       let createRes: Response | null = null;
       for (let attempt = 0; attempt < 4; attempt++) {
-        createRes = await fetch(
-          `${GW}/models/black-forest-labs/flux-1.1-pro/predictions`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${LOVABLE_API_KEY}`,
-              "X-Connection-Api-Key": REPLICATE_API_KEY!,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              input: {
-                prompt: finalPrompt,
-                aspect_ratio: "9:16",
-                // TikTok's photo API only accepts JPEG/WebP pulls — keep jpg
-                output_format: "jpg",
-                safety_tolerance: 2,
-              },
-            }),
+        createRes = await fetch(`${GW}/models/${model}/predictions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "X-Connection-Api-Key": REPLICATE_API_KEY!,
+            "Content-Type": "application/json",
           },
-        );
+          body: JSON.stringify({ input }),
+        });
         if (createRes.status !== 429) break;
         let waitSec = 12;
         try {
@@ -304,7 +316,7 @@ serve(async (req) => {
       const pred = await createRes.json();
       const predId = pred.id;
       let outputUrl: string | null = null;
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; i < 90; i++) {
         await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
         const pollRes = await fetch(`${GW}/predictions/${predId}`, {
           headers: {
@@ -327,42 +339,7 @@ serve(async (req) => {
       if (!imgRes.ok)
         throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
       imageBuffer = new Uint8Array(await imgRes.arrayBuffer());
-    } else if (imageProvider === "openai") {
-      const res = await fetch(
-        "https://ai.gateway.lovable.dev/v1/images/generations",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "openai/gpt-image-2",
-            prompt: finalPrompt,
-            quality: "high",
-            size: "1024x1536",
-            n: 1,
-          }),
-        },
-      );
-      if (!res.ok) {
-        const txt = await res.text();
-        if (
-          (res.status === 402 || res.status === 403) &&
-          /credit_limit|credit limit|insufficient.*credit/i.test(txt)
-        ) {
-          throw new Error(
-            "CREDIT_LIMIT: Workspace credit limit reached. The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits.",
-          );
-        }
-        throw new Error(`OpenAI image API error: ${res.status} ${txt}`);
-      }
-      const json = await res.json();
-      const b64 = json?.data?.[0]?.b64_json;
-      if (!b64 || typeof b64 !== "string") {
-        throw new Error("No image data from OpenAI");
-      }
-      imageBuffer = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      outputExt = "jpg";
     } else {
       const imageResponse = await fetch(
         "https://ai.gateway.lovable.dev/v1/chat/completions",
@@ -399,11 +376,14 @@ serve(async (req) => {
       }
       const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
       imageBuffer = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+      outputExt = "png";
     }
+
+
 
     // Versioned storage path so previous renders remain reachable.
     // Replicate outputs jpg (TikTok-compatible); Lovable/Gemini returns png.
-    const ext = imageProvider === "replicate" ? "jpg" : "png";
+    const ext = outputExt;
     const timestamp = Date.now();
     const filePath = storagePrefix
       ? `${storagePrefix}/${content_id}/${moment}/${timestamp}.${ext}`
