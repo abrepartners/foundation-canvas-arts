@@ -76,7 +76,7 @@ export function GenerateButton({
         )}
         {provider === "openai" && (
           <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
-            ~5.7 Lovable credits (~$1.14) per package — ~5× the others. Output is 2:3 (1024×1536), not true 9:16.
+            ~$1.14 per package, billed to Replicate (runs gpt-image-2 via Replicate). Does NOT use Lovable credits. Output is 2:3 (1024×1536).
           </p>
         )}
       </div>
