@@ -352,7 +352,7 @@ serve(async (req) => {
           /credit_limit|credit limit|insufficient.*credit/i.test(txt)
         ) {
           throw new Error(
-            "CREDIT_LIMIT: AI Gateway credits exhausted. Daily free credits reset every 24h, or the workspace owner can add top-up credits in Settings → Plans & credits.",
+            "CREDIT_LIMIT: Workspace credit limit reached. The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits.",
           );
         }
         throw new Error(`OpenAI image API error: ${res.status} ${txt}`);
@@ -386,7 +386,7 @@ serve(async (req) => {
           /credit_limit|credit limit|insufficient.*credit/i.test(txt)
         ) {
           throw new Error(
-            "CREDIT_LIMIT: AI Gateway credits exhausted. Daily free credits reset every 24h, or the workspace owner can add top-up credits in Settings → Plans & credits.",
+            "CREDIT_LIMIT: Workspace credit limit reached. The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits.",
           );
         }
         throw new Error(`Image generation failed: ${imageResponse.status}`);

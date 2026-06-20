@@ -467,7 +467,7 @@ Repetition is NOT allowed.
         /credit_limit|credit limit|insufficient.*credit/i.test(errorText)
       ) {
         throw new Error(
-          "CREDIT_LIMIT: AI Gateway credits exhausted. Daily free credits reset every 24h, or the workspace owner can add top-up credits in Settings → Plans & credits.",
+          "CREDIT_LIMIT: Workspace credit limit reached. The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits.",
         );
       }
       if (response.status === 429) {
