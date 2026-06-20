@@ -421,11 +421,8 @@ serve(async (req) => {
     let imageProvider: "lovable" | "replicate" | "openai" = "replicate";
     if (body.image_provider === "lovable") imageProvider = "lovable";
     else if (body.image_provider === "openai") imageProvider = "openai";
-    if (
-      (imageProvider === "replicate" || imageProvider === "openai") &&
-      !REPLICATE_API_KEY
-    ) {
-      throw new Error("REPLICATE_API_KEY not configured");
+    if (!REPLICATE_API_KEY) {
+      throw new Error("REPLICATE_API_KEY not configured — required for Replicate-hosted generation");
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -457,50 +454,17 @@ Rules:
 
     const systemPrompt = buildSystemPrompt(subject, NOVELTY_BLOCK);
 
-    const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
+    const rawContent = await runReplicateTextCompletion(
       {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            { role: "system", content: systemPrompt },
-            {
-              role: "user",
-              content: `Generate a complete content package for the subject: ${subject}`,
-            },
-          ],
-          temperature: 0.8,
-          max_tokens: 4000,
-        }),
+        system_instruction: systemPrompt,
+        prompt: `Generate a complete content package for the subject: ${subject}`,
+        temperature: 0.8,
+        max_output_tokens: 8000,
+        thinking_budget: 0,
       },
+      LOVABLE_API_KEY,
+      REPLICATE_API_KEY,
     );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("AI Gateway error:", errorText);
-      if (
-        (response.status === 402 || response.status === 403) &&
-        /credit_limit|credit limit|insufficient.*credit/i.test(errorText)
-      ) {
-        throw new Error(
-          "CREDIT_LIMIT: Workspace credit limit reached. The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits.",
-        );
-      }
-      if (response.status === 429) {
-        throw new Error(
-          "RATE_LIMIT: AI Gateway is rate-limiting requests. Wait a minute and try again.",
-        );
-      }
-      throw new Error(`AI Gateway request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content;
     if (!rawContent) throw new Error("No content received from AI");
 
     let parsed: Record<string, unknown> & {
