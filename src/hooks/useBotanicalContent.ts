@@ -8,9 +8,9 @@ export function formatGatewayError(
 ): { title: string; message: string } {
   if (/CREDIT_LIMIT/i.test(raw) || /credit_limit_reached/i.test(raw)) {
     return {
-      title: "AI credits exhausted",
+      title: "Workspace credit limit reached",
       message:
-        "The workspace has hit its AI Gateway credit limit. Daily free credits reset every 24h, or the workspace owner can add top-up credits in Settings → Plans & credits.",
+        "The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits.",
     };
   }
   if (/RATE_LIMIT/i.test(raw) || /\b429\b/.test(raw)) {
