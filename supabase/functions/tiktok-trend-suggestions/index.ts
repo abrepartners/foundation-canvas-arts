@@ -121,7 +121,9 @@ serve(async (req) => {
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const TIKTOK_API_KEY = Deno.env.get("TIKTOK_API_KEY");
+    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    if (!REPLICATE_API_KEY) throw new Error("REPLICATE_API_KEY not configured");
 
     let subject = "";
     try {
@@ -143,7 +145,7 @@ serve(async (req) => {
     }
 
     if (!topics || topics.length === 0) {
-      topics = await fallbackViaGemini(subject, LOVABLE_API_KEY);
+      topics = await fallbackViaGemini(subject, LOVABLE_API_KEY, REPLICATE_API_KEY);
     }
 
     return new Response(
