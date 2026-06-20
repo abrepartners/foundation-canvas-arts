@@ -383,7 +383,7 @@ serve(async (req) => {
 
     // Versioned storage path so previous renders remain reachable.
     // Replicate outputs jpg (TikTok-compatible); Lovable/Gemini returns png.
-    const ext = imageProvider === "replicate" ? "jpg" : "png";
+    const ext = outputExt;
     const timestamp = Date.now();
     const filePath = storagePrefix
       ? `${storagePrefix}/${content_id}/${moment}/${timestamp}.${ext}`
