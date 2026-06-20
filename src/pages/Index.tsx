@@ -25,7 +25,7 @@ const Index = () => {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [imageProvider, setImageProvider] = useState<ImageProvider>("lovable");
+  const [imageProvider, setImageProvider] = useState<ImageProvider>("replicate");
 
   const handleSelect = (item: (typeof history)[0]) => {
     setSelectedId(item.id);

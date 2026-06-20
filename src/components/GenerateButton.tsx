@@ -64,9 +64,19 @@ export function GenerateButton({
             </SelectContent>
           </Select>
         </div>
+        {provider === "lovable" && (
+          <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
+            ~1.2 Lovable credits (~$0.24) per package. Counts against your workspace cap.
+          </p>
+        )}
+        {provider === "replicate" && (
+          <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
+            ~$0.24 per package, billed to Replicate. Does NOT use Lovable credits.
+          </p>
+        )}
         {provider === "openai" && (
           <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
-            HQ tier — slower and more expensive than the other two. Output is 2:3 (1024×1536), not true 9:16.
+            ~5.7 Lovable credits (~$1.14) per package — ~5× the others. Output is 2:3 (1024×1536), not true 9:16.
           </p>
         )}
       </div>

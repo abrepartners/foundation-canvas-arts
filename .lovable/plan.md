@@ -1,41 +1,55 @@
-## Problem
+## What a "generation" actually costs
 
-The toast says "AI credits exhausted" with "daily free credits reset every 24h", but the workspace has plenty of credits (87.98 remaining, 5/5 daily available). The real upstream error from AI Gateway is:
+Each Generate Content Package call makes:
+- **1 text call** to Gemini 2.5 Flash via Lovable AI (writes the script + 6 visual prompts)
+- **6 image calls** — one each for Hook, Dangle 1, Re-hook, Dangle 2, Verified Truth, Close — using the image model you picked in the dropdown
 
-```
-type: "credit_limit_reached"
-message: "Workspace credit limit reached"
-details: "This workspace has reached its credit limit. Ask your workspace owner to adjust the workspace limit."
-scope: "workspace"
-```
+The text call is the same across all three options and is effectively free (~0.005 credits / ~$0.001 per package — Gemini Flash text is negligible). The cost differences below are all driven by the **6 images**.
 
-This is a **workspace member monthly credit cap** (set in Settings → Workspace → "Default monthly member credit limit" or Settings → People → "Set credit limit"), not the daily free-credit pool. Our current message points users to the wrong place.
+## Per-image rates (provider list price)
 
-## Fix
+Pricing for image gen, as billed when called from your app today. 1 Lovable credit ≈ $0.20.
 
-Update the error message in all three edge functions and the client formatter so it reflects what AI Gateway is actually saying.
+| Option (dropdown label) | Underlying model | Per-image cost | Billed to |
+|---|---|---|---|
+| **Lovable (Gemini Nano Banana)** | `google/gemini-2.5-flash-image` via Lovable AI Gateway | ~$0.039 ≈ **0.20 credits** | Lovable workspace credits |
+| **OpenAI (gpt-image-2 HQ)** | `openai/gpt-image-2`, quality `high`, 1024×1536 via Lovable AI Gateway | ~$0.19 ≈ **0.95 credits** | Lovable workspace credits |
+| **Replicate (FLUX 1.1 Pro)** | `black-forest-labs/flux-1.1-pro` via Replicate connector | **$0.04** | Replicate account (NOT Lovable credits) |
 
-### Edge functions (`generate-botanical-content`, `generate-trend-content`, `regenerate-visual`)
+These match what I see in your actual usage breakdown for the current billing period:
+- `openai/gpt-image-2 image output`: 3.95 credits used so far
+- `google/gemini-2.5-flash-image image output`: 1.07 credits used so far
+- Replicate: $0 in Lovable credits — it's billed separately on Replicate's side.
 
-Change the `CREDIT_LIMIT:` thrown message from the daily-reset text to:
+## Per generated package (6 images + 1 text)
 
-> "CREDIT_LIMIT: Workspace credit limit reached. The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits."
+| Option | Lovable credits per package | USD per package | Where it hits |
+|---|---|---|---|
+| **Lovable (Gemini Nano Banana)** | ~**1.2 credits** | ~$0.24 | Lovable workspace |
+| **OpenAI (gpt-image-2 HQ)** | ~**5.7 credits** | ~$1.14 | Lovable workspace |
+| **Replicate (FLUX 1.1 Pro)** | ~0 credits (just the text call) | ~**$0.24** | Replicate account |
 
-### Client (`src/hooks/useBotanicalContent.ts` → `formatGatewayError`)
+## Per 100 generations (rough planning numbers)
 
-Update the `CREDIT_LIMIT` branch:
-- Title: `"Workspace credit limit reached"`
-- Message: same as above — point at the member-limit setting first, top-up second, drop the "daily resets in 24h" line (it's not the cause).
+| Option | Lovable credits | USD |
+|---|---|---|
+| Lovable (Gemini) | ~120 credits | ~$24 |
+| OpenAI (gpt-image-2 HQ) | ~570 credits | ~$114 |
+| Replicate (FLUX 1.1 Pro) | ~0 credits | ~$24 (on Replicate) |
 
-### Real resolution (outside code)
+## What this means for the credit-cap problem you just hit
 
-The user (workspace owner) needs to go to **Settings → Workspace** and raise the **Default monthly member credit limit**, or set a higher per-member limit in **Settings → People**. The code change just stops sending them on a wild goose chase.
+The reason you hit "Workspace credit limit reached" today is almost certainly the **OpenAI HQ** path — each package burns ~6 credits, vs ~1.2 on the Lovable Gemini option and ~0 on Replicate.
 
-## Files
+Two practical takeaways:
+1. **Replicate FLUX 1.1 Pro is the cheapest *and* doesn't touch your Lovable monthly cap.** Same ~$0.24/package as Gemini Nano Banana, but it goes against your Replicate balance instead of Lovable credits — so it won't lock you out of build/plan mode messages when the workspace cap is reached.
+2. **Lovable Gemini Nano Banana is essentially free** at ~1 credit per package, but it does count against the workspace cap.
+3. **OpenAI HQ is ~5× more expensive** than the other two. Use it only when you specifically want that look.
 
-- `supabase/functions/generate-botanical-content/index.ts` (line ~470)
-- `supabase/functions/generate-trend-content/index.ts` (line ~449)
-- `supabase/functions/regenerate-visual/index.ts` (lines ~355, ~389)
-- `src/hooks/useBotanicalContent.ts` (`formatGatewayError`, lines ~9-23)
+## Deliverable
 
-Then redeploy the three edge functions.
+This is a research/projection answer — no code change unless you want it. If helpful next steps:
+- Add a small "~X credits / ~$Y per package" hint under the image-model dropdown so the cost is visible at the moment of choice.
+- Default the dropdown to **Replicate (FLUX 1.1 Pro)** so casual generations don't eat the workspace cap.
+
+Tell me which (or both) and I'll build it.
