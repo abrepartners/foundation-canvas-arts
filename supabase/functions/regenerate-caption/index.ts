@@ -54,6 +54,57 @@ function json(payload: unknown, status = 200): Response {
   });
 }
 
+async function runReplicateCaption(
+  systemInstruction: string,
+  prompt: string,
+  lovableApiKey: string,
+  replicateApiKey: string,
+): Promise<string> {
+  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const createRes = await fetch(`${GW}/models/google/gemini-2.5-flash/predictions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${lovableApiKey}`,
+      "X-Connection-Api-Key": replicateApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      input: {
+        system_instruction: systemInstruction,
+        prompt,
+        temperature: 0.7,
+        max_output_tokens: 2500,
+        thinking_budget: 0,
+      },
+    }),
+  });
+  if (!createRes.ok) throw new Error(`Replicate caption failed: ${createRes.status}`);
+  const pred = await createRes.json();
+  if (!pred.id) throw new Error("Replicate caption failed: no prediction id");
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2500));
+    const pollRes = await fetch(`${GW}/predictions/${pred.id}`, {
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "X-Connection-Api-Key": replicateApiKey,
+      },
+    });
+    if (!pollRes.ok) continue;
+    const p = await pollRes.json();
+    if (p.status === "succeeded") {
+      const output = Array.isArray(p.output) ? p.output.join("") : p.output;
+      if (typeof output !== "string" || output.trim().length === 0) {
+        throw new Error("Replicate caption returned empty output");
+      }
+      return output.trim();
+    }
+    if (p.status === "failed" || p.status === "canceled") {
+      throw new Error(`Replicate caption ${p.status}: ${p.error ?? ""}`);
+    }
+  }
+  throw new Error("Replicate caption timed out");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
