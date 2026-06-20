@@ -70,6 +70,54 @@ async function runReplicatePrediction(
   throw new Error("Replicate timed out");
 }
 
+async function runReplicateTextCompletion(
+  input: Record<string, unknown>,
+  lovableApiKey: string,
+  replicateApiKey: string,
+): Promise<string> {
+  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const model = "google/gemini-2.5-flash";
+  const createRes = await fetch(`${GW}/models/${model}/predictions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${lovableApiKey}`,
+      "X-Connection-Api-Key": replicateApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ input }),
+  });
+  if (!createRes.ok) {
+    const txt = await createRes.text();
+    throw new Error(`Replicate text create failed: ${createRes.status} ${txt}`);
+  }
+  const pred = await createRes.json();
+  const predId = pred.id;
+  if (!predId) throw new Error("Replicate text: no prediction id");
+
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2500));
+    const pollRes = await fetch(`${GW}/predictions/${predId}`, {
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "X-Connection-Api-Key": replicateApiKey,
+      },
+    });
+    if (!pollRes.ok) continue;
+    const p = await pollRes.json();
+    if (p.status === "succeeded") {
+      const output = Array.isArray(p.output) ? p.output.join("") : p.output;
+      if (typeof output !== "string" || output.trim().length === 0) {
+        throw new Error("Replicate text: empty output");
+      }
+      return output;
+    }
+    if (p.status === "failed" || p.status === "canceled") {
+      throw new Error(`Replicate text prediction ${p.status}: ${p.error ?? ""}`);
+    }
+  }
+  throw new Error("Replicate text timed out");
+}
+
 // Generate an image and return raw bytes. Supports three providers.
 async function generateImageBytes(
   provider: "lovable" | "replicate" | "openai",
