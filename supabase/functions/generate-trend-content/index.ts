@@ -591,11 +591,12 @@ Rules:
           LOVABLE_API_KEY,
           REPLICATE_API_KEY,
         );
-        const filePath = `trends/${contentId}/${visual.moment}.png`;
+        const ext = imageProvider === "lovable" ? "png" : "jpg";
+        const filePath = `trends/${contentId}/${visual.moment}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from("botanical-faceless-visuals")
           .upload(filePath, imageBuffer, {
-            contentType: "image/png",
+            contentType: ext === "jpg" ? "image/jpeg" : "image/png",
             upsert: true,
           });
         if (uploadError) {

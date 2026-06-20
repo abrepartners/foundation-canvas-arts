@@ -648,7 +648,7 @@ Repetition is NOT allowed.
           LOVABLE_API_KEY,
           REPLICATE_API_KEY,
         );
-        const ext = imageProvider === "replicate" ? "jpg" : "png";
+        const ext = imageProvider === "lovable" ? "png" : "jpg";
         const filePath = `${contentId}/${visual.moment}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
