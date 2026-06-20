@@ -275,12 +275,12 @@ serve(async (req) => {
               prompt: finalPrompt,
               quality: "high",
               aspect_ratio: "2:3",
-              output_format: "jpg",
+              output_format: "jpeg",
             }
           : {
               prompt: finalPrompt,
               aspect_ratio: "9:16",
-              output_format: "jpg",
+              output_format: "jpeg",
               safety_tolerance: 2,
             };
 
