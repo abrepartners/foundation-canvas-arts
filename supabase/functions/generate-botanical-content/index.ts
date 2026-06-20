@@ -755,13 +755,18 @@ Repetition is NOT allowed.
   } catch (error: unknown) {
     console.error("Error in generate-botanical-content:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
+    const isCredit = /CREDIT_LIMIT/i.test(message);
+    const isRate = /RATE_LIMIT/i.test(message);
     return new Response(
       JSON.stringify({
         success: false,
         error: message,
+        error_code: isCredit ? "CREDIT_LIMIT" : isRate ? "RATE_LIMIT" : "ERROR",
       }),
       {
-        status: 500,
+        // Return 200 so supabase-js delivers the JSON body to the client
+        // instead of throwing a generic "non-2xx" FunctionsHttpError.
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );
