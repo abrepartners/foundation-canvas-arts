@@ -369,9 +369,12 @@ serve(async (req) => {
     } catch {
       // no body — default to replicate
     }
-    if (imageProvider === "replicate" && !REPLICATE_API_KEY) {
+    if (
+      (imageProvider === "replicate" || imageProvider === "openai") &&
+      !REPLICATE_API_KEY
+    ) {
       throw new Error(
-        "REPLICATE_API_KEY not configured — required for photoreal Flux rendering",
+        "REPLICATE_API_KEY not configured — required for Replicate-hosted image models",
       );
     }
     console.log(`Image provider: ${imageProvider}`);
