@@ -514,13 +514,16 @@ serve(async (req) => {
     } catch {
       /* swallow */
     }
+    const isCredit = /CREDIT_LIMIT/i.test(message);
+    const isRate = /RATE_LIMIT/i.test(message);
     return new Response(
       JSON.stringify({
         success: false,
         error: message,
+        error_code: isCredit ? "CREDIT_LIMIT" : isRate ? "RATE_LIMIT" : "ERROR",
       }),
       {
-        status: 500,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );
