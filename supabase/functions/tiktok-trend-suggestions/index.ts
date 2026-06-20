@@ -9,35 +9,54 @@ const corsHeaders = {
 async function fallbackViaGemini(
   subject: string,
   lovableApiKey: string,
+  replicateApiKey: string,
 ): Promise<string[]> {
   const sys = `You return ONLY a JSON array of 8 short trending TikTok-style topic keywords (2-5 words each) related to the user subject. No markdown, no commentary, no object — just the array.`;
-  const res = await fetch(
-    "https://ai.gateway.lovable.dev/v1/chat/completions",
+  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const createRes = await fetch(
+    `${GW}/models/google/gemini-2.5-flash/predictions`,
     {
       method: "POST",
       headers: {
         Authorization: `Bearer ${lovableApiKey}`,
+        "X-Connection-Api-Key": replicateApiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: sys },
-          {
-            role: "user",
-            content: subject
-              ? `Subject: ${subject}`
-              : "Subject: currently trending TikTok topics across all categories",
-          },
-        ],
-        temperature: 0.9,
-        max_tokens: 400,
+        input: {
+          system_instruction: sys,
+          prompt: subject
+            ? `Subject: ${subject}`
+            : "Subject: currently trending TikTok topics across all categories",
+          temperature: 0.9,
+          max_output_tokens: 600,
+          thinking_budget: 0,
+        },
       }),
     },
   );
-  if (!res.ok) throw new Error(`Gemini fallback failed: ${res.status}`);
-  const data = await res.json();
-  const raw: string = data.choices?.[0]?.message?.content ?? "[]";
+  if (!createRes.ok) throw new Error(`Replicate suggestions failed: ${createRes.status}`);
+  const pred = await createRes.json();
+  if (!pred.id) throw new Error("Replicate suggestions failed: no prediction id");
+  let raw = "[]";
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2500));
+    const pollRes = await fetch(`${GW}/predictions/${pred.id}`, {
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "X-Connection-Api-Key": replicateApiKey,
+      },
+    });
+    if (!pollRes.ok) continue;
+    const p = await pollRes.json();
+    if (p.status === "succeeded") {
+      raw = Array.isArray(p.output) ? p.output.join("") : String(p.output ?? "[]");
+      break;
+    }
+    if (p.status === "failed" || p.status === "canceled") {
+      throw new Error(`Replicate suggestions ${p.status}: ${p.error ?? ""}`);
+    }
+  }
   let cleaned = raw.trim();
   if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);
   else if (cleaned.startsWith("```")) cleaned = cleaned.slice(3);
