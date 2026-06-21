@@ -5,6 +5,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { ContentWithId, FacelessVisual, VisualHistoryEntry } from "@/hooks/useBotanicalContent";
+import { getDisplayTitle } from "@/lib/captionTitle";
 
 type SendPhase =
   | "idle"
@@ -603,7 +604,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
         "post-tiktok-carousel",
         {
           body: {
-            title: content.plant_name,
+            title: getDisplayTitle(content),
             description: content.caption,
             photo_images: imageUrls,
           },
@@ -640,7 +641,8 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
     <div className="w-full max-w-4xl mx-auto space-y-4 md:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-xl md:text-2xl font-serif text-foreground break-words">{content.plant_name}</h2>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground/80 font-body">{content.plant_name}</p>
+          <h2 className="text-xl md:text-2xl font-serif text-foreground break-words mt-0.5">{getDisplayTitle(content)}</h2>
           <p className="text-sm text-muted-foreground mt-1">{content.verified_fact}</p>
         </div>
         <div className="flex items-center gap-2">
