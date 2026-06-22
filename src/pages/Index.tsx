@@ -118,6 +118,12 @@ const Index = () => {
               >
                 Trends
               </Link>
+              <Link
+                to="/queue"
+                className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground"
+              >
+                Queue
+              </Link>
             </nav>
           </div>
         </header>
