@@ -9,30 +9,59 @@ import { decode as decodeImage } from "https://deno.land/x/imagescript@1.2.17/mo
 
 const BUCKET = "botanical-faceless-visuals";
 
-async function ensureJpegUrl(
+// TikTok PHOTO carousel image constraints (empirically tightest set that avoids
+// picture_size_check_failed): short side >= 360px, long side <= 1920px, file
+// size <= 20MB, JPEG only. We normalize EVERY image to be safe.
+const MAX_LONG_SIDE = 1920;
+const TARGET_WIDTH = 1080; // standard portrait width
+const JPEG_QUALITY = 85;
+
+async function normalizeToTikTokJpeg(
   url: string,
   supabase: ReturnType<typeof createClient>,
   publicBase: string,
 ): Promise<string> {
-  const lower = url.toLowerCase().split("?")[0];
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return url;
-
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
   const bytes = new Uint8Array(await res.arrayBuffer());
 
-  const img = await decodeImage(bytes);
-  // ImageScript returns Image | GIF; encodeJPEG exists on Image
   // deno-lint-ignore no-explicit-any
-  const jpegBytes: Uint8Array = await (img as any).encodeJPEG(90);
+  const img: any = await decodeImage(bytes);
+  if (!img || typeof img.width !== "number") {
+    throw new Error("Could not decode image");
+  }
 
-  // Derive path inside bucket: take the path after the bucket name
+  let w: number = img.width;
+  let h: number = img.height;
+  const longSide = Math.max(w, h);
+
+  // Resize if too large. Portrait 9:16 → width becomes TARGET_WIDTH.
+  if (longSide > MAX_LONG_SIDE || (h >= w && w > TARGET_WIDTH)) {
+    const scale = h >= w
+      ? TARGET_WIDTH / w
+      : MAX_LONG_SIDE / longSide;
+    w = Math.round(w * scale);
+    h = Math.round(h * scale);
+    img.resize(w, h);
+  }
+
+  const jpegBytes: Uint8Array = await img.encodeJPEG(JPEG_QUALITY);
+
+  if (jpegBytes.byteLength > 19 * 1024 * 1024) {
+    // Fallback hard quality drop if still too big.
+    const smaller: Uint8Array = await img.encodeJPEG(70);
+    if (smaller.byteLength > 19 * 1024 * 1024) {
+      throw new Error(`Image too large after compression: ${smaller.byteLength} bytes`);
+    }
+  }
+
+  // Derive a stable path inside the bucket.
   const marker = `/${BUCKET}/`;
   const idx = url.indexOf(marker);
   const originalPath = idx >= 0
     ? url.slice(idx + marker.length).split("?")[0]
-    : `misc/${crypto.randomUUID()}.png`;
-  const jpegPath = `tiktok-jpeg/${originalPath.replace(/\.png$/i, "")}.jpg`;
+    : `misc/${crypto.randomUUID()}.jpg`;
+  const jpegPath = `tiktok-jpeg/${originalPath.replace(/\.(png|webp|jpe?g)$/i, "")}-${w}x${h}.jpg`;
 
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
