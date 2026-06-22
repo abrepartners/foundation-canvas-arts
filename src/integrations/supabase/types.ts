@@ -18,38 +18,50 @@ export type Database = {
         Row: {
           caption: string | null
           created_at: string
+          hook_variants: Json | null
           id: string
           part2_hook: string | null
           plant_name: string | null
+          queue_status: string
           raw_content: string | null
+          score_reasoning: string | null
           script: string
           script_visuals: string | null
           thumbnail: string | null
           verified_fact: string | null
+          virality_score: number | null
         }
         Insert: {
           caption?: string | null
           created_at?: string
+          hook_variants?: Json | null
           id?: string
           part2_hook?: string | null
           plant_name?: string | null
+          queue_status?: string
           raw_content?: string | null
+          score_reasoning?: string | null
           script: string
           script_visuals?: string | null
           thumbnail?: string | null
           verified_fact?: string | null
+          virality_score?: number | null
         }
         Update: {
           caption?: string | null
           created_at?: string
+          hook_variants?: Json | null
           id?: string
           part2_hook?: string | null
           plant_name?: string | null
+          queue_status?: string
           raw_content?: string | null
+          score_reasoning?: string | null
           script?: string
           script_visuals?: string | null
           thumbnail?: string | null
           verified_fact?: string | null
+          virality_score?: number | null
         }
         Relationships: []
       }
