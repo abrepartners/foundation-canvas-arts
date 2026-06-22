@@ -190,7 +190,7 @@ async function generateImageBytes(
   return Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
 }
 
-const EXCLUDE_COUNT = 5;
+const EXCLUDE_COUNT = 50;
 const REQUIRED_VISUAL_COUNT = 6;
 const REQUIRED_MOMENTS = [
   "hook",
@@ -553,17 +553,31 @@ Repetition is NOT allowed.
 
     console.log("faceless_visuals validated: 6 unique moments");
 
-    // Novelty guard
-    if (
-      recentPlants?.some(
-        (p) => p.plant_name?.toLowerCase() === parsed.plant_name?.toLowerCase(),
-      )
-    ) {
+    // Novelty guard — fuzzy match so "Hass avocado" still counts as "avocado".
+    const norm = (s: string) =>
+      s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+    const candidate = norm(parsed.plant_name ?? "");
+    const collision = (recentPlants ?? []).find((p) => {
+      const prev = norm(p.plant_name ?? "");
+      if (!prev || !candidate) return false;
+      // Exact, or either contains the other as a whole word.
+      if (prev === candidate) return true;
+      return (
+        (` ${prev} `).includes(` ${candidate} `) ||
+        (` ${candidate} `).includes(` ${prev} `)
+      );
+    });
+
+    if (collision) {
       console.error(
         "Novelty violation: AI selected recently used plant:",
         parsed.plant_name,
+        "matches",
+        collision.plant_name,
       );
-      throw new Error("Novelty violation: repeated plant");
+      throw new Error(
+        `Novelty violation: "${parsed.plant_name}" overlaps recently used "${collision.plant_name}". Try again.`,
+      );
     }
 
     // Sort visuals by script order; initialize with status: "queued"
