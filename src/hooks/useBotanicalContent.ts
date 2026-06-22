@@ -143,6 +143,11 @@ export function useBotanicalContent() {
       });
 
       pollForImages(data.content_id);
+
+      // Fire-and-forget virality scoring + hook rewrites.
+      supabase.functions
+        .invoke("score-content", { body: { content_id: data.content_id } })
+        .catch((e) => console.warn("score-content failed", e));
     } catch (err) {
       const raw = err instanceof Error ? err.message : "Unknown error";
       const { title, message } = formatGatewayError(raw, "Generation failed");
