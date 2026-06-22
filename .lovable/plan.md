@@ -1,31 +1,75 @@
-## Goal
-Use the bold title from the caption (Section 0, the first `**...**` line) as the displayed heading AND the title sent to TikTok — instead of the raw `plant_name`/`subject`. That way the TikTok draft auto-populates with the catchy headline you'd otherwise have to copy-paste.
 
-## Changes (frontend-only, presentation layer)
+# 30-Day Automation → Monetization Plan
 
-### 1. New helper `src/lib/captionTitle.ts`
-- `extractCaptionTitle(caption: string): string | null` — returns the first `**...**` line, stripped of asterisks and trimmed. Returns `null` if not found / empty.
-- `getDisplayTitle(content): string` — returns `extractCaptionTitle(content.caption) ?? content.plant_name`. TikTok caps at 90 chars; helper trims to 90.
+Backwards-planned from your 4 revenue streams: **Creator Rewards + Brand Deals + Affiliate + Own Digital Product**. All require the same upstream asset: **a growing, high-watch-time TikTok feed**. So we build the growth/quality engine first, then bolt monetization rails on top.
 
-### 2. `src/components/ContentDisplay.tsx`
-- Replace the `<h2>{content.plant_name}</h2>` (line 643) with `getDisplayTitle(content)`.
-- In the TikTok send payload (line 606), change `title: content.plant_name` → `title: getDisplayTitle(content)`.
-- `plant_name` still shown as a small subtitle/eyebrow above the heading so you don't lose the species reference (e.g. "Solanum lycopersicum").
+## The Backwards Chain
 
-### 3. No backend changes
-- DB still stores `plant_name` and `caption` exactly as today.
-- `post-tiktok-carousel` already accepts whatever `title` the client sends and slices to 90 chars — no edit needed.
-- Works for both Botanical and Trends pages (Trends uses the same `ContentDisplay`).
+```text
+$$$  ← Creator Rewards payout, brand DMs, affiliate clicks, product sales
+ ↑
+10k followers + 1M qualifying views  ← requires consistent virality
+ ↑
+2–3 posts/day, each optimized pre-publish & learned-from post-publish
+ ↑
+One-click approve queue + scheduled auto-post
+ ↑
+Generation engine (already built) + virality scoring + analytics feedback
+```
 
-### 4. Fallback behavior
-- If caption has no bold title line (older saved rows, or AI returned malformed caption), fall back to `plant_name`. No breakage on history.
+We work bottom-up over 4 weeks.
 
-## Out of scope
-- No regeneration of existing captions.
-- No edge function / DB / image / prompt changes.
-- No new schema column — derived at render time.
+---
 
-## Verification
-- Open a freshly generated item: heading shows the bold caption headline; plant_name shows as a smaller eyebrow.
-- Click "Send to TikTok" → confirm the TikTok draft title matches the bold headline (check via TikTok app or function logs).
-- Open an old history item with no bold title → heading falls back to plant_name. No crash.
+## Week 1 — Quality Gate & Approval Queue
+Goal: stop posting anything that isn't pre-scored for virality.
+
+1. **Pre-publish virality score** (no analytics needed, works day 1)
+   - Score hook on: first-3-words punch, curiosity gap, length, hashtag mix, caption title strength
+   - Gemini rates 0–100 with 1-line reasoning + suggests 2 punchier hook rewrites
+2. **Hook A/B variants** — generate 3 hook options per plant, auto-pick highest-scoring, surface other 2 as one-tap swaps
+3. **Approval queue UI** — new `/queue` page: card per pending video with Approve / Regenerate hook / Reject. Approving moves it to scheduled.
+
+## Week 2 — Scheduled Auto-Post (2–3/day)
+Goal: zero manual posting once approved.
+
+1. **`content_schedule` table** — `id, content_id, scheduled_for, status, posted_video_id`
+2. **`scheduler` edge function on pg_cron** — every 15 min, posts any approved item whose slot has arrived via existing TikTok publish flow
+3. **Time-slot picker** — defaults to 12pm / 6pm / 9pm ET (peak plant-tok windows), editable per item
+4. **Daily generation cron** — auto-generates 4 candidates/day at 6am so the queue is always full
+
+## Week 3 — Analytics Feedback Loop
+Goal: every post teaches the generator.
+
+1. **`tiktok_analytics` table** — `video_id, views, likes, shares, comments, watch_time_avg, completion_rate, follows, fetched_at`
+2. **Analytics poll cron** — pulls TikTok `video/query/` every 6h for last 30 days of app-posted videos
+3. **Analytics dashboard** — leaderboard, top hooks, completion-rate winners, best posting times
+4. **AI post-mortem** — weekly Gemini run compares top-5 vs bottom-5, outputs pattern rules, **auto-injects them into the generation system prompt** (this is the compounding edge)
+
+## Week 4 — Monetization Rails
+
+1. **Bio link router** (`/go` page on the published domain) — single TikTok bio link → mobile-optimized hub: Amazon affiliate plant gear, email opt-in, future product
+2. **Affiliate caption injector** — generator auto-appends "🌱 Plant tools I use → link in bio" to captions, rotated per video
+3. **Email capture** — ConvertKit/Resend opt-in on `/go` for the "Weird Plant Facts" newsletter — seeds the audience you own for the future ebook/course
+4. **Creator Rewards check** — by end of week 4, dashboard surfaces eligibility (followers, qualified-view threshold) and flags when to enable it
+5. **Brand-deal media kit page** — `/press` auto-built from analytics: top videos, total views, demographics, contact form
+
+---
+
+## What You Get on Day 30
+
+- Engine generates 4 candidates/day → you approve in <5 min → scheduler posts 2–3/day automatically
+- Every post is pre-scored and learns from the last week's winners
+- Bio link monetizes traffic from view #1 (affiliate)
+- Email list compounds the audience for your own product launch in month 2
+- Media kit ready the moment a brand DM lands
+
+## Technical Notes
+- All new backend = Supabase edge functions + pg_cron (existing stack)
+- AI calls = Lovable AI Gateway, Gemini 2.0 Flash for scoring/post-mortem
+- TikTok analytics = existing connector, `video/query/` endpoint
+- New tables: `content_schedule`, `tiktok_analytics`, `email_subscribers`, `hook_variants`
+- No new paid services required for week 1–3; week 4 only adds an email provider (Resend is already wired)
+
+## Build Order Confirmation
+I'll execute Week 1 first end-to-end, then check in before Week 2 — that way you see the approval queue + scoring working on real generations before we automate posting. Approve this plan and I'll start with the virality scorer + queue UI.
