@@ -195,16 +195,16 @@ Deno.serve(async (req) => {
     const title = (body.title ?? "").toString().slice(0, 90);
     const description = (body.description ?? "").toString().slice(0, 4000);
 
-    // Transcode any PNG inputs to JPEG (TikTok PHOTO only accepts JPEG)
+    // Normalize every image (resize + JPEG) to satisfy TikTok PHOTO constraints.
     const publicBase = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}`;
     let jpegImages: string[];
     try {
       jpegImages = await Promise.all(
-        images.map((u) => ensureJpegUrl(u, supabase, publicBase)),
+        images.map((u) => normalizeToTikTokJpeg(u, supabase, publicBase)),
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : "transcode failed";
-      console.error("JPEG transcode error:", msg);
+      console.error("JPEG normalize error:", msg);
       return json({ error: `Image conversion failed: ${msg}` }, 502);
     }
 
