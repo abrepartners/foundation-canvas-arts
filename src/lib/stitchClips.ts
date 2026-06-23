@@ -62,8 +62,10 @@ export async function stitchClips(
     ]);
   }
 
-  const data = await ffmpeg.readFile("out.mp4");
-  const blob = new Blob([data as Uint8Array], { type: "video/mp4" });
+  const data = (await ffmpeg.readFile("out.mp4")) as Uint8Array;
+  const buf = new Uint8Array(data.byteLength);
+  buf.set(data);
+  const blob = new Blob([buf], { type: "video/mp4" });
   void usedReencode;
   return blob;
 }
