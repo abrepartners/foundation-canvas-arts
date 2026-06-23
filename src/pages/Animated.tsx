@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -187,24 +187,13 @@ export default function Animated() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="container flex items-center gap-3 py-4">
-          <div className="flex-1">
-            <h1 className="text-xl md:text-2xl font-serif text-foreground tracking-tight">Animated Video</h1>
-            <p className="text-muted-foreground font-body text-xs">
-              One click. 60-second silent vertical MP4. Fully automatic.
-            </p>
-          </div>
-          <nav className="flex items-center gap-1 text-sm font-body">
-            <Link to="/" className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground">Plants</Link>
-            <Link to="/trends" className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground">Trends</Link>
-            <Link to="/animated" className="px-3 py-1.5 rounded-md bg-secondary text-foreground">Animated</Link>
-            <Link to="/queue" className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground">Queue</Link>
-          </nav>
-        </div>
-      </header>
+      <AppHeader
+        title="Animated Video"
+        subtitle="One click. 60-second silent vertical MP4. Fully automatic."
+        contained
+      />
 
-      <main className="container py-8 max-w-2xl space-y-6">
+      <main className="container py-8 max-w-2xl space-y-6 pb-28 md:pb-8">
         <div className="rounded-lg border border-border bg-card p-6">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>

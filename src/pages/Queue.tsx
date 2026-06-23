@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -139,25 +139,13 @@ export default function Queue() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="container flex items-center gap-3 py-4">
-          <div className="flex-1">
-            <h1 className="text-xl md:text-2xl font-serif text-foreground tracking-tight">
-              Approval Queue
-            </h1>
-            <p className="text-muted-foreground font-body text-xs">
-              Score, swap hooks, approve — then auto-post.
-            </p>
-          </div>
-          <nav className="flex items-center gap-1 text-sm font-body">
-            <Link to="/" className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground">Plants</Link>
-            <Link to="/trends" className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground">Trends</Link>
-            <Link to="/queue" className="px-3 py-1.5 rounded-md bg-secondary text-foreground">Queue</Link>
-          </nav>
-        </div>
-      </header>
+      <AppHeader
+        title="Approval Queue"
+        subtitle="Score, swap hooks, approve — then auto-post."
+        contained
+      />
 
-      <main className="container py-6 space-y-4">
+      <main className="container py-6 space-y-4 pb-24 md:pb-6">
         <div className="flex items-center gap-2 flex-wrap">
           {(["pending", "approved", "rejected", "all"] as const).map((f) => (
             <Button
