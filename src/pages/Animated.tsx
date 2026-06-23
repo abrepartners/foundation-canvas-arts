@@ -151,7 +151,7 @@ export default function Animated() {
 
   // Tick once a minute for "stuck" detection.
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30000);
+    const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
