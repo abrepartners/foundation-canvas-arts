@@ -626,6 +626,7 @@ Repetition is NOT allowed.
         image_url?: string | null;
         error?: string | null;
         status?: "queued" | "generating" | "done" | "error";
+        started_at?: string | null;
       },
     ) => {
       const { data: currentRow } = await supabase
@@ -644,8 +645,13 @@ Repetition is NOT allowed.
           /* fallback */
         }
       }
+      // Auto-stamp started_at whenever we transition to "generating"
+      const fullPatch =
+        patch.status === "generating" && patch.started_at === undefined
+          ? { ...patch, started_at: new Date().toISOString() }
+          : patch;
       const next = arr.map((v) =>
-        v.moment === moment ? { ...v, ...patch } : v,
+        v.moment === moment ? { ...v, ...fullPatch } : v,
       );
       await supabase
         .from("botanical_content")
@@ -653,8 +659,9 @@ Repetition is NOT allowed.
         .eq("id", contentId);
     };
 
-    const generateOne = async (visual: (typeof visualsInitial)[number]) => {
-      await mergeVisual(visual.moment, { status: "generating", error: null });
+    const generateOneAttempt = async (
+      visual: (typeof visualsInitial)[number],
+    ): Promise<{ ok: true } | { ok: false; msg: string }> => {
       try {
         const imageBuffer = await generateImageBytes(
           imageProvider,
@@ -671,16 +678,7 @@ Repetition is NOT allowed.
             contentType: ext === "jpg" ? "image/jpeg" : "image/png",
             upsert: true,
           });
-
-        if (uploadError) {
-          console.error(`Upload failed for ${visual.moment}:`, uploadError);
-          await mergeVisual(visual.moment, {
-            image_url: null,
-            error: `upload: ${uploadError.message}`,
-            status: "error",
-          });
-          return;
-        }
+        if (uploadError) return { ok: false, msg: `upload: ${uploadError.message}` };
 
         const { data: urlData } = supabase.storage
           .from("botanical-faceless-visuals")
@@ -692,15 +690,26 @@ Repetition is NOT allowed.
           error: null,
           status: "done",
         });
+        return { ok: true };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`Image error for ${visual.moment}:`, msg);
-        await mergeVisual(visual.moment, {
-          image_url: null,
-          error: msg.slice(0, 240),
-          status: "error",
-        });
+        return { ok: false, msg: err instanceof Error ? err.message : String(err) };
       }
+    };
+
+    const generateOne = async (visual: (typeof visualsInitial)[number]) => {
+      await mergeVisual(visual.moment, { status: "generating", error: null });
+      const first = await generateOneAttempt(visual);
+      if (first.ok) return;
+      console.warn(`Retrying ${visual.moment} after error:`, first.msg);
+      await new Promise((r) => setTimeout(r, 4000));
+      const second = await generateOneAttempt(visual);
+      if (second.ok) return;
+      console.error(`Image error for ${visual.moment} after retry:`, second.msg);
+      await mergeVisual(visual.moment, {
+        image_url: null,
+        error: second.msg.slice(0, 240),
+        status: "error",
+      });
     };
 
     const runWithConcurrency = async (
