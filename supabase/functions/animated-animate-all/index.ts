@@ -180,19 +180,26 @@ serve(async (req) => {
         return; // error already recorded
       }
 
-      // All 6 clips ready — mark ready for client-side stitch.
+      // All 6 clips ready — kick off server-side stitch.
       await supabase
         .from("botanical_animated")
         .update({
-          queue_status: "clips_done",
+          queue_status: "stitching",
           progress: {
-            stage: "stitch_ready",
-            steps: STEPS.map((s) =>
-              s.key === "clips" ? { ...s, status: "done" as const, detail: "6 / 6" } : s,
-            ),
+            stage: "stitch",
+            steps: STEPS.map((s) => {
+              if (s.key === "clips") return { ...s, status: "done" as const, detail: "6 / 6" };
+              if (s.key === "stitch") return { ...s, status: "running" as const };
+              return s;
+            }),
           },
         })
         .eq("id", row_id);
+
+      // Fire-and-forget invocation of animated-stitch.
+      supabase.functions
+        .invoke("animated-stitch", { body: { row_id } })
+        .catch((e) => console.error("animated-stitch invoke error:", e));
     };
 
     // @ts-ignore

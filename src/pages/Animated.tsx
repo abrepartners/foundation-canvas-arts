@@ -3,8 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles } from "lucide-react";
-import { stitchClips } from "@/lib/stitchClips";
+import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw } from "lucide-react";
 
 interface Step {
   key: string;
@@ -27,6 +26,7 @@ interface AnimatedRow {
   error: string | null;
   progress: { stage?: string; steps?: Step[] } | null;
   created_at: string;
+  updated_at?: string;
 }
 
 function StepRow({ step }: { step: Step }) {
@@ -35,9 +35,7 @@ function StepRow({ step }: { step: Step }) {
       ? CheckCircle2
       : step.status === "running"
         ? Loader2
-        : step.status === "error"
-          ? Circle
-          : Circle;
+        : Circle;
   const color =
     step.status === "done"
       ? "text-emerald-600"
@@ -63,11 +61,22 @@ function StepRow({ step }: { step: Step }) {
 
 export default function Animated() {
   const [row, setRow] = useState<AnimatedRow | null>(null);
-  const [stitchProgress, setStitchProgress] = useState<number>(0);
   const [isStarting, setIsStarting] = useState(false);
-  const stitchTriggered = useRef<string | null>(null);
+  const [now, setNow] = useState<number>(Date.now());
   const animateTriggered = useRef<string | null>(null);
   const { toast } = useToast();
+
+  // Auto-resume: on mount, load the most recent unfinished row (or most recent done row to display).
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("botanical_animated")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (data && data[0]) setRow(data[0] as unknown as AnimatedRow);
+    })();
+  }, []);
 
   // Subscribe to row updates.
   useEffect(() => {
@@ -86,6 +95,12 @@ export default function Animated() {
       supabase.removeChannel(channel);
     };
   }, [row?.id]);
+
+  // Tick once a minute for "stuck" detection.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
 
   // Auto-trigger animation step once stills are ready.
   useEffect(() => {
@@ -106,113 +121,44 @@ export default function Animated() {
       });
   }, [row?.id, row?.queue_status, toast]);
 
-  // Auto-trigger client stitch once clips are done.
-  useEffect(() => {
-    if (!row?.id) return;
-    if (row.queue_status !== "clips_done") return;
-    if (stitchTriggered.current === row.id) return;
-    if (!row.clip_urls || row.clip_urls.length !== 6 || row.clip_urls.some((u) => !u)) return;
-    stitchTriggered.current = row.id;
-
-    (async () => {
-      try {
-        // Update steps locally to show stitch running.
-        setRow((prev) =>
-          prev
-            ? {
-                ...prev,
-                progress: {
-                  stage: "stitch",
-                  steps: (prev.progress?.steps ?? []).map((s) =>
-                    s.key === "stitch" ? { ...s, status: "running", detail: "0%" } : s,
-                  ),
-                },
-              }
-            : prev,
-        );
-
-        const blob = await stitchClips(row.clip_urls!, (p) => {
-          setStitchProgress(p);
-          setRow((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  progress: {
-                    stage: "stitch",
-                    steps: (prev.progress?.steps ?? []).map((s) =>
-                      s.key === "stitch" ? { ...s, status: "running", detail: `${Math.round(p * 100)}%` } : s,
-                    ),
-                  },
-                }
-              : prev,
-          );
-        });
-
-        // Mark save running.
-        setRow((prev) =>
-          prev
-            ? {
-                ...prev,
-                progress: {
-                  stage: "save",
-                  steps: (prev.progress?.steps ?? []).map((s) => {
-                    if (s.key === "stitch") return { ...s, status: "done", detail: "100%" };
-                    if (s.key === "save") return { ...s, status: "running" };
-                    return s;
-                  }),
-                },
-              }
-            : prev,
-        );
-
-        // Upload via finalize edge function.
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-        const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
-        const res = await fetch(
-          `${supabaseUrl}/functions/v1/animated-finalize?row_id=${row.id}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "video/mp4", apikey: anonKey, Authorization: `Bearer ${anonKey}` },
-            body: blob,
-          },
-        );
-        const json = await res.json();
-        if (!json.success) throw new Error(json.error || "Finalize failed");
-        toast({ title: "Animated video ready", description: "Your 60s video is saved." });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toast({ title: "Stitch failed", description: msg, variant: "destructive" });
-        // Mark error on row.
-        await supabase
-          .from("botanical_animated")
-          .update({ queue_status: "error", error: `stitch: ${msg}` })
-          .eq("id", row.id);
-      }
-    })();
-  }, [row, toast]);
-
   const start = async () => {
     setIsStarting(true);
-    stitchTriggered.current = null;
     animateTriggered.current = null;
-    setStitchProgress(0);
     try {
       const { data, error } = await supabase.functions.invoke("animated-start");
       if (error) throw new Error(error.message);
       if (!data?.success) throw new Error(data?.error || "Failed to start");
-      // Fetch the new row.
       const { data: full } = await supabase
         .from("botanical_animated")
         .select("*")
         .eq("id", data.row_id)
         .single();
       setRow(full as unknown as AnimatedRow);
-      toast({ title: "Generating animated video", description: "This takes ~10–15 minutes. Live progress below." });
+      toast({
+        title: "Generating animated video",
+        description: "Runs entirely on our servers — feel free to close the tab.",
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast({ title: "Failed to start", description: msg, variant: "destructive" });
     } finally {
       setIsStarting(false);
+    }
+  };
+
+  const retryStitch = async () => {
+    if (!row?.id) return;
+    const { data, error } = await supabase.functions.invoke("animated-stitch", {
+      body: { row_id: row.id },
+    });
+    if (error || !data?.success) {
+      toast({
+        title: "Retry failed",
+        description: error?.message || data?.error || "Unknown",
+        variant: "destructive",
+      });
+    } else {
+      toast({ title: "Stitch restarted", description: "Server is re-assembling the video." });
     }
   };
 
@@ -232,9 +178,12 @@ export default function Animated() {
     row?.queue_status === "generating" ||
     row?.queue_status === "stills_ready" ||
     row?.queue_status === "animating" ||
-    row?.queue_status === "clips_done";
+    row?.queue_status === "stitching";
 
-  void stitchProgress;
+  const stitchStuck =
+    row?.queue_status === "stitching" &&
+    row?.updated_at &&
+    now - new Date(row.updated_at).getTime() > 5 * 60 * 1000;
 
   return (
     <div className="min-h-screen bg-background">
@@ -281,6 +230,17 @@ export default function Animated() {
               {steps.map((s) => (
                 <StepRow key={s.key} step={s} />
               ))}
+            </div>
+          )}
+
+          {stitchStuck && (
+            <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 mb-4 flex items-center justify-between gap-3">
+              <p className="text-sm text-foreground font-body">
+                Stitch has been running &gt;5 minutes. You can retry the final step.
+              </p>
+              <Button variant="outline" size="sm" onClick={retryStitch}>
+                <RotateCw className="h-4 w-4 mr-2" /> Retry stitch
+              </Button>
             </div>
           )}
 
@@ -343,8 +303,7 @@ export default function Animated() {
         </div>
 
         <p className="text-xs text-muted-foreground font-body text-center">
-          Pipeline: Replicate openai/gpt-image-2 (stills) → Replicate kwaivgi/kling-v2.1 (animation) → ffmpeg.wasm
-          (stitch in your browser). Total wall time ~10–15 minutes.
+          Runs entirely on our servers. Close the tab anytime — your video will be waiting when you come back.
         </p>
       </main>
     </div>
