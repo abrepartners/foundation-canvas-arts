@@ -202,9 +202,11 @@ Deno.serve(async (req) => {
     const publicBase = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}`;
     let jpegImages: string[];
     try {
-      jpegImages = await Promise.all(
-        images.map((u) => normalizeToTikTokJpeg(u, supabase, publicBase)),
-      );
+      jpegImages = [];
+      for (const u of images) {
+        // Sequential to stay under the edge-function CPU budget.
+        jpegImages.push(await normalizeToTikTokJpeg(u, supabase, publicBase));
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "transcode failed";
       console.error("JPEG normalize error:", msg);
