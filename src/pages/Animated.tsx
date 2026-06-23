@@ -59,6 +59,59 @@ function StepRow({ step }: { step: Step }) {
   );
 }
 
+function formatElapsed(ms: number): string {
+  if (ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return `${m}m ${rs.toString().padStart(2, "0")}s`;
+}
+
+function formatTime(iso?: string): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function TimelineRow({ step, now, isLast }: { step: Step; now: number; isLast: boolean }) {
+  const started = step.started_at ? new Date(step.started_at).getTime() : null;
+  const ended = step.ended_at ? new Date(step.ended_at).getTime() : null;
+  const elapsed =
+    started === null
+      ? null
+      : step.status === "done" && ended
+        ? ended - started
+        : step.status === "running"
+          ? now - started
+          : null;
+  const dotColor =
+    step.status === "done"
+      ? "bg-emerald-600"
+      : step.status === "running"
+        ? "bg-primary animate-pulse"
+        : step.status === "error"
+          ? "bg-destructive"
+          : "bg-muted-foreground/40";
+  return (
+    <div className="relative pl-6 pb-4 last:pb-0">
+      <span className={`absolute left-[3px] top-2 h-2.5 w-2.5 rounded-full ring-2 ring-background z-10 ${dotColor}`} />
+      {!isLast && <span className="absolute left-[7px] top-4 bottom-0 w-px bg-border" />}
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-sm font-body text-foreground">{step.label}</p>
+        <span className="text-xs font-body text-muted-foreground tabular-nums flex-shrink-0">
+          {elapsed !== null ? formatElapsed(elapsed) : "—"}
+        </span>
+      </div>
+      <p className="text-xs font-body text-muted-foreground mt-0.5">
+        started {formatTime(step.started_at)}
+        {step.detail ? ` · ${step.detail}` : ""}
+        {" · "}
+        <span className="capitalize">{step.status}</span>
+      </p>
+    </div>
+  );
+}
+
 export default function Animated() {
   const [row, setRow] = useState<AnimatedRow | null>(null);
   const [isStarting, setIsStarting] = useState(false);
