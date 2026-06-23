@@ -21,6 +21,12 @@ async function normalizeToTikTokJpeg(
   supabase: ReturnType<typeof createClient>,
   publicBase: string,
 ): Promise<string> {
+  // Fast path: if the URL already points at a normalized JPEG we produced
+  // previously, reuse it without any decode/encode work.
+  if (url.includes("/tiktok-jpeg/") && /\.jpe?g(\?|$)/i.test(url)) {
+    return url;
+  }
+
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
   const bytes = new Uint8Array(await res.arrayBuffer());
@@ -48,20 +54,17 @@ async function normalizeToTikTokJpeg(
   const jpegBytes: Uint8Array = await img.encodeJPEG(JPEG_QUALITY);
 
   if (jpegBytes.byteLength > 19 * 1024 * 1024) {
-    // Fallback hard quality drop if still too big.
-    const smaller: Uint8Array = await img.encodeJPEG(70);
-    if (smaller.byteLength > 19 * 1024 * 1024) {
-      throw new Error(`Image too large after compression: ${smaller.byteLength} bytes`);
-    }
+    throw new Error(`Image too large after compression: ${jpegBytes.byteLength} bytes`);
   }
 
-  // Derive a stable path inside the bucket.
+  // Derive a stable path inside the bucket — same input always maps to same
+  // output, so the upsert short-circuits on subsequent posts of the same set.
   const marker = `/${BUCKET}/`;
   const idx = url.indexOf(marker);
   const originalPath = idx >= 0
     ? url.slice(idx + marker.length).split("?")[0]
     : `misc/${crypto.randomUUID()}.jpg`;
-  const jpegPath = `tiktok-jpeg/${originalPath.replace(/\.(png|webp|jpe?g)$/i, "")}-${w}x${h}.jpg`;
+  const jpegPath = `tiktok-jpeg/${originalPath.replace(/\.(png|webp|jpe?g)$/i, "")}-${w}x${h}-q${JPEG_QUALITY}.jpg`;
 
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
@@ -199,9 +202,11 @@ Deno.serve(async (req) => {
     const publicBase = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}`;
     let jpegImages: string[];
     try {
-      jpegImages = await Promise.all(
-        images.map((u) => normalizeToTikTokJpeg(u, supabase, publicBase)),
-      );
+      jpegImages = [];
+      for (const u of images) {
+        // Sequential to stay under the edge-function CPU budget.
+        jpegImages.push(await normalizeToTikTokJpeg(u, supabase, publicBase));
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "transcode failed";
       console.error("JPEG normalize error:", msg);
