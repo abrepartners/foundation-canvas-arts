@@ -128,63 +128,7 @@ Deno.serve(async (req) => {
     }
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    // Most recently connected account
-    const { data: tokenRow, error: tokenError } = await supabase
-      .from("tiktok_tokens")
-      .select("id, open_id, access_token, refresh_token, expires_at")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle<TokenRow>();
-    if (tokenError)
-      throw new Error(`Token lookup failed: ${tokenError.message}`);
-    if (!tokenRow) {
-      return json(
-        {
-          error:
-            "TikTok not connected — open the tiktok-oauth function URL to connect",
-        },
-        400,
-      );
-    }
-
-    // Refresh if the access token expires within 2 minutes
-    let accessToken = tokenRow.access_token;
-    if (new Date(tokenRow.expires_at).getTime() < Date.now() + 120_000) {
-      const refreshRes = await fetch(TOKEN_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_key: CLIENT_KEY,
-          client_secret: CLIENT_SECRET,
-          grant_type: "refresh_token",
-          refresh_token: tokenRow.refresh_token,
-        }),
-      });
-      const refreshed = await refreshRes.json();
-      if (!refreshRes.ok || !refreshed.access_token) {
-        return json(
-          {
-            error:
-              "TikTok token refresh failed — reconnect via the tiktok-oauth function URL",
-            details: refreshed,
-          },
-          401,
-        );
-      }
-      accessToken = refreshed.access_token;
-      await supabase
-        .from("tiktok_tokens")
-        .update({
-          access_token: refreshed.access_token,
-          refresh_token: refreshed.refresh_token ?? tokenRow.refresh_token,
-          expires_at: new Date(
-            Date.now() + refreshed.expires_in * 1000,
-          ).toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", tokenRow.id);
-    }
-
+    // ----- Parse + validate request BEFORE doing any heavy work -----
     const body = (await req.json()) as Body;
     const images = Array.isArray(body.photo_images)
       ? body.photo_images.filter(
@@ -194,70 +138,97 @@ Deno.serve(async (req) => {
     if (images.length < 2 || images.length > 35) {
       return json({ error: "photo_images must contain 2-35 public URLs" }, 400);
     }
-
     const title = (body.title ?? "").toString().slice(0, 90);
     const description = (body.description ?? "").toString().slice(0, 4000);
 
-    // Normalize every image (resize + JPEG) to satisfy TikTok PHOTO constraints.
-    const publicBase = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}`;
-    let jpegImages: string[];
-    try {
-      jpegImages = [];
-      for (const u of images) {
-        // Sequential to stay under the edge-function CPU budget.
-        jpegImages.push(await normalizeToTikTokJpeg(u, supabase, publicBase));
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "transcode failed";
-      console.error("JPEG normalize error:", msg);
-      return json({ error: `Image conversion failed: ${msg}` }, 502);
-    }
+    // ----- Heavy work runs in the background so we never hit the 2s CPU cap -----
+    const bg = async () => {
+      try {
+        // Most recently connected account
+        const { data: tokenRow, error: tokenError } = await supabase
+          .from("tiktok_tokens")
+          .select("id, open_id, access_token, refresh_token, expires_at")
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<TokenRow>();
+        if (tokenError) throw new Error(`Token lookup failed: ${tokenError.message}`);
+        if (!tokenRow) throw new Error("TikTok not connected");
 
-    const payload = {
-      post_info: { title, description },
-      source_info: {
-        source: "PULL_FROM_URL",
-        photo_cover_index: 0,
-        photo_images: jpegImages,
-      },
-      post_mode: "MEDIA_UPLOAD",
-      media_type: "PHOTO",
+        let accessToken = tokenRow.access_token;
+        if (new Date(tokenRow.expires_at).getTime() < Date.now() + 120_000) {
+          const refreshRes = await fetch(TOKEN_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              client_key: CLIENT_KEY,
+              client_secret: CLIENT_SECRET,
+              grant_type: "refresh_token",
+              refresh_token: tokenRow.refresh_token,
+            }),
+          });
+          const refreshed = await refreshRes.json();
+          if (!refreshRes.ok || !refreshed.access_token) {
+            throw new Error(`TikTok token refresh failed: ${JSON.stringify(refreshed)}`);
+          }
+          accessToken = refreshed.access_token;
+          await supabase
+            .from("tiktok_tokens")
+            .update({
+              access_token: refreshed.access_token,
+              refresh_token: refreshed.refresh_token ?? tokenRow.refresh_token,
+              expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", tokenRow.id);
+        }
+
+        // Normalize every image (sequential to stay under per-tick CPU budget).
+        const publicBase = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}`;
+        const jpegImages: string[] = [];
+        for (const u of images) {
+          jpegImages.push(await normalizeToTikTokJpeg(u, supabase, publicBase));
+        }
+
+        const payload = {
+          post_info: { title, description },
+          source_info: {
+            source: "PULL_FROM_URL",
+            photo_cover_index: 0,
+            photo_images: jpegImages,
+          },
+          post_mode: "MEDIA_UPLOAD",
+          media_type: "PHOTO",
+        };
+
+        const tiktokRes = await fetch(CONTENT_INIT_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        const text = await tiktokRes.text();
+        if (!tiktokRes.ok) {
+          console.error("TikTok rejected:", tiktokRes.status, text);
+        } else {
+          console.log("TikTok accepted:", text);
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("post-tiktok-carousel bg error:", msg);
+      }
     };
 
-    const tiktokRes = await fetch(CONTENT_INIT_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const text = await tiktokRes.text();
-    let result: unknown;
-    try {
-      result = JSON.parse(text);
-    } catch {
-      result = { raw: text };
+    // @ts-ignore - EdgeRuntime is provided by the Supabase edge runtime
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(bg());
+    } else {
+      bg();
     }
 
-    const errCode = (result as { error?: { code?: string } })?.error?.code;
-    if (!tiktokRes.ok || (errCode && errCode !== "ok")) {
-      console.error("TikTok rejected:", text);
-      return json(
-        {
-          error: "TikTok rejected the request",
-          status: tiktokRes.status,
-          details: result,
-        },
-        502,
-      );
-    }
-
-    const publishId =
-      (result as { data?: { publish_id?: string } })?.data?.publish_id ?? null;
-
-    return json({ ok: true, publish_id: publishId, tiktok: result });
+    return json({ ok: true, queued: true }, 202);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("post-tiktok-carousel error:", msg);
