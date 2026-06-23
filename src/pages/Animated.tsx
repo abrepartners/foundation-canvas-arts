@@ -258,6 +258,17 @@ export default function Animated() {
             </div>
           )}
 
+          {stillsStuck && (
+            <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 mb-4 flex items-center justify-between gap-3">
+              <p className="text-sm text-foreground font-body">
+                Stills have been stalled &gt;2 minutes ({stillsCount} / 6). You can retry the stuck images.
+              </p>
+              <Button variant="outline" size="sm" onClick={retryStills}>
+                <RotateCw className="h-4 w-4 mr-2" /> Retry stills
+              </Button>
+            </div>
+          )}
+
           {stitchStuck && (
             <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 mb-4 flex items-center justify-between gap-3">
               <p className="text-sm text-foreground font-body">
