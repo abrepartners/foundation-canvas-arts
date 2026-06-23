@@ -162,6 +162,30 @@ export default function Animated() {
     }
   };
 
+  const retryStills = async () => {
+    if (!row?.id) return;
+    const sourceId = (row as unknown as { source_content_id?: string }).source_content_id;
+    if (!sourceId) {
+      toast({ title: "Cannot retry", description: "Missing source content id.", variant: "destructive" });
+      return;
+    }
+    const [{ error: e1 }, { error: e2 }] = await Promise.all([
+      supabase.functions.invoke("generate-botanical-resume", {
+        body: { content_id: sourceId, image_provider: "openai" },
+      }),
+      supabase.functions.invoke("animated-start-resume", { body: { row_id: row.id } }),
+    ]);
+    if (e1 || e2) {
+      toast({
+        title: "Retry failed",
+        description: e1?.message || e2?.message || "Unknown",
+        variant: "destructive",
+      });
+    } else {
+      toast({ title: "Retrying stuck stills", description: "Resuming image generation." });
+    }
+  };
+
   const steps = useMemo<Step[]>(() => {
     return (
       row?.progress?.steps ?? [
@@ -179,6 +203,18 @@ export default function Animated() {
     row?.queue_status === "stills_ready" ||
     row?.queue_status === "animating" ||
     row?.queue_status === "stitching";
+
+  const stillsStep = steps.find((s) => s.key === "stills");
+  const stillsCount = (() => {
+    const m = stillsStep?.detail?.match(/^(\d+)\s*\/\s*6$/);
+    return m ? parseInt(m[1], 10) : 0;
+  })();
+  const stillsStuck =
+    row?.queue_status === "generating" &&
+    stillsStep?.status === "running" &&
+    stillsCount < 6 &&
+    row?.updated_at &&
+    now - new Date(row.updated_at).getTime() > 2 * 60 * 1000;
 
   const stitchStuck =
     row?.queue_status === "stitching" &&
