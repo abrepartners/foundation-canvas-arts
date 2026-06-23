@@ -311,6 +311,19 @@ export default function Animated() {
             </div>
           )}
 
+          {row && steps.some((s) => s.started_at) && (
+            <div className="rounded-md border border-border/60 bg-background/50 p-4 mb-4">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-body mb-3">
+                Progress timeline
+              </p>
+              <div>
+                {steps.map((s, i) => (
+                  <TimelineRow key={s.key} step={s} now={now} isLast={i === steps.length - 1} />
+                ))}
+              </div>
+            </div>
+          )}
+
           {stillsStuck && (
             <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 mb-4 flex items-center justify-between gap-3">
               <p className="text-sm text-foreground font-body">
