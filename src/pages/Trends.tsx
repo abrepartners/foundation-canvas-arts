@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { AppHeader } from "@/components/AppHeader";
 import { useTrendContent, useTrendHistory } from "@/hooks/useTrendContent";
 import { type ImageProvider } from "@/components/GenerateButton";
 import { ContentDisplay } from "@/components/ContentDisplay";
