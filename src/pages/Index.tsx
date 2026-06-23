@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import {
   useBotanicalContent,
   useContentHistory,
@@ -7,6 +6,7 @@ import {
 import { GenerateButton, type ImageProvider } from "@/components/GenerateButton";
 import { ContentDisplay } from "@/components/ContentDisplay";
 import { HistorySidebar } from "@/components/HistorySidebar";
+import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -82,9 +82,10 @@ const Index = () => {
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <header className="border-b border-border">
-          <div className="flex items-center gap-3 px-4 py-4">
+        <AppHeader
+          title="Botanical Content Generator"
+          subtitle="Autonomous discovery of verifiable botanical facts"
+          leading={
             <Button
               variant="ghost"
               size="icon"
@@ -97,39 +98,11 @@ const Index = () => {
                 <PanelLeft className="h-4 w-4" />
               )}
             </Button>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl md:text-2xl font-serif text-foreground tracking-tight truncate">
-                Botanical Content Generator
-              </h1>
-              <p className="text-muted-foreground font-body text-xs hidden sm:block">
-                Autonomous discovery of verifiable botanical facts
-              </p>
-            </div>
-            <nav className="flex items-center gap-1 text-sm font-body flex-shrink-0">
-              <Link
-                to="/"
-                className="px-3 py-1.5 rounded-md bg-secondary text-foreground"
-              >
-                Plants
-              </Link>
-              <Link
-                to="/trends"
-                className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground"
-              >
-                Trends
-              </Link>
-              <Link
-                to="/queue"
-                className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground"
-              >
-                Queue
-              </Link>
-            </nav>
-          </div>
-        </header>
+          }
+        />
 
         {/* Main content */}
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto pb-20 md:pb-0">
           <div className="container py-6 md:py-8">
             {!content ? (
               <div className="flex flex-col items-center justify-center py-12 md:py-16 space-y-8">

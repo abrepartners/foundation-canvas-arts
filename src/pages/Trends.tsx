@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { AppHeader } from "@/components/AppHeader";
 import { useTrendContent, useTrendHistory } from "@/hooks/useTrendContent";
 import { type ImageProvider } from "@/components/GenerateButton";
 import { ContentDisplay } from "@/components/ContentDisplay";
@@ -143,8 +143,10 @@ const Trends = () => {
       )}
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="border-b border-border">
-          <div className="flex items-center gap-3 px-4 py-4">
+        <AppHeader
+          title="Trend Carousel Generator"
+          subtitle="Any subject — TikTok-inspired, verified-fact carousels"
+          leading={
             <Button
               variant="ghost"
               size="icon"
@@ -157,32 +159,10 @@ const Trends = () => {
                 <PanelLeft className="h-4 w-4" />
               )}
             </Button>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl md:text-2xl font-serif text-foreground tracking-tight truncate">
-                Trend Carousel Generator
-              </h1>
-              <p className="text-muted-foreground font-body text-xs hidden sm:block">
-                Any subject — TikTok-inspired, verified-fact carousels
-              </p>
-            </div>
-            <nav className="flex items-center gap-1 text-sm font-body flex-shrink-0">
-              <Link
-                to="/"
-                className="px-3 py-1.5 rounded-md hover:bg-secondary text-muted-foreground"
-              >
-                Plants
-              </Link>
-              <Link
-                to="/trends"
-                className="px-3 py-1.5 rounded-md bg-secondary text-foreground"
-              >
-                Trends
-              </Link>
-            </nav>
-          </div>
-        </header>
+          }
+        />
 
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto pb-20 md:pb-0">
           <div className="container py-6 md:py-8">
             {!content ? (
               <div className="flex flex-col items-center justify-center py-8 md:py-12 space-y-8">

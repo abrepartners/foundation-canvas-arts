@@ -1,36 +1,27 @@
-## Goal
-Make the Animated Video pipeline fully fire-and-forget. Close the tab at any time — the video finishes on the server and is ready when you return.
+Every page currently duplicates the same header + nav links inline. On mobile the tabs are cramped into the top-right corner next to the page title, making them hard to tap.
 
-## Changes
+Goal: make the primary nav tabs as easy to reach as possible on mobile, while keeping a clean top header on desktop.
 
-### 1. New edge function: `animated-stitch`
-- Called automatically by `animated-animate-all` after the 6th Kling clip uploads successfully.
-- Invokes a Replicate ffmpeg concat model to stitch the 6 clips into a single 60s MP4.
-- Polls the prediction, downloads the result, uploads it to `botanical-faceless-visuals/animated/{row_id}/final.mp4`.
-- Updates the `botanical_animated` row: `final_video_url`, `queue_status = 'done'`, progress steps mark stitch + save as done.
-- Wrapped in `EdgeRuntime.waitUntil` for ~150s of CPU.
+### Changes
 
-### 2. Update `animated-animate-all`
-- After all 6 clips are uploaded, instead of setting `queue_status = 'clips_done'`, it:
-  1. Sets `queue_status = 'stitching'`.
-  2. Invokes `animated-stitch` via `supabase.functions.invoke` (fire-and-forget).
+1. **New shared component: `src/components/AppHeader.tsx`**
+   - Receives `title`, `subtitle`, and optional `children` (for page-specific header actions like the sidebar toggle on Index/Trends).
+   - Desktop (`md:`): identical layout to today — title block on the left, horizontal nav pills on the right.
+   - Mobile (`<md`): title block stays in the top header, but the nav pills are removed from the header and rendered as a **sticky bottom tab bar** instead.
+   - Bottom tab bar: 4 tabs (Plants, Trends, Animated, Queue), icon + label, active tab highlighted with `bg-secondary` / `text-foreground`, large touch targets (`h-14` min), `pb-safe` for iOS safe-area, fixed to viewport bottom with a top border.
 
-### 3. Update `Animated.tsx`
-- Remove `import { stitchClips } from "@/lib/stitchClips"` and all browser-side stitch code.
-- Add auto-resume on mount: query `botanical_animated` for the most recent row where `queue_status` is NOT `done` or `error`. Load it into state and subscribe to realtime updates.
-- If a row is stuck at `stitching` for >5 minutes, show a "Retry stitch" button.
-- Change footer copy to: "Runs entirely on our servers. Close the tab anytime — your video will be waiting when you come back."
-- Remove the `stitchProgress` state and the `stitch` step percentage detail.
+2. **Refactor all 4 pages** (`Index.tsx`, `Trends.tsx`, `Queue.tsx`, `Animated.tsx`)
+   - Remove the duplicated inline `<header>` + `<nav>` markup.
+   - Import and use `<AppHeader>` with the correct `title` and `subtitle` for each page.
+   - Index and Trends pass their sidebar toggle button into `AppHeader`’s actions slot.
+   - Add bottom padding to each page’s `<main>` so content isn’t hidden behind the sticky bottom bar on mobile (`pb-20 md:pb-0`).
 
-### 4. Cleanup
-- Delete `src/lib/stitchClips.ts`.
-- Remove `@ffmpeg/ffmpeg` and `@ffmpeg/util` from `package.json` dependencies.
-- Delete any leftover ffmpeg.wasm public assets if present.
+3. **Active-route styling**
+   - Use `useLocation` from `react-router-dom` inside `AppHeader` so both the desktop top nav and mobile bottom bar show the correct active state.
 
-## Cost
-- Extra ~$0.01–0.02 per video for Replicate ffmpeg concat on top of existing ~$3.70.
+### No-go
+- No changes to routing, page logic, data fetching, or edge functions.
+- No new dependencies.
 
-## Out of scope
-- Email/push notifications when done.
-- Multiple concurrent generations.
-- Retrying individual failed clips (unchanged).
+### Result
+Mobile users get a thumb-reachable tab bar at the bottom of the screen. Desktop stays unchanged.
