@@ -37,7 +37,12 @@ serve(async (req) => {
       .from("botanical_animated")
       .insert({
         queue_status: "generating",
-        progress: { stage: "script", steps: INITIAL_STEPS.map((s, i) => i === 0 ? { ...s, status: "running", started_at: new Date().toISOString() } : s) },
+        progress: {
+          stage: "script",
+          steps: INITIAL_STEPS.map((s, i) =>
+            i === 0 ? { ...s, status: "running", started_at: new Date().toISOString() } : s,
+          ),
+        },
       })
       .select("id")
       .single();
@@ -45,7 +50,7 @@ serve(async (req) => {
     if (insertError || !row?.id) throw new Error(insertError?.message ?? "Insert failed");
     const rowId = row.id;
 
-    // 2. In background: invoke generate-botanical-content with openai provider so we get the 6 stills.
+    // 2. Background: kick off generate-botanical-content, then hand polling off to animated-start-resume.
     const bg = async () => {
       try {
         const { data: gen, error: genError } = await supabase.functions.invoke(
@@ -58,7 +63,6 @@ serve(async (req) => {
         const sourceId = gen.content_id as string;
         const content = gen.content;
 
-        // Mark script step done, stills step running. Store source link + script/caption.
         await supabase
           .from("botanical_animated")
           .update({
@@ -78,64 +82,8 @@ serve(async (req) => {
           })
           .eq("id", rowId);
 
-        // 3. Poll generate-botanical-content's script_visuals until all 6 stills are done.
-        const MAX_POLLS = 240; // 240 * 3s = 12 minutes
-        let stillUrls: string[] = [];
-        for (let i = 0; i < MAX_POLLS; i++) {
-          await new Promise((r) => setTimeout(r, 3000));
-          const { data: src } = await supabase
-            .from("botanical_content")
-            .select("script_visuals")
-            .eq("id", sourceId)
-            .single();
-          if (!src?.script_visuals) continue;
-          let visuals: Array<{ moment: string; image_url?: string | null; status?: string }> = [];
-          try {
-            visuals = typeof src.script_visuals === "string" ? JSON.parse(src.script_visuals) : src.script_visuals;
-          } catch {
-            continue;
-          }
-          const ORDER = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
-          const ordered = ORDER.map((m) => visuals.find((v) => v.moment === m)).filter(Boolean) as typeof visuals;
-          const doneCount = ordered.filter((v) => v.image_url && v.status === "done").length;
-          stillUrls = ordered.map((v) => v.image_url || "");
-
-          // Live progress update.
-          await supabase
-            .from("botanical_animated")
-            .update({
-              still_urls: stillUrls,
-              progress: {
-                stage: "stills",
-                steps: INITIAL_STEPS.map((s) => {
-                  if (s.key === "script") return { ...s, status: "done", detail: content.plant_name };
-                  if (s.key === "stills") return { ...s, status: doneCount === 6 ? "done" : "running", detail: `${doneCount} / 6` };
-                  return s;
-                }),
-              },
-            })
-            .eq("id", rowId);
-
-          if (doneCount === 6 && ordered.every((v) => v.image_url)) {
-            // Stills complete. Mark stage='clips_ready' so client triggers animation.
-            await supabase
-              .from("botanical_animated")
-              .update({
-                queue_status: "stills_ready",
-                progress: {
-                  stage: "clips_ready",
-                  steps: INITIAL_STEPS.map((s) => {
-                    if (s.key === "script") return { ...s, status: "done", detail: content.plant_name };
-                    if (s.key === "stills") return { ...s, status: "done", detail: "6 / 6" };
-                    return s;
-                  }),
-                },
-              })
-              .eq("id", rowId);
-            return;
-          }
-        }
-        throw new Error("Stills generation timed out after 12 minutes");
+        // Hand off polling to resume function (bounded; self-chains).
+        await supabase.functions.invoke("animated-start-resume", { body: { row_id: rowId } });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("animated-start bg error:", msg);
