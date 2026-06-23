@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Trends from "./pages/Trends";
 import Queue from "./pages/Queue";
+import Animated from "./pages/Animated";
 import NotFound from "./pages/NotFound";
 import { Terms, Privacy } from "./pages/Legal";
 
@@ -20,6 +21,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/trends" element={<Trends />} />
+          <Route path="/animated" element={<Animated />} />
           <Route path="/queue" element={<Queue />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />

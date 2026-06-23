@@ -1,75 +1,75 @@
+# Animated Tab — One-Click Video Pipeline (v2)
 
-# 30-Day Automation → Monetization Plan
+A new **Animated** tab. User clicks **Generate Animated Video**, walks away, comes back to a finished 60s+ vertical MP4. Live progress panel shows every stage. No prompts to write, no clips to pick, no stitching to do.
 
-Backwards-planned from your 4 revenue streams: **Creator Rewards + Brand Deals + Affiliate + Own Digital Product**. All require the same upstream asset: **a growing, high-watch-time TikTok feed**. So we build the growth/quality engine first, then bolt monetization rails on top.
+## Image model correction
 
-## The Backwards Chain
+Hero stills will be generated via **Replicate using the OpenAI `gpt-image-1` model** (the ChatGPT-image route already wired into your `regenerate-visual` flow when `image_provider = "openai"`). Gemini 2.5 Flash Image is NOT used in this pipeline. The existing botanical-study-plate prompt template carries over unchanged — only the provider is locked to OpenAI-via-Replicate.
+
+## What the user sees
 
 ```text
-$$$  ← Creator Rewards payout, brand DMs, affiliate clicks, product sales
- ↑
-10k followers + 1M qualifying views  ← requires consistent virality
- ↑
-2–3 posts/day, each optimized pre-publish & learned-from post-publish
- ↑
-One-click approve queue + scheduled auto-post
- ↑
-Generation engine (already built) + virality scoring + analytics feedback
+┌─ Animated Video ──────────────────────────────┐
+│  [ Generate Animated Video ]                  │
+│                                               │
+│  ● Picking plant + verifying fact      ✓ 4s   │
+│  ● Writing 60s script (6 beats)        ✓ 11s  │
+│  ● Designing 6 hero stills (OpenAI)    ✓ 52s  │
+│  ● Animating clip 3 of 6  ▓▓▓▓▓░░░░   1m 12s  │
+│  ○ Stitching final MP4                        │
+│  ○ Saving to library                          │
+│                                               │
+│  [preview player appears here when done]      │
+│  [ Download MP4 ]  [ Post to TikTok ]         │
+└───────────────────────────────────────────────┘
 ```
 
-We work bottom-up over 4 weeks.
+Progress streams live via Supabase Realtime on a new `progress` jsonb column. Stills appear as they're created; clips appear as they finish.
 
----
+## Pipeline (all automatic, all server-side)
 
-## Week 1 — Quality Gate & Approval Queue
-Goal: stop posting anything that isn't pre-scored for virality.
+1. **Fact + script** — reuse existing fact-selection + script generation. 6 beats (Hook / Dangle / Re-Hook / Dangle / Payoff / Close).
+2. **Hero stills (6)** — **Replicate `openai/gpt-image-1`**, 1024×1792 (closest 9:16 it supports), upscaled/padded to 1080×1920. Existing botanical-study-plate prompts.
+3. **Animations (6 × ~10s)** — Replicate image-to-video, content-aware motion. Model choice below.
+4. **Stitch** — ffmpeg concat into one 60s MP4. Hard cuts in v1.
+5. **Persist** — upload final MP4 + 6 source clips to new `botanical-animated-videos` bucket. Row in new `botanical_animated` table.
+6. **Done** — player + Download + Post to TikTok.
 
-1. **Pre-publish virality score** (no analytics needed, works day 1)
-   - Score hook on: first-3-words punch, curiosity gap, length, hashtag mix, caption title strength
-   - Gemini rates 0–100 with 1-line reasoning + suggests 2 punchier hook rewrites
-2. **Hook A/B variants** — generate 3 hook options per plant, auto-pick highest-scoring, surface other 2 as one-tap swaps
-3. **Approval queue UI** — new `/queue` page: card per pending video with Approve / Regenerate hook / Reject. Approving moves it to scheduled.
+## Cost + time comparison for both video models
 
-## Week 2 — Scheduled Auto-Post (2–3/day)
-Goal: zero manual posting once approved.
+Per finished 60s video (6 clips × 10s, 1080p 9:16). Stills are the same in both rows: 6 × OpenAI `gpt-image-1` ≈ **$0.24–$0.48** (~$0.04–0.08 per image).
 
-1. **`content_schedule` table** — `id, content_id, scheduled_for, status, posted_video_id`
-2. **`scheduler` edge function on pg_cron** — every 15 min, posts any approved item whose slot has arrived via existing TikTok publish flow
-3. **Time-slot picker** — defaults to 12pm / 6pm / 9pm ET (peak plant-tok windows), editable per item
-4. **Daily generation cron** — auto-generates 4 candidates/day at 6am so the queue is always full
+| Option | Video model | Per-clip cost | 6 clips video | + 6 stills | **Total per video** | Wall time | Motion quality |
+|---|---|---|---|---|---|---|---|
+| **A — Premium** | `kwaivgi/kling-v3-omni-video` (10s, 1080p, 9:16) | ~$0.56 | ~$3.36 | ~$0.36 | **~$3.70 / video** | 6–10 min | Best prompt adherence; strongest for "plant growing", "berries ripening", "flower blooming" morphological change |
+| **B — Budget** | `minimax/hailuo-02` (6s × 10 clips to hit 60s, 1080p, 9:16) | ~$0.27 | ~$2.70 (10 clips) | ~$0.36 | **~$3.06 / video** | 5–8 min | Good organic physics; less dramatic morphological change; 6s cap means more clips and more cuts |
+| **B-lite** | `minimax/hailuo-02` at 768p instead of 1080p | ~$0.10 | ~$1.00 (10 clips) | ~$0.36 | **~$1.36 / video** | 4–7 min | Same motion as B; softer image; TikTok still accepts |
 
-## Week 3 — Analytics Feedback Loop
-Goal: every post teaches the generator.
+Prices are Replicate's public per-second rates as of the research run; treat ±20%. Lovable AI gateway adds no markup on Replicate connector calls beyond standard credit conversion.
 
-1. **`tiktok_analytics` table** — `video_id, views, likes, shares, comments, watch_time_avg, completion_rate, follows, fetched_at`
-2. **Analytics poll cron** — pulls TikTok `video/query/` every 6h for last 30 days of app-posted videos
-3. **Analytics dashboard** — leaderboard, top hooks, completion-rate winners, best posting times
-4. **AI post-mortem** — weekly Gemini run compares top-5 vs bottom-5, outputs pattern rules, **auto-injects them into the generation system prompt** (this is the compounding edge)
+**Volume math:** at 1 video/day for 30 days → Option A ≈ **$111/mo**, Option B ≈ **$92/mo**, Option B-lite ≈ **$41/mo**.
 
-## Week 4 — Monetization Rails
+**My recommendation:** Option A. The whole reason you asked for elaborate animation (plant actually growing, not a push-in) is exactly what Kling v3 Omni is best at. The $0.65/video premium over Hailuo buys the motion quality you specifically said you wanted. If cost becomes an issue later, we add a toggle.
 
-1. **Bio link router** (`/go` page on the published domain) — single TikTok bio link → mobile-optimized hub: Amazon affiliate plant gear, email opt-in, future product
-2. **Affiliate caption injector** — generator auto-appends "🌱 Plant tools I use → link in bio" to captions, rotated per video
-3. **Email capture** — ConvertKit/Resend opt-in on `/go` for the "Weird Plant Facts" newsletter — seeds the audience you own for the future ebook/course
-4. **Creator Rewards check** — by end of week 4, dashboard surfaces eligibility (followers, qualified-view threshold) and flags when to enable it
-5. **Brand-deal media kit page** — `/press` auto-built from analytics: top videos, total views, demographics, contact form
+## Out of scope (deferred)
 
----
+- Voiceover + audio mixing
+- Crossfade transitions
+- Per-beat clip editing
 
-## What You Get on Day 30
+## Technical notes
 
-- Engine generates 4 candidates/day → you approve in <5 min → scheduler posts 2–3/day automatically
-- Every post is pre-scored and learns from the last week's winners
-- Bio link monetizes traffic from view #1 (affiliate)
-- Email list compounds the audience for your own product launch in month 2
-- Media kit ready the moment a brand DM lands
+- New route `/animated` with `AnimatedVideoPanel.tsx`. `/queue` untouched.
+- New edge function `generate-animated-video` orchestrates everything. Writes `progress` jsonb on every stage transition. `verify_jwt = false`.
+- Stills: call Replicate `openai/gpt-image-1` via existing connector gateway pattern; reuse the prompt builders in `src/lib/architecturalPlate.ts` / `plateTemplate.ts`.
+- Clips: same gateway, `kwaivgi/kling-v3-omni-video` (Option A) — clip prompt auto-derived from beat's script line + visual prompt + a beat-type motion template (Hook=reveal/emerge, Payoff=bloom/ripen, Close=settle/wide).
+- Concurrency: 2 clips in parallel to respect Replicate limits.
+- ffmpeg concat in edge runtime via `npm:fluent-ffmpeg` static binary; fallback to a `stitch-video` second function if runtime hosting fails.
+- New table `botanical_animated` (`id`, `plant_name`, `script`, `beats jsonb`, `still_urls text[]`, `clip_urls text[]`, `final_video_url`, `progress jsonb`, `queue_status`, `created_at`) with RLS + GRANTs matching `botanical_content`.
+- New storage bucket `botanical-animated-videos` (public).
+- Sidebar history gets second section "Animated Videos".
 
-## Technical Notes
-- All new backend = Supabase edge functions + pg_cron (existing stack)
-- AI calls = Lovable AI Gateway, Gemini 2.0 Flash for scoring/post-mortem
-- TikTok analytics = existing connector, `video/query/` endpoint
-- New tables: `content_schedule`, `tiktok_analytics`, `email_subscribers`, `hook_variants`
-- No new paid services required for week 1–3; week 4 only adds an email provider (Resend is already wired)
+## Confirm before I build
 
-## Build Order Confirmation
-I'll execute Week 1 first end-to-end, then check in before Week 2 — that way you see the approval queue + scoring working on real generations before we automate posting. Approve this plan and I'll start with the virality scorer + queue UI.
+1. Pick **Option A (premium Kling, ~$3.70/video)**, **B (Hailuo 1080p, ~$3.06/video)**, or **B-lite (Hailuo 768p, ~$1.36/video)**.
+2. Confirm OpenAI `gpt-image-1` via Replicate for the 6 hero stills (replacing Gemini in this pipeline).
