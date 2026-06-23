@@ -14,6 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
+      botanical_animated: {
+        Row: {
+          caption: string | null
+          clip_urls: string[] | null
+          created_at: string
+          error: string | null
+          final_video_url: string | null
+          id: string
+          plant_name: string | null
+          progress: Json
+          queue_status: string
+          script: Json | null
+          source_content_id: string | null
+          still_urls: string[] | null
+          updated_at: string
+          verified_fact: string | null
+        }
+        Insert: {
+          caption?: string | null
+          clip_urls?: string[] | null
+          created_at?: string
+          error?: string | null
+          final_video_url?: string | null
+          id?: string
+          plant_name?: string | null
+          progress?: Json
+          queue_status?: string
+          script?: Json | null
+          source_content_id?: string | null
+          still_urls?: string[] | null
+          updated_at?: string
+          verified_fact?: string | null
+        }
+        Update: {
+          caption?: string | null
+          clip_urls?: string[] | null
+          created_at?: string
+          error?: string | null
+          final_video_url?: string | null
+          id?: string
+          plant_name?: string | null
+          progress?: Json
+          queue_status?: string
+          script?: Json | null
+          source_content_id?: string | null
+          still_urls?: string[] | null
+          updated_at?: string
+          verified_fact?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "botanical_animated_source_content_id_fkey"
+            columns: ["source_content_id"]
+            isOneToOne: false
+            referencedRelation: "botanical_content"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       botanical_content: {
         Row: {
           caption: string | null
