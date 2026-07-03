@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useBotanicalContent,
   useContentHistory,
@@ -32,6 +32,17 @@ const Index = () => {
     loadFromHistory(item);
     if (isMobile) setMobileSheetOpen(false);
   };
+
+  useEffect(() => {
+    const pendingId = sessionStorage.getItem("queue:load_id");
+    if (!pendingId || historyLoading) return;
+    const item = history.find((h) => h.id === pendingId);
+    if (item) {
+      sessionStorage.removeItem("queue:load_id");
+      handleSelect(item);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history, historyLoading]);
 
   const handleGenerate = async () => {
     setSelectedId(undefined);
