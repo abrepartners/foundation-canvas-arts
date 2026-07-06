@@ -1,58 +1,80 @@
-## What's actually happening
+## What's happening now
 
-Your latest job row (`dfec587b…`) is stuck at `phase = normalizing` and never moves. Edge logs confirm why:
+`animated-animate-all` sends one prompt per clip to Kling v2.1 that's built like this:
 
+```ts
+const prompt = `${motion} ${scriptLine}`.slice(0, 1500);
 ```
-post-tiktok-carousel  ERROR  CPU Time exceeded
+
+Two problems:
+
+1. **`scriptLine` is the narration**, not a motion description. Appending "Pomegranates aren't really a fruit in the way you think..." to a video-motion prompt confuses Kling — the model tries to visualize the words, which is where clips 3, 4, 5 turn into "random crap."
+2. **The `MOTION_BY_MOMENT` presets are too generic** and not tied to what the still actually shows. `rehook` says "diagonal specimen pushes across the frame" but the still is already a static diagonal composition — there's no motion identity, so Kling improvises.
+
+Clip 6 (`close`) not generating is a separate failure (Kling timeout or upload error). It's already surfaced via `queue_status: error`, but the current UI probably didn't retry. Out of scope for this plan unless you want a retry button — say the word.
+
+## Fix — a real motion library, locked to each still
+
+Rewrite the motion system in `animated-animate-all` so every clip has:
+
+- A **choreography** that only makes sense for the still it's animating (a growing hero can only start from the hero shot; a specimen-part reveal can only happen on the evidence board).
+- **Zero narration bleed** — the script text is removed from the video prompt. Kling only sees motion instructions + a negative prompt.
+- **Anchored start-frame behavior** — every prompt explicitly says "starting from the exact provided image, do X, hold Y" so the still is preserved as frame 0 and the motion is additive, not reinterpretive.
+
+### The six locked choreographies (per moment)
+
+Each is a compact, camera-first instruction. No storytelling verbs, no script echo.
+
+- **hook — "Grows from the ground"**
+  Start on the hero still with the specimen partially buried in soft soil / darkness at the bottom of frame. Over 10s the plant rises vertically ~15% of frame height, leaves gently unfurl, one warm rim-light sweeps left→right across the surface. Camera is locked, no zoom. Ends holding on the still's original composition.
+
+- **dangle_1 — "Macro breathing" (already good, tightened)**
+  Start on the extreme macro still. Slow 8% push-in along the surface texture over 10s, shallow depth of field breathes in and out once, a few dust or pollen particles drift diagonally through the light. No pan, no rotation.
+
+- **rehook — "Diagonal parallax"**
+  Start on the diagonal composition. Camera translates left-to-right by ~6% while the specimen holds its 45° angle, creating a strong parallax reveal against the background haze. Shadows lengthen slightly as the light source appears to shift. No rotation of the subject itself.
+
+- **dangle_2 — "Cross-section opens"**
+  Start on the top-down dissection still. The two halves gently separate ~4% along the horizontal axis, revealing more of the internal anatomy in the gap. Magnifier circles softly pulse once. Camera stays locked overhead. No zoom, no pan.
+
+- **verified_truth — "Evidence lays itself out"**
+  Start on the labeled A/B/C/D evidence board. The specimen parts settle into place with the tiniest correction motion (~2%), measurement brackets extend outward from each label as thin lines drawing themselves over 10s. Camera locked overhead. Feels like an archival document animating itself.
+
+- **close — "Final quiet turn"**
+  Start on the minimal centered specimen. The specimen rotates in place a single slow quarter-turn (never a full spin), the golden-ratio diagram softly traces around it as a thin line drawing, a barely-there vignette closes ~2% at the corners. Ends on stillness.
+
+### Prompt-building change
+
+In `animateOne`:
+
+```ts
+const motion = MOTION_BY_MOMENT[moment];      // new, richer preset (above)
+const prompt = motion;                         // no more scriptLine append
 ```
 
-The background task in `post-tiktok-carousel` is decoding + resizing + JPEG-encoding every carousel image with `imagescript` (WASM). For a 6–10 image portrait carousel that easily blows the Edge Function per-invocation CPU budget. When the runtime kills the worker mid-loop:
+And extend the negative prompt to actively fight the "random crap" failure mode:
 
-- the loop never reaches the `initializing` update
-- the `catch` never runs, so `phase = failed` is never written
-- the client keeps polling `tiktok-send-status`, which keeps returning `phase: normalizing`
-- nothing is ever sent to TikTok, and no reconnect will fix it — the OAuth token is fine, the function just dies before it ever calls TikTok
-
-So: not a TikTok auth issue. It's a CPU-budget issue in our own normalization step.
-
-## Fix — two parts
-
-### 1. Remove the heavy work from the send path
-
-Move image normalization out of `post-tiktok-carousel` entirely. The visuals are already generated and stored in the `botanical-faceless-visuals` bucket; normalize them once at generation time instead of every time we send.
-
-- In `generate-botanical-content` (and any other function that writes visuals to the bucket), after uploading the PNG, also upload a TikTok-ready JPEG variant at a stable path (`tiktok-jpeg/<original>-1080x1920-q85.jpg`) using the same logic that's currently in `post-tiktok-carousel`. One image at a time, right after it's created — well within budget.
-- Store that JPEG URL alongside the original in whatever field currently feeds `photo_images` (or expose a helper that maps original → jpeg URL).
-- `post-tiktok-carousel` then does **zero** decoding: it just checks `url.includes('/tiktok-jpeg/')`, and if so passes it straight to TikTok's `content/init/`. No `imagescript`, no CPU pressure, no timeout risk.
-- Keep the current `normalizeToTikTokJpeg` function as a lazy fallback for old content that predates this change, but log a warning when it fires so we can migrate the rest.
-
-### 2. Watchdog so the UI never loops again
-
-Even after the fix, we should never let the client poll forever on a dead background task.
-
-- In `tiktok-send-status`, when the job is in a non-terminal pre-publish phase (`queued` / `normalizing` / `initializing`) and `updated_at` is older than **90 seconds**, mark it `phase = failed` with `fail_reason = "Background task died before contacting TikTok (likely CPU timeout). Try sending again."` and return that to the client.
-- Client already handles `phase: failed` → shows the reason and stops polling. No new UI work needed.
-
-### 3. Unblock the current stuck job
-
-One-off DB update to flip `dfec587b-c566-44c4-8781-54c564aa919e` to `failed` so the currently-open tab stops spinning:
-
-```sql
-update tiktok_send_jobs
-set phase = 'failed',
-    fail_reason = 'Background task exceeded CPU limit during image normalization',
-    updated_at = now()
-where id = 'dfec587b-c566-44c4-8781-54c564aa919e';
+```ts
+negative_prompt:
+  "blurry, low quality, distorted, text artifacts, watermark, logo, frame border, " +
+  "morphing subject, changing species, extra plants appearing, hands, people, " +
+  "text overlays, captions, subtitles, jump cuts, whip pans, camera shake, " +
+  "rapid zoom, style change, cartoon, oversaturated colors"
 ```
+
+### Nothing else changes
+
+- Same Kling v2.1 model, same 10s duration, same start_image anchoring, same concurrency 2, same storage path scheme, same progress reporting.
+- No DB schema changes.
+- No UI changes on `/animated`.
+- Existing rows are unaffected until you re-animate them (the fix only applies to new runs).
 
 ## Out of scope
 
-- No changes to TikTok OAuth, tokens, or `photo_images` selection.
-- No change to image visual style or generation prompts.
-- No retry-on-failure automation — if a send fails, the user re-clicks Send.
+- Retrying the failed `close` clip on the Pomegranate row (say the word if you want a "Retry failed clip" button on `/animated`).
+- Changing stitching, audio, or the still-generation prompts.
+- Changing the motion library per-plant — motions stay locked to moment identity, not plant identity.
 
 ## Result
 
-- Sending a carousel becomes a lightweight call (init only), so it can't hit the CPU cap.
-- Any future background failure surfaces in the UI within 90s instead of looping forever.
-- The current stuck job is cleared so you can send again immediately.
+Every clip is a purposeful, composition-aware motion that reinforces its still instead of drifting. Hook actually grows from the ground. Macro keeps breathing. Rehook has real parallax. Dissection opens. Evidence lays itself out. Close resolves. No more "random crap" from narration bleeding into the video prompt.
