@@ -9,5 +9,11 @@ verify_jwt = false
 [functions.post-tiktok-carousel]
 verify_jwt = false
 
+[functions.tiktok-send-status]
+verify_jwt = false
+
+[functions.tiktok-publish-status]
+verify_jwt = false
+
 [functions.tiktok-oauth]
 verify_jwt = false
