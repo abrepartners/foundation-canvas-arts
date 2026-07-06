@@ -84,9 +84,9 @@ serve(async (req) => {
       const animateOne = async (idx: number) => {
         const moment = ORDER[idx];
         const stillUrl = stills[idx];
-        const scriptLine = script?.[moment === "verified_truth" ? "verified_truth" : moment] ?? "";
-        const motion = MOTION_BY_MOMENT[moment];
-        const prompt = `${motion} ${scriptLine}`.slice(0, 1500);
+        // Motion prompt is composition-locked to this moment's still. We do NOT
+        // append the script narration — Kling would try to render the words.
+        const prompt = MOTION_BY_MOMENT[moment];
 
         try {
           // Create prediction.
@@ -102,7 +102,11 @@ serve(async (req) => {
                 start_image: stillUrl,
                 prompt,
                 duration: 10,
-                negative_prompt: "blurry, low quality, distorted, text artifacts, watermark, logo, frame border",
+                negative_prompt:
+                  "blurry, low quality, distorted, text artifacts, watermark, logo, frame border, " +
+                  "morphing subject, changing species, extra plants appearing, hands, people, " +
+                  "text overlays, captions, subtitles, jump cuts, whip pans, camera shake, " +
+                  "rapid zoom, style change, cartoon, oversaturated colors",
               },
             }),
           });
