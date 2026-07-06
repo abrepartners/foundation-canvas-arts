@@ -140,10 +140,34 @@ Deno.serve(async (req) => {
     }
     const title = (body.title ?? "").toString().slice(0, 90);
     const description = (body.description ?? "").toString().slice(0, 4000);
+    const contentId =
+      typeof (body as { content_id?: unknown }).content_id === "string"
+        ? ((body as { content_id: string }).content_id)
+        : null;
+
+    // ----- Create a job row so the client can observe real progress -----
+    const { data: jobRow, error: jobErr } = await supabase
+      .from("tiktok_send_jobs")
+      .insert({ phase: "queued", content_id: contentId })
+      .select("id")
+      .single();
+    if (jobErr || !jobRow) {
+      throw new Error(`Failed to create send job: ${jobErr?.message ?? "unknown"}`);
+    }
+    const jobId = jobRow.id as string;
+
+    const updateJob = async (patch: Record<string, unknown>) => {
+      await supabase
+        .from("tiktok_send_jobs")
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq("id", jobId);
+    };
 
     // ----- Heavy work runs in the background so we never hit the 2s CPU cap -----
     const bg = async () => {
       try {
+        await updateJob({ phase: "normalizing" });
+
         // Most recently connected account
         const { data: tokenRow, error: tokenError } = await supabase
           .from("tiktok_tokens")
@@ -189,6 +213,8 @@ Deno.serve(async (req) => {
           jpegImages.push(await normalizeToTikTokJpeg(u, supabase, publicBase));
         }
 
+        await updateJob({ phase: "initializing" });
+
         const payload = {
           post_info: { title, description },
           source_info: {
@@ -209,14 +235,37 @@ Deno.serve(async (req) => {
           body: JSON.stringify(payload),
         });
         const text = await tiktokRes.text();
-        if (!tiktokRes.ok) {
+        let parsed: unknown;
+        try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+
+        const publishId =
+          (parsed as { data?: { publish_id?: string } })?.data?.publish_id ?? null;
+        const errObj = (parsed as { error?: { code?: string; message?: string } })?.error;
+        const errCode = errObj?.code;
+
+        if (!tiktokRes.ok || (errCode && errCode !== "ok") || !publishId) {
+          const failReason =
+            errObj?.message ??
+            `TikTok init failed (HTTP ${tiktokRes.status})`;
           console.error("TikTok rejected:", tiktokRes.status, text);
-        } else {
-          console.log("TikTok accepted:", text);
+          await updateJob({
+            phase: "failed",
+            fail_reason: failReason,
+            raw: parsed,
+          });
+          return;
         }
+
+        console.log("TikTok accepted:", text);
+        await updateJob({
+          phase: "publish_id_received",
+          publish_id: publishId,
+          raw: parsed,
+        });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("post-tiktok-carousel bg error:", msg);
+        await updateJob({ phase: "failed", fail_reason: msg }).catch(() => {});
       }
     };
 
@@ -228,7 +277,7 @@ Deno.serve(async (req) => {
       bg();
     }
 
-    return json({ ok: true, queued: true }, 202);
+    return json({ ok: true, job_id: jobId }, 202);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("post-tiktok-carousel error:", msg);
