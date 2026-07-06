@@ -124,6 +124,42 @@ export type Database = {
         }
         Relationships: []
       }
+      tiktok_send_jobs: {
+        Row: {
+          content_id: string | null
+          created_at: string
+          fail_reason: string | null
+          id: string
+          phase: string
+          publish_id: string | null
+          raw: Json | null
+          tiktok_status: string | null
+          updated_at: string
+        }
+        Insert: {
+          content_id?: string | null
+          created_at?: string
+          fail_reason?: string | null
+          id?: string
+          phase?: string
+          publish_id?: string | null
+          raw?: Json | null
+          tiktok_status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          content_id?: string | null
+          created_at?: string
+          fail_reason?: string | null
+          id?: string
+          phase?: string
+          publish_id?: string | null
+          raw?: Json | null
+          tiktok_status?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tiktok_tokens: {
         Row: {
           access_token: string

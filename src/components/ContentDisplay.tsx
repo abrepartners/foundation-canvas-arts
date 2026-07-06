@@ -535,47 +535,56 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
     sendPhase === "uploading" ||
     sendPhase === "processing";
 
-  const pollStatus = async (publishId: string) => {
-    const MAX_POLLS = 60; // ~2 min @ 2s
+  const pollJob = async (jobId: string) => {
+    const MAX_POLLS = 90; // ~3 min @ 2s
     let consecutiveErrors = 0;
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       try {
         const { data, error } = await supabase.functions.invoke(
-          "tiktok-publish-status",
-          { body: { publish_id: publishId } },
+          "tiktok-send-status",
+          { body: { job_id: jobId } },
         );
         if (error) throw new Error(error.message);
         consecutiveErrors = 0;
-        const status: string = (data as { status?: string })?.status ?? "UNKNOWN";
+
+        const serverPhase: string =
+          (data as { phase?: string })?.phase ?? "queued";
+        const status: string | null =
+          (data as { status?: string | null })?.status ?? null;
         const failReason: string | null =
           (data as { fail_reason?: string | null })?.fail_reason ?? null;
 
-        if (status === "PROCESSING_DOWNLOAD") {
+        // Map server phase → UI phase
+        if (serverPhase === "queued" || serverPhase === "normalizing") {
+          setSendPhase("initializing");
+        } else if (serverPhase === "initializing") {
           setSendPhase("uploading");
-        } else if (status === "PROCESSING_UPLOAD" || status === "PROCESSING") {
+        } else if (serverPhase === "publish_id_received") {
           setSendPhase("processing");
-        } else if (
-          status === "SEND_TO_USER_INBOX" ||
-          status === "PUBLISH_COMPLETE"
-        ) {
+        } else if (serverPhase === "in_drafts") {
           setSendPhase("in_drafts");
           setSendDetail(undefined);
           toast({
             title: "In your TikTok drafts",
-            description: "Open the TikTok app to review and publish.",
+            description: "Verified by TikTok — open the app to publish.",
           });
           return;
-        } else if (status === "FAILED") {
+        } else if (serverPhase === "failed") {
           setSendPhase("failed");
-          setSendDetail(failReason ?? "TikTok marked the post as failed.");
+          setSendDetail(failReason ?? "TikTok marked the send as failed.");
           toast({
             title: "TikTok send failed",
-            description: failReason ?? "Failed on TikTok's side.",
+            description: failReason ?? "TikTok rejected the carousel.",
             variant: "destructive",
           });
           return;
         }
+
+        // Extra hint from TikTok's own status field
+        if (status === "PROCESSING_DOWNLOAD") setSendPhase("uploading");
+        else if (status === "PROCESSING_UPLOAD" || status === "PROCESSING")
+          setSendPhase("processing");
       } catch (e) {
         consecutiveErrors++;
         if (consecutiveErrors >= 3) {
@@ -592,7 +601,9 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
       }
     }
     setSendPhase("timeout");
-    setSendDetail("TikTok is still processing — check the app shortly.");
+    setSendDetail(
+      "TikTok is still processing — check the app shortly, or the Approval Queue for the job record.",
+    );
   };
 
   const handleSendTikTok = async () => {
@@ -607,24 +618,20 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
             title: getDisplayTitle(content),
             description: content.caption,
             photo_images: imageUrls,
+            content_id: content.id,
           },
         },
       );
       if (error) throw error;
       if ((data as { error?: string })?.error)
         throw new Error((data as { error: string }).error);
-      const publishId = (data as { publish_id?: string })?.publish_id;
-      if (!publishId) {
-        // No publish_id returned — treat as success but cannot poll
-        setSendPhase("in_drafts");
-        toast({
-          title: "Sent to TikTok",
-          description: "Open the TikTok app to find the draft.",
-        });
-        return;
+      const jobId = (data as { job_id?: string })?.job_id;
+      if (!jobId) {
+        throw new Error(
+          "Server did not return a job id — cannot verify TikTok delivery.",
+        );
       }
-      setSendPhase("uploading");
-      await pollStatus(publishId);
+      await pollJob(jobId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to send to TikTok";
       setSendPhase("failed");
@@ -636,6 +643,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
       });
     }
   };
+
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-4 md:space-y-6">
