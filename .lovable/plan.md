@@ -1,58 +1,64 @@
-## Goal
+## The real problem
 
-Get Pomegranate moving again right now, and make stuck stills impossible going forward.
+Today nothing verifies the carousel actually lands in your TikTok drafts. Here's why:
 
-## Root cause recap
+1. `post-tiktok-carousel` does all the work (image normalization + the call to TikTok's `content/init/`) inside `EdgeRuntime.waitUntil(bg())` and immediately returns `{ ok: true, queued: true }` — with **no `publish_id`**.
+2. The client (`ContentDisplay.tsx`) then checks for `publish_id`, doesn't find one, hits the "No publish_id returned — treat as success but cannot poll" branch, and shows a green "Sent to TikTok" toast even if TikTok later rejected the payload in the background.
+3. `tiktok-publish-status` exists and works, but it's never called because the client never gets a `publish_id`.
 
-1. The OpenAI gpt-image-2 fetch in `generate-botanical-content` has no timeout — when the API hangs, the visual is stuck at `status: "generating"` forever.
-2. The edge runtime kills `EdgeRuntime.waitUntil` after ~150s, so both the image generator AND the `animated-start` 12-minute poll get reaped mid-flight.
+So the "success" you see is only "we handed it to the background task". If TikTok rejects it (bad URL prefix, image size, expired token, unverified domain, etc.), the only trace is a `console.error` in the edge function logs.
 
-## Changes
+## Fix: make sending an observable job
 
-### 1. `supabase/functions/generate-botanical-content/index.ts` — add timeouts + auto-retry
+Add a small persistence layer so the background task can report the real TikTok response back to the client.
 
-- Wrap the OpenAI/Replicate fetch in `generateImageBytes` with an `AbortController` (90s timeout for OpenAI, 120s for Replicate). On timeout, throw — which propagates to `mergeVisual(..., { status: "error" })` instead of leaving "generating" forever.
-- In `generateOne`, on error retry once automatically (so a single hung request doesn't kill a slot).
+### 1. New table `tiktok_send_jobs`
 
-### 2. New endpoint: `supabase/functions/generate-botanical-resume/index.ts`
+Columns:
+- `id uuid pk`
+- `created_at`, `updated_at`
+- `content_id uuid` (nullable — for cross-reference)
+- `phase text` — `queued | normalizing | initializing | publish_id_received | in_drafts | failed`
+- `publish_id text` (nullable)
+- `tiktok_status text` (nullable — last value from `publish/status/fetch`)
+- `fail_reason text` (nullable)
+- `raw jsonb` (last raw TikTok payload for debugging)
 
-Small function that takes `{ content_id }`, reads `script_visuals`, and re-generates any visual whose status is `error` or `generating` (treating "generating" as stale if the row's `updated_at` is more than 3 minutes old). Reuses the same `generateImageBytes` + storage upload code path. Uses `EdgeRuntime.waitUntil` for background work but each call is bounded (≤ 2 stills × ~60s).
+RLS: authenticated read/insert; service_role full. Standard GRANTs.
 
-### 3. `supabase/functions/animated-start/index.ts` — chunked self-chaining poller
+### 2. `post-tiktok-carousel` — return a `job_id` instantly, write progress from bg
 
-Replace the single 12-minute polling loop with a bounded one:
+- Synchronously insert a row with `phase = 'queued'`, return `{ job_id }` (still 202).
+- In `bg()`, update the row as it moves: `normalizing` → `initializing` → on TikTok response, either `publish_id_received` (store `publish_id` + raw) or `failed` (store `fail_reason` + raw).
+- On any thrown error in `bg()`, write `phase = 'failed'` with the message. This is what closes the current blind spot.
 
-- Poll for up to **90 seconds** in this invocation (30 iterations × 3s).
-- Each iteration, also call the new `generate-botanical-resume` if it sees any visual stuck > 60s.
-- If stills aren't done at 90s, self-invoke `animated-start-resume` with `{ row_id }` and return. The next instance picks up exactly where this one left off. This keeps every instance well within the runtime's lifetime budget.
+### 3. New endpoint `tiktok-send-status` (or extend `tiktok-publish-status`)
 
-(Or, simpler: extract the poll loop into a small `animated-stills-poll` function the start function chains into. Same effect, cleaner separation.)
+Input: `{ job_id }`. Behavior:
+- Read the job row.
+- If `phase in (queued, normalizing, initializing)` → return that phase.
+- If `phase = failed` → return `{ status: 'FAILED', fail_reason, raw }`.
+- If `publish_id` present and `tiktok_status` not terminal → call TikTok `publish/status/fetch/`, persist the result, and return it.
+- If terminal (`SEND_TO_USER_INBOX` / `PUBLISH_COMPLETE` / `FAILED`) → return cached row without hitting TikTok.
 
-### 4. Animated.tsx — small UI affordance
+Terminal `SEND_TO_USER_INBOX` = definitive proof it's in your drafts.
 
-Add a "Retry stuck stills" button visible when `queue_status === "generating"` AND `progress.steps.find(s => s.key === "stills").detail` shows < 6/6 AND the row's `updated_at` is older than 2 minutes. Clicking it invokes `generate-botanical-resume` for the source content id and re-invokes `animated-start-resume` for the animated row.
+### 4. Client (`ContentDisplay.tsx`)
 
-### 5. One-time fix for the current Pomegranate row
+- Replace the current `pollStatus(publishId)` with `pollJob(jobId)` that hits the new endpoint every 2s.
+- Remove the "No publish_id returned — treat as success" branch — it's the source of false positives.
+- Show real phases in the UI: "Normalizing images…", "Sending to TikTok…", "Waiting for TikTok processing…", "In your TikTok drafts" (green, only on `SEND_TO_USER_INBOX`), or "Failed: <reason>" with the raw TikTok error visible.
 
-After the new functions deploy, invoke `generate-botanical-resume` with `content_id = 1488150e-afb7-4f69-a29f-6647ba45d8aa`, then re-invoke `animated-start-resume` with `row_id = bcb95246-12ef-4b64-92cb-b4bceb21025a`. This finishes the 2 missing stills and resumes the pipeline straight through to clips → stitch.
+### 5. Optional: `/queue` visibility
 
-(Same recovery applies to the older stuck Fig row from 05:23 if you want it salvaged — otherwise it stays in error state and can be deleted.)
-
-## Technical details
-
-- AbortController pattern:
-  ```ts
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 90_000);
-  try {
-    const res = await fetch(url, { ...opts, signal: ctrl.signal });
-    ...
-  } finally { clearTimeout(t); }
-  ```
-- "Stale generating" check: compare `now - updated_at > 60_000`. Requires either using `updated_at` (already on the row) or stamping a per-visual `started_at` inside script_visuals. Per-visual is more precise — add it in `mergeVisual` when transitioning to `"generating"`.
-- Self-chaining via `supabase.functions.invoke("animated-start-resume", { body: { row_id } })` from inside `waitUntil` right before returning. Fire-and-forget; don't await.
+Add a small "TikTok send history" section on `/queue` (or a new `/tiktok` panel) that lists recent `tiktok_send_jobs` rows with phase, publish_id, fail_reason, and time — a persistent audit trail so you can confirm past sends without keeping the tab open.
 
 ## Out of scope
 
-- No schema changes to `botanical_content` or `botanical_animated` — all state already lives in `script_visuals` JSON and `progress` JSON.
-- No change to clip animation or stitch logic; those already use the same waitUntil pattern but each clip is bounded and clips have their own retry path.
+- No changes to image normalization logic.
+- No change to `tiktok-oauth` or token refresh flow.
+- No change to how `photo_images` are selected — this is purely about observability of the send.
+
+## Result
+
+After this, "did it actually reach the drafts?" has one truthful answer: the job row's phase becomes `in_drafts` only when TikTok returns `SEND_TO_USER_INBOX`. Any silent bg failure surfaces in the UI (and in the table) instead of being swallowed.
