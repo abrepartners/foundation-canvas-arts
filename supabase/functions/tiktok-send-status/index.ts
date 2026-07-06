@@ -86,6 +86,28 @@ Deno.serve(async (req) => {
       job.phase === "normalizing" ||
       job.phase === "initializing"
     ) {
+      // Watchdog: if the background task hasn't advanced in 90s it's dead
+      // (usually CPU-timeout during image normalization). Flip to failed so
+      // the client stops polling instead of spinning forever.
+      const staleMs = Date.now() - new Date(job.updated_at).getTime();
+      if (staleMs > 90_000) {
+        const failReason =
+          "Background task stalled before contacting TikTok (likely image processing timeout). Please try sending again.";
+        await supabase
+          .from("tiktok_send_jobs")
+          .update({
+            phase: "failed",
+            fail_reason: failReason,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", job.id);
+        return json({
+          phase: "failed",
+          status: "FAILED",
+          publish_id: null,
+          fail_reason: failReason,
+        });
+      }
       return json({
         phase: job.phase,
         status: null,
