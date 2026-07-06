@@ -1,64 +1,58 @@
-## The real problem
+## What's actually happening
 
-Today nothing verifies the carousel actually lands in your TikTok drafts. Here's why:
+Your latest job row (`dfec587b…`) is stuck at `phase = normalizing` and never moves. Edge logs confirm why:
 
-1. `post-tiktok-carousel` does all the work (image normalization + the call to TikTok's `content/init/`) inside `EdgeRuntime.waitUntil(bg())` and immediately returns `{ ok: true, queued: true }` — with **no `publish_id`**.
-2. The client (`ContentDisplay.tsx`) then checks for `publish_id`, doesn't find one, hits the "No publish_id returned — treat as success but cannot poll" branch, and shows a green "Sent to TikTok" toast even if TikTok later rejected the payload in the background.
-3. `tiktok-publish-status` exists and works, but it's never called because the client never gets a `publish_id`.
+```
+post-tiktok-carousel  ERROR  CPU Time exceeded
+```
 
-So the "success" you see is only "we handed it to the background task". If TikTok rejects it (bad URL prefix, image size, expired token, unverified domain, etc.), the only trace is a `console.error` in the edge function logs.
+The background task in `post-tiktok-carousel` is decoding + resizing + JPEG-encoding every carousel image with `imagescript` (WASM). For a 6–10 image portrait carousel that easily blows the Edge Function per-invocation CPU budget. When the runtime kills the worker mid-loop:
 
-## Fix: make sending an observable job
+- the loop never reaches the `initializing` update
+- the `catch` never runs, so `phase = failed` is never written
+- the client keeps polling `tiktok-send-status`, which keeps returning `phase: normalizing`
+- nothing is ever sent to TikTok, and no reconnect will fix it — the OAuth token is fine, the function just dies before it ever calls TikTok
 
-Add a small persistence layer so the background task can report the real TikTok response back to the client.
+So: not a TikTok auth issue. It's a CPU-budget issue in our own normalization step.
 
-### 1. New table `tiktok_send_jobs`
+## Fix — two parts
 
-Columns:
-- `id uuid pk`
-- `created_at`, `updated_at`
-- `content_id uuid` (nullable — for cross-reference)
-- `phase text` — `queued | normalizing | initializing | publish_id_received | in_drafts | failed`
-- `publish_id text` (nullable)
-- `tiktok_status text` (nullable — last value from `publish/status/fetch`)
-- `fail_reason text` (nullable)
-- `raw jsonb` (last raw TikTok payload for debugging)
+### 1. Remove the heavy work from the send path
 
-RLS: authenticated read/insert; service_role full. Standard GRANTs.
+Move image normalization out of `post-tiktok-carousel` entirely. The visuals are already generated and stored in the `botanical-faceless-visuals` bucket; normalize them once at generation time instead of every time we send.
 
-### 2. `post-tiktok-carousel` — return a `job_id` instantly, write progress from bg
+- In `generate-botanical-content` (and any other function that writes visuals to the bucket), after uploading the PNG, also upload a TikTok-ready JPEG variant at a stable path (`tiktok-jpeg/<original>-1080x1920-q85.jpg`) using the same logic that's currently in `post-tiktok-carousel`. One image at a time, right after it's created — well within budget.
+- Store that JPEG URL alongside the original in whatever field currently feeds `photo_images` (or expose a helper that maps original → jpeg URL).
+- `post-tiktok-carousel` then does **zero** decoding: it just checks `url.includes('/tiktok-jpeg/')`, and if so passes it straight to TikTok's `content/init/`. No `imagescript`, no CPU pressure, no timeout risk.
+- Keep the current `normalizeToTikTokJpeg` function as a lazy fallback for old content that predates this change, but log a warning when it fires so we can migrate the rest.
 
-- Synchronously insert a row with `phase = 'queued'`, return `{ job_id }` (still 202).
-- In `bg()`, update the row as it moves: `normalizing` → `initializing` → on TikTok response, either `publish_id_received` (store `publish_id` + raw) or `failed` (store `fail_reason` + raw).
-- On any thrown error in `bg()`, write `phase = 'failed'` with the message. This is what closes the current blind spot.
+### 2. Watchdog so the UI never loops again
 
-### 3. New endpoint `tiktok-send-status` (or extend `tiktok-publish-status`)
+Even after the fix, we should never let the client poll forever on a dead background task.
 
-Input: `{ job_id }`. Behavior:
-- Read the job row.
-- If `phase in (queued, normalizing, initializing)` → return that phase.
-- If `phase = failed` → return `{ status: 'FAILED', fail_reason, raw }`.
-- If `publish_id` present and `tiktok_status` not terminal → call TikTok `publish/status/fetch/`, persist the result, and return it.
-- If terminal (`SEND_TO_USER_INBOX` / `PUBLISH_COMPLETE` / `FAILED`) → return cached row without hitting TikTok.
+- In `tiktok-send-status`, when the job is in a non-terminal pre-publish phase (`queued` / `normalizing` / `initializing`) and `updated_at` is older than **90 seconds**, mark it `phase = failed` with `fail_reason = "Background task died before contacting TikTok (likely CPU timeout). Try sending again."` and return that to the client.
+- Client already handles `phase: failed` → shows the reason and stops polling. No new UI work needed.
 
-Terminal `SEND_TO_USER_INBOX` = definitive proof it's in your drafts.
+### 3. Unblock the current stuck job
 
-### 4. Client (`ContentDisplay.tsx`)
+One-off DB update to flip `dfec587b-c566-44c4-8781-54c564aa919e` to `failed` so the currently-open tab stops spinning:
 
-- Replace the current `pollStatus(publishId)` with `pollJob(jobId)` that hits the new endpoint every 2s.
-- Remove the "No publish_id returned — treat as success" branch — it's the source of false positives.
-- Show real phases in the UI: "Normalizing images…", "Sending to TikTok…", "Waiting for TikTok processing…", "In your TikTok drafts" (green, only on `SEND_TO_USER_INBOX`), or "Failed: <reason>" with the raw TikTok error visible.
-
-### 5. Optional: `/queue` visibility
-
-Add a small "TikTok send history" section on `/queue` (or a new `/tiktok` panel) that lists recent `tiktok_send_jobs` rows with phase, publish_id, fail_reason, and time — a persistent audit trail so you can confirm past sends without keeping the tab open.
+```sql
+update tiktok_send_jobs
+set phase = 'failed',
+    fail_reason = 'Background task exceeded CPU limit during image normalization',
+    updated_at = now()
+where id = 'dfec587b-c566-44c4-8781-54c564aa919e';
+```
 
 ## Out of scope
 
-- No changes to image normalization logic.
-- No change to `tiktok-oauth` or token refresh flow.
-- No change to how `photo_images` are selected — this is purely about observability of the send.
+- No changes to TikTok OAuth, tokens, or `photo_images` selection.
+- No change to image visual style or generation prompts.
+- No retry-on-failure automation — if a send fails, the user re-clicks Send.
 
 ## Result
 
-After this, "did it actually reach the drafts?" has one truthful answer: the job row's phase becomes `in_drafts` only when TikTok returns `SEND_TO_USER_INBOX`. Any silent bg failure surfaces in the UI (and in the table) instead of being swallowed.
+- Sending a carousel becomes a lightweight call (init only), so it can't hit the CPU cap.
+- Any future background failure surfaces in the UI within 90s instead of looping forever.
+- The current stuck job is cleared so you can send again immediately.
