@@ -10,13 +10,22 @@ const corsHeaders = {
 const ORDER = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;
 type Moment = (typeof ORDER)[number];
 
+// Locked motion library — each choreography is composition-aware and only
+// describes CAMERA + SUBJECT motion. Never include narration text: Kling will
+// try to visualize spoken words and the clip drifts into "random" territory.
 const MOTION_BY_MOMENT: Record<Moment, string> = {
-  hook: "Slowly reveal the botanical specimen emerging from darkness, gentle rise as if growing into frame, soft volumetric light shifting across the surface, organic forward motion.",
-  dangle_1: "Tight macro slow zoom along the surface texture, fibers shifting subtly, dew or particles drifting, shallow focus breathing.",
-  rehook: "The diagonal specimen pushes dramatically across the frame, slow rotation in place, dust motes catching light, deep parallax depth.",
-  dangle_2: "Cross-section halves slowly separate revealing internal anatomy, magnified tissue circles drift, callout annotations gently appear, top-down camera holds.",
-  verified_truth: "Separated specimen parts arrange themselves across the evidence board, labels A B C D softly settle into place, measurement brackets extend, calm authoritative reveal.",
-  close: "The single small specimen rotates one quiet turn, golden-ratio diagram softly traces around it, dust settles, final breath of stillness.",
+  hook:
+    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Over 10 seconds the botanical specimen slowly grows upward out of soft dark soil at the bottom of the frame, rising vertically about 15% of frame height, leaves gently unfurling as it emerges. One warm rim-light sweeps softly from left to right across the surface. Camera is locked on a tripod — no zoom, no pan, no rotation. Fine dust motes drift slowly upward through the light. End holding on a composition that matches the starting still.",
+  dangle_1:
+    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Extreme macro. Over 10 seconds a very slow 8% push-in along the surface texture, shallow depth of field breathes in and out exactly once, a few tiny dust or pollen particles drift diagonally across the light. No pan, no rotation, no reveal of the wider plant. Subject and framing stay identical to the starting image.",
+  rehook:
+    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. The specimen holds its 45 degree diagonal pose across the frame — it does NOT rotate or morph. Over 10 seconds the camera translates smoothly left to right about 6% for a parallax reveal against the hazy background, and the key light source appears to shift slightly so shadows lengthen. No zoom, no subject rotation, no new elements. Ends near the original composition.",
+  dangle_2:
+    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Top-down overhead dissection view. Over 10 seconds the two cross-section halves gently separate about 4% along the horizontal axis, revealing a thin sliver more of the internal anatomy in the gap. The magnifier circles softly pulse once in scale. Camera stays locked directly overhead — no pan, no zoom, no rotation. No new specimens appear.",
+  verified_truth:
+    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Top-down labeled evidence board with parts A, B, C, D already placed. Over 10 seconds each part settles into place with a tiny 2% correction motion, and thin measurement bracket lines extend outward from each label as if drawing themselves onto the parchment. Camera stays locked overhead — no zoom, no pan, no rotation. No new parts appear, no text morphs.",
+  close:
+    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Single small centered specimen with generous negative space. Over 10 seconds the specimen rotates in place a single slow quarter turn (never a full spin), a thin golden-ratio spiral softly traces itself around it as a line drawing, and a subtle vignette closes about 2% at the corners. Camera locked. Ends on complete stillness.",
 };
 
 interface AnimatedRow {
