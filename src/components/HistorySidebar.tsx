@@ -1,5 +1,4 @@
-import { History, Trash2, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { History, Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
 import type { SavedContent } from "@/hooks/useBotanicalContent";
@@ -8,7 +7,10 @@ interface HistorySidebarProps {
   history: SavedContent[];
   isLoading: boolean;
   onSelect: (item: SavedContent) => void;
-  onDelete: (id: string) => void;
+  // Delete is intentionally disabled until real auth exists: with no login,
+  // anon DELETE is an abuse vector and the RLS lockdown revokes it. Prop kept
+  // optional for API compatibility with existing callers.
+  onDelete?: (id: string) => void;
   selectedId?: string;
   className?: string;
 }
@@ -17,7 +19,6 @@ export function HistorySidebar({
   history,
   isLoading,
   onSelect,
-  onDelete,
   selectedId,
   className = "w-72 border-r border-border",
 }: HistorySidebarProps) {
@@ -42,39 +43,29 @@ export function HistorySidebar({
         ) : (
           <div className="p-2 space-y-1">
             {history.map((item) => (
-              <div
+              <button
                 key={item.id}
-                className={`group relative rounded-md transition-colors ${
+                onClick={() => onSelect(item)}
+                className={`w-full text-left rounded-md p-3 transition-colors ${
                   selectedId === item.id
                     ? "bg-secondary"
                     : "hover:bg-secondary/50"
                 }`}
               >
-                <button
-                  onClick={() => onSelect(item)}
-                  className="w-full text-left p-3 pr-10"
-                >
-                  <p className="font-serif text-sm text-foreground truncate">
-                    {item.plant_name || "Untitled"}
+                <p className="font-serif text-sm text-foreground truncate">
+                  {item.plant_name || "Untitled"}
+                </p>
+                {item.verified_fact && (
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                    {item.verified_fact}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formatDistanceToNow(new Date(item.created_at), {
-                      addSuffix: true,
-                    })}
-                  </p>
-                </button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(item.id);
-                  }}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+                )}
+                <p className="text-[11px] text-muted-foreground/70 mt-1">
+                  {formatDistanceToNow(new Date(item.created_at), {
+                    addSuffix: true,
+                  })}
+                </p>
+              </button>
             ))}
           </div>
         )}

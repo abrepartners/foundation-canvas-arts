@@ -23,7 +23,7 @@
     --secondary-foreground: 30 15% 20%;
 
     --muted: 35 15% 90%;
-    --muted-foreground: 30 10% 45%;
+    --muted-foreground: 30 12% 34%;
 
     --accent: 25 35% 45%;
     --accent-foreground: 40 30% 96%;
@@ -41,7 +41,7 @@
     --botanical: 85 25% 35%;
     --botanical-foreground: 40 30% 96%;
     --parchment: 38 35% 92%;
-    --graphite: 30 5% 40%;
+    --graphite: 30 8% 32%;
   }
 
   .dark {
@@ -62,7 +62,7 @@
     --secondary-foreground: 35 20% 85%;
 
     --muted: 25 10% 18%;
-    --muted-foreground: 30 10% 55%;
+    --muted-foreground: 30 12% 64%;
 
     --accent: 30 30% 50%;
     --accent-foreground: 25 15% 10%;
@@ -78,7 +78,7 @@
     --botanical: 85 20% 45%;
     --botanical-foreground: 25 15% 10%;
     --parchment: 30 10% 18%;
-    --graphite: 30 5% 55%;
+    --graphite: 30 8% 66%;
   }
 }
 
