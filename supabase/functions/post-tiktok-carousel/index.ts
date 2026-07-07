@@ -5,82 +5,67 @@
 // Note: TikTok photo posts only support PULL_FROM_URL, and the image URL
 // prefix must be verified in the TikTok developer portal (URL properties).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { decode as decodeImage } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 
 const BUCKET = "botanical-faceless-visuals";
 
 // TikTok PHOTO carousel image constraints (empirically tightest set that avoids
 // picture_size_check_failed): short side >= 360px, long side <= 1920px, file
-// size <= 20MB, JPEG only. We normalize EVERY image to be safe.
-const MAX_LONG_SIDE = 1920;
-const TARGET_WIDTH = 1080; // standard portrait width
+// size <= 20MB, JPEG only. We normalize EVERY image via Supabase Storage's
+// image transformation endpoint (server-side resize) — no in-process decode.
+const TARGET_WIDTH = 1080;
+const TARGET_HEIGHT = 1920;
 const JPEG_QUALITY = 85;
 
 async function normalizeToTikTokJpeg(
   url: string,
   supabase: ReturnType<typeof createClient>,
   publicBase: string,
+  renderBase: string,
 ): Promise<string> {
-  // Fast path: if the URL already points at a normalized JPEG we produced
-  // previously, reuse it without any decode/encode work. We do NOT trust
-  // arbitrary source JPEGs here — TikTok rejects images whose long side
-  // exceeds 1920px with picture_size_check_failed, and our source visuals
-  // are 1152x2048, so every first-time image must go through decode+resize.
+  // Fast path: previously normalized JPEG — reuse as-is.
   if (url.includes("/tiktok-jpeg/") && /\.jpe?g(\?|$)/i.test(url)) {
     return url;
   }
 
-
-
-
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
-  const bytes = new Uint8Array(await res.arrayBuffer());
-
-  // deno-lint-ignore no-explicit-any
-  const img: any = await decodeImage(bytes);
-  if (!img || typeof img.width !== "number") {
-    throw new Error("Could not decode image");
-  }
-
-  let w: number = img.width;
-  let h: number = img.height;
-  const longSide = Math.max(w, h);
-
-  // Resize if too large. Portrait 9:16 → width becomes TARGET_WIDTH.
-  if (longSide > MAX_LONG_SIDE || (h >= w && w > TARGET_WIDTH)) {
-    const scale = h >= w
-      ? TARGET_WIDTH / w
-      : MAX_LONG_SIDE / longSide;
-    w = Math.round(w * scale);
-    h = Math.round(h * scale);
-    img.resize(w, h);
-  }
-
-  const jpegBytes: Uint8Array = await img.encodeJPEG(JPEG_QUALITY);
-
-  if (jpegBytes.byteLength > 19 * 1024 * 1024) {
-    throw new Error(`Image too large after compression: ${jpegBytes.byteLength} bytes`);
-  }
-
-  // Derive a stable path inside the bucket — same input always maps to same
-  // output, so the upsert short-circuits on subsequent posts of the same set.
+  // Derive the bucket-relative path from the public URL.
   const marker = `/${BUCKET}/`;
   const idx = url.indexOf(marker);
-  const originalPath = idx >= 0
-    ? url.slice(idx + marker.length).split("?")[0]
-    : `misc/${crypto.randomUUID()}.jpg`;
-  const jpegPath = `tiktok-jpeg/${originalPath.replace(/\.(png|webp|jpe?g)$/i, "")}-${w}x${h}-q${JPEG_QUALITY}.jpg`;
+  if (idx < 0) {
+    throw new Error(`Unsupported image URL (not in ${BUCKET}): ${url}`);
+  }
+  const originalPath = url.slice(idx + marker.length).split("?")[0];
+  const jpegPath = `tiktok-jpeg/${originalPath.replace(/\.(png|webp|jpe?g)$/i, "")}-${TARGET_WIDTH}x${TARGET_HEIGHT}-q${JPEG_QUALITY}.jpg`;
+  const finalUrl = `${publicBase}/${jpegPath}`;
+
+  // If the cached JPEG already exists, skip re-uploading.
+  const headRes = await fetch(finalUrl, { method: "HEAD" });
+  if (headRes.ok) return finalUrl;
+
+  // Ask Supabase Storage to resize server-side. `resize=contain` preserves
+  // aspect ratio and keeps the long side within TARGET_HEIGHT (1920).
+  const transformUrl =
+    `${renderBase}/${originalPath}` +
+    `?width=${TARGET_WIDTH}&height=${TARGET_HEIGHT}&resize=contain&quality=${JPEG_QUALITY}&format=origin`;
+
+  const res = await fetch(transformUrl, { headers: { Accept: "image/jpeg" } });
+  if (!res.ok) {
+    throw new Error(`Storage transform failed for ${originalPath}: ${res.status} ${await res.text()}`);
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+
+  if (bytes.byteLength > 19 * 1024 * 1024) {
+    throw new Error(`Image too large after transform: ${bytes.byteLength} bytes`);
+  }
 
   const { error: upErr } = await supabase.storage
     .from(BUCKET)
-    .upload(jpegPath, jpegBytes, {
+    .upload(jpegPath, bytes, {
       contentType: "image/jpeg",
       upsert: true,
     });
   if (upErr) throw new Error(`Upload failed for ${jpegPath}: ${upErr.message}`);
 
-  return `${publicBase}/${jpegPath}`;
+  return finalUrl;
 }
 
 const corsHeaders = {
@@ -214,9 +199,10 @@ Deno.serve(async (req) => {
 
         // Normalize every image (sequential to stay under per-tick CPU budget).
         const publicBase = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}`;
+        const renderBase = `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}`;
         const jpegImages: string[] = [];
         for (const u of images) {
-          jpegImages.push(await normalizeToTikTokJpeg(u, supabase, publicBase));
+          jpegImages.push(await normalizeToTikTokJpeg(u, supabase, publicBase, renderBase));
         }
 
         await updateJob({ phase: "initializing" });
