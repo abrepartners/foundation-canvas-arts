@@ -19,3 +19,10 @@ export function getDisplayTitle(
   const chosen = fromCaption ?? fallback;
   return chosen.length > maxLength ? chosen.slice(0, maxLength).trim() : chosen;
 }
+
+// Remove the bold **Title** line from a caption so it isn't duplicated
+// when the title is surfaced separately (e.g. TikTok post title field).
+export function stripCaptionTitle(caption: string | undefined | null): string {
+  if (!caption) return "";
+  return caption.replace(/\*\*(.+?)\*\*\s*\n*/, "").replace(/^\s+/, "");
+}
