@@ -3,7 +3,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw, StopCircle } from "lucide-react";
 
 interface Step {
   key: string;
