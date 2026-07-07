@@ -152,6 +152,7 @@ serve(async (req) => {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    console.log(`resume ${contentId}: retrying ${stuck.length} — ${stuck.map((v) => v.moment).join(", ")}`);
 
     const mergeVisual = async (moment: string, patch: Partial<Visual>) => {
       const { data: cur } = await supabase
