@@ -361,25 +361,38 @@ export default function Animated() {
                 <p className="text-sm text-muted-foreground font-body mt-1">{row.verified_fact}</p>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
               <Button
                 variant="outline"
                 size="lg"
-                disabled={isStarting || isRunning}
+                disabled={isStarting}
                 onClick={() => setPickerOpen((v) => !v)}
               >
                 {pickerOpen ? "Close picker" : "Choose source"}
               </Button>
-              <Button onClick={() => start()} disabled={isStarting || isRunning} size="lg">
-                {isStarting || isRunning ? (
+              {isRunning && (
+                <Button variant="destructive" size="lg" onClick={stopRun} disabled={isStarting}>
+                  <StopCircle className="h-4 w-4 mr-2" />
+                  Stop
+                </Button>
+              )}
+              <Button onClick={() => start()} disabled={isStarting} size="lg">
+                {isStarting ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <Sparkles className="h-4 w-4 mr-2" />
                 )}
-                {isRunning ? "Generating…" : "Generate fresh"}
+                {isStarting ? "Starting…" : isRunning ? "Generate another" : "Generate fresh"}
               </Button>
             </div>
           </div>
+
+          {isRunning && (
+            <p className="text-xs text-muted-foreground font-body mb-3">
+              Stopping detaches the UI and marks this run canceled. Clips already sent to Kling can't be recalled.
+            </p>
+          )}
+
 
           {pickerOpen && (
             <div className="rounded-md border border-border/60 bg-background/50 p-3 mb-4 space-y-2">
