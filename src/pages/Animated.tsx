@@ -447,11 +447,11 @@ export default function Animated() {
               <div className="flex justify-end gap-2 pt-1">
                 <Button
                   size="sm"
-                  disabled={!selectedSourceId || isStarting || isRunning}
+                  disabled={!selectedSourceId || isStarting}
                   onClick={() => selectedSourceId && start(selectedSourceId)}
                 >
                   <Sparkles className="h-4 w-4 mr-2" />
-                  Animate this one
+                  Animate selected
                 </Button>
               </div>
             </div>
