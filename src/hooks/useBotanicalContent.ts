@@ -81,9 +81,15 @@ export function useBotanicalContent() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const pollForImages = async (contentId: string) => {
-    const MAX_POLLS = 180;
+  const pollForImages = async (
+    contentId: string,
+    imageProvider: "lovable" | "replicate" | "openai" = "replicate",
+  ) => {
     const INTERVAL_MS = 2000;
+    const MAX_POLLS = 300; // ~10 min ceiling
+    const RESUME_AFTER_POLLS = 20; // ~40s before first auto-resume
+    const RESUME_COOLDOWN_MS = 90_000; // don't restack resume jobs
+    let lastResumeAt = 0;
 
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, INTERVAL_MS));
@@ -107,13 +113,26 @@ export function useBotanicalContent() {
 
       setContent((prev) => (prev && prev.id === contentId ? { ...prev, faceless_visuals: visuals } : prev));
 
-      if (
+      const allSettled =
         visuals.length > 0 &&
         visuals.every(
           (v) => v.status === "done" || v.status === "error" || v.image_url || v.error,
-        )
+        );
+      if (allSettled) return;
+
+      // Auto-nudge stuck visuals via resume function.
+      const now = Date.now();
+      if (
+        i >= RESUME_AFTER_POLLS &&
+        now - lastResumeAt > RESUME_COOLDOWN_MS &&
+        visuals.some((v) => v.status !== "done" && !v.image_url)
       ) {
-        return;
+        lastResumeAt = now;
+        supabase.functions
+          .invoke("generate-botanical-resume", {
+            body: { content_id: contentId, image_provider: imageProvider },
+          })
+          .catch((e) => console.warn("resume invoke failed", e));
       }
     }
   };
