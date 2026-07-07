@@ -21,29 +21,15 @@ async function normalizeToTikTokJpeg(
   supabase: ReturnType<typeof createClient>,
   publicBase: string,
 ): Promise<string> {
-  // Fast path 1: if the URL already points at a normalized JPEG we produced
-  // previously, reuse it without any decode/encode work.
+  // Fast path: if the URL already points at a normalized JPEG we produced
+  // previously, reuse it without any decode/encode work. We do NOT trust
+  // arbitrary source JPEGs here — TikTok rejects images whose long side
+  // exceeds 1920px with picture_size_check_failed, and our source visuals
+  // are 1152x2048, so every first-time image must go through decode+resize.
   if (url.includes("/tiktok-jpeg/") && /\.jpe?g(\?|$)/i.test(url)) {
     return url;
   }
 
-  // Fast path 2: HEAD the URL — if it's already a reasonably-sized JPEG,
-  // pass it straight through. This avoids the expensive imagescript
-  // decode+encode (which routinely blows the Edge Function CPU budget on
-  // 6-image carousels). Our botanical visuals are generated as 9:16 JPEGs,
-  // so this catches the common case with zero CPU work.
-  try {
-    const head = await fetch(url, { method: "HEAD" });
-    if (head.ok) {
-      const ct = (head.headers.get("content-type") ?? "").toLowerCase();
-      const len = Number(head.headers.get("content-length") ?? "0");
-      if (ct.startsWith("image/jpeg") && len > 0 && len < 8 * 1024 * 1024) {
-        return url;
-      }
-    }
-  } catch {
-    /* fall through to full normalize */
-  }
 
 
 
