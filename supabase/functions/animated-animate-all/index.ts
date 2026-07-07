@@ -10,23 +10,31 @@ const corsHeaders = {
 const ORDER = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;
 type Moment = (typeof ORDER)[number];
 
-// Locked motion library — each choreography is composition-aware and only
-// describes CAMERA + SUBJECT motion. Never include narration text: Kling will
-// try to visualize spoken words and the clip drifts into "random" territory.
+// Locked motion library — each choreography follows Kling v2.1's recommended
+// prompt shape: [Subject + action] + [Camera motion] + [Scene/atmosphere].
+// Composition is anchored by start_image; we NEVER include narration text
+// (Kling would try to render spoken words as on-screen captions).
+// See mem://reference/kling-v21 for the field-adoption rationale.
 const MOTION_BY_MOMENT: Record<Moment, string> = {
   hook:
-    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Over 10 seconds the botanical specimen slowly grows upward out of soft dark soil at the bottom of the frame, rising vertically about 15% of frame height, leaves gently unfurling as it emerges. One warm rim-light sweeps softly from left to right across the surface. Camera is locked on a tripod — no zoom, no pan, no rotation. Fine dust motes drift slowly upward through the light. End holding on a composition that matches the starting still.",
+    "Subject and framing remain identical to the reference frame. A single botanical specimen slowly emerges upward from soft dark soil at the bottom of the frame, leaves gently unfurling as it rises. Static camera locked on a tripod — no zoom, no pan, no rotation. Warm rim-light drifts softly from left to right across the surface while fine dust motes float upward through the beam. Ten seconds. End on quiet stillness.",
   dangle_1:
-    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Extreme macro. Over 10 seconds a very slow 8% push-in along the surface texture, shallow depth of field breathes in and out exactly once, a few tiny dust or pollen particles drift diagonally across the light. No pan, no rotation, no reveal of the wider plant. Subject and framing stay identical to the starting image.",
+    "Subject and framing remain identical to the reference frame. Extreme botanical macro. A slow, subtle push-in along the surface texture over ten seconds, with shallow depth of field breathing in and out once. A few tiny dust or pollen particles drift diagonally across the light. No pan, no rotation, no reveal of the wider plant. Warm directional light, still air, museum quiet.",
   rehook:
-    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. The specimen holds its 45 degree diagonal pose across the frame — it does NOT rotate or morph. Over 10 seconds the camera translates smoothly left to right about 6% for a parallax reveal against the hazy background, and the key light source appears to shift slightly so shadows lengthen. No zoom, no subject rotation, no new elements. Ends near the original composition.",
+    "Subject and framing remain identical to the reference frame. The specimen holds its diagonal pose across the frame and does not rotate or morph. Over ten seconds the camera performs a slow horizontal truck left to right for a gentle parallax reveal against the hazy background. The key light shifts slightly so shadows lengthen. No zoom, no subject rotation, no new elements. End near the original composition.",
   dangle_2:
-    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Top-down overhead dissection view. Over 10 seconds the two cross-section halves gently separate about 4% along the horizontal axis, revealing a thin sliver more of the internal anatomy in the gap. The magnifier circles softly pulse once in scale. Camera stays locked directly overhead — no pan, no zoom, no rotation. No new specimens appear.",
+    "Subject and framing remain identical to the reference frame. Overhead dissection view of two cross-section halves. Over ten seconds the two halves gently separate along the horizontal axis, revealing a thin sliver more of internal anatomy in the gap. Faint magnifier circles softly pulse in scale once. Overhead lock — no pan, no zoom, no rotation. No new specimens appear.",
   verified_truth:
-    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Top-down labeled evidence board with parts A, B, C, D already placed. Over 10 seconds each part settles into place with a tiny 2% correction motion, and thin measurement bracket lines extend outward from each label as if drawing themselves onto the parchment. Camera stays locked overhead — no zoom, no pan, no rotation. No new parts appear, no text morphs.",
+    "Subject and framing remain identical to the reference frame. Overhead labeled evidence board with parts A, B, C, D already in place on aged parchment. Over ten seconds each label settles with a tiny correction motion, and thin measurement bracket lines extend outward from each part as if drawing themselves onto the parchment. Overhead lock — no zoom, no pan, no rotation. No new parts appear, no text morphs.",
   close:
-    "Starting from the exact provided image, keep composition, lighting, palette, and specimen identity locked. Single small centered specimen with generous negative space. Over 10 seconds the specimen rotates in place a single slow quarter turn (never a full spin), a thin golden-ratio spiral softly traces itself around it as a line drawing, and a subtle vignette closes about 2% at the corners. Camera locked. Ends on complete stillness.",
+    "Subject and framing remain identical to the reference frame. A single small centered specimen surrounded by generous negative space. Over ten seconds the specimen performs a single slow quarter-turn in place — never a full spin — while a thin golden-ratio spiral softly traces itself around it as a line drawing. A subtle vignette closes gently at the corners. Static camera. End on complete stillness.",
 };
+
+const NEGATIVE_PROMPT =
+  "text, letters, captions, subtitles, watermark, logo, borders, " +
+  "morphing subject, species change, extra plants, human hands, people, " +
+  "jump cut, whip pan, camera shake, rapid zoom, style change, cartoon, " +
+  "oversaturation, blur, low quality";
 
 interface AnimatedRow {
   id: string;
@@ -89,6 +97,19 @@ serve(async (req) => {
         const prompt = MOTION_BY_MOMENT[moment];
 
         try {
+          // Kling v2.1 image-to-video input. See mem://reference/kling-v21.
+          const klingInput = {
+            start_image: stillUrl,
+            prompt,
+            negative_prompt: NEGATIVE_PROMPT,
+            duration: 10,           // 5 | 10
+            aspect_ratio: "9:16",   // matches vertical stills
+            cfg_scale: 0.5,         // 0–1, balances prompt vs. image fidelity
+            mode: "pro",            // std | pro
+          };
+          if (idx === 0) {
+            console.log("kling input sample:", JSON.stringify(klingInput));
+          }
           // Create prediction.
           const createRes = await fetch(`${GW}/models/kwaivgi/kling-v2.1/predictions`, {
             method: "POST",
@@ -97,18 +118,7 @@ serve(async (req) => {
               "X-Connection-Api-Key": REPLICATE_API_KEY,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              input: {
-                start_image: stillUrl,
-                prompt,
-                duration: 10,
-                negative_prompt:
-                  "blurry, low quality, distorted, text artifacts, watermark, logo, frame border, " +
-                  "morphing subject, changing species, extra plants appearing, hands, people, " +
-                  "text overlays, captions, subtitles, jump cuts, whip pans, camera shake, " +
-                  "rapid zoom, style change, cartoon, oversaturated colors",
-              },
-            }),
+            body: JSON.stringify({ input: klingInput }),
           });
           if (!createRes.ok) {
             const txt = await createRes.text();
