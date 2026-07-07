@@ -3,7 +3,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw, StopCircle } from "lucide-react";
 
 interface Step {
   key: string;
@@ -250,6 +250,22 @@ export default function Animated() {
     }
   };
 
+  const stopRun = async () => {
+    if (!row?.id) return;
+    const canceledId = row.id;
+    setRow(null);
+    animateTriggered.current = null;
+    setPickerOpen(true);
+    await supabase
+      .from("botanical_animated")
+      .update({ queue_status: "canceled", error: "Canceled by user" })
+      .eq("id", canceledId);
+    toast({
+      title: "Stopped",
+      description: "Pick another source or generate fresh.",
+    });
+  };
+
 
   const retryStitch = async () => {
     if (!row?.id) return;
@@ -345,25 +361,38 @@ export default function Animated() {
                 <p className="text-sm text-muted-foreground font-body mt-1">{row.verified_fact}</p>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
               <Button
                 variant="outline"
                 size="lg"
-                disabled={isStarting || isRunning}
+                disabled={isStarting}
                 onClick={() => setPickerOpen((v) => !v)}
               >
                 {pickerOpen ? "Close picker" : "Choose source"}
               </Button>
-              <Button onClick={() => start()} disabled={isStarting || isRunning} size="lg">
-                {isStarting || isRunning ? (
+              {isRunning && (
+                <Button variant="destructive" size="lg" onClick={stopRun} disabled={isStarting}>
+                  <StopCircle className="h-4 w-4 mr-2" />
+                  Stop
+                </Button>
+              )}
+              <Button onClick={() => start()} disabled={isStarting} size="lg">
+                {isStarting ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <Sparkles className="h-4 w-4 mr-2" />
                 )}
-                {isRunning ? "Generating…" : "Generate fresh"}
+                {isStarting ? "Starting…" : isRunning ? "Generate another" : "Generate fresh"}
               </Button>
             </div>
           </div>
+
+          {isRunning && (
+            <p className="text-xs text-muted-foreground font-body mb-3">
+              Stopping detaches the UI and marks this run canceled. Clips already sent to Kling can't be recalled.
+            </p>
+          )}
+
 
           {pickerOpen && (
             <div className="rounded-md border border-border/60 bg-background/50 p-3 mb-4 space-y-2">
@@ -418,11 +447,11 @@ export default function Animated() {
               <div className="flex justify-end gap-2 pt-1">
                 <Button
                   size="sm"
-                  disabled={!selectedSourceId || isStarting || isRunning}
+                  disabled={!selectedSourceId || isStarting}
                   onClick={() => selectedSourceId && start(selectedSourceId)}
                 >
                   <Sparkles className="h-4 w-4 mr-2" />
-                  Animate this one
+                  Animate selected
                 </Button>
               </div>
             </div>
