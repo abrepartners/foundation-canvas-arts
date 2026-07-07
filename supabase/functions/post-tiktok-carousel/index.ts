@@ -199,9 +199,10 @@ Deno.serve(async (req) => {
 
         // Normalize every image (sequential to stay under per-tick CPU budget).
         const publicBase = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}`;
+        const renderBase = `${SUPABASE_URL}/storage/v1/render/image/public/${BUCKET}`;
         const jpegImages: string[] = [];
         for (const u of images) {
-          jpegImages.push(await normalizeToTikTokJpeg(u, supabase, publicBase));
+          jpegImages.push(await normalizeToTikTokJpeg(u, supabase, publicBase, renderBase));
         }
 
         await updateJob({ phase: "initializing" });
