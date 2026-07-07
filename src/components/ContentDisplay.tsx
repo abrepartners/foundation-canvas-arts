@@ -616,7 +616,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
         {
           body: {
             title: getDisplayTitle(content),
-            description: content.caption,
+            description: stripCaptionTitle(content.caption),
             photo_images: imageUrls,
             content_id: content.id,
           },
