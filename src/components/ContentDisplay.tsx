@@ -5,7 +5,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { ContentWithId, FacelessVisual, VisualHistoryEntry } from "@/hooks/useBotanicalContent";
-import { getDisplayTitle } from "@/lib/captionTitle";
+import { getDisplayTitle, stripCaptionTitle } from "@/lib/captionTitle";
 
 type SendPhase =
   | "idle"
