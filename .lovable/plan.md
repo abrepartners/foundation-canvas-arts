@@ -1,59 +1,26 @@
-## Wire Kling v2.1 docs into the animated pipeline
+## Add stop + unblock the picker on `/animated`
 
-### 1. Save the docs
+The picker and "Animate this one" button are gated on `isRunning`, so once a run starts you can't switch sources. Fix both problems:
 
-Create `mem://reference/kling-v21` with the pasted spec — endpoint, param table (`model_name`, `image`, `prompt`, `negative_prompt`, `duration`, `mode`, `aspect_ratio`, `cfg_scale`, `image_tail`, `callback_url`, `external_task_id`), the 2500-char prompt limit, image constraints (≤10MB, 300px min, 1:2.5–2.5:1), and our field-adoption decisions. Add the entry to `mem://index.md`.
+### Changes to `src/pages/Animated.tsx`
 
-### 2. Rewrite the 6 motion prompts (`MOTION_BY_MOMENT`)
+1. **Enable the picker and start buttons at all times.** Remove `isRunning` from the `disabled` predicate on "Choose source", "Animate this one", and "Generate fresh". Keep `isStarting` (the in-flight invoke) as the only guard. Starting a new run creates a new `botanical_animated` row and the UI swaps to it.
+2. **Add a "Stop" button** shown only when `isRunning`, sitting next to "Generate fresh":
+   - Optimistically clears `row` from local state and resets `animateTriggered.current = null` so the picker becomes the primary surface again.
+   - Writes `{ queue_status: "canceled", error: "Canceled by user" }` to that row so the sidebar/history reflects the state.
+   - Toast: "Stopped — you can pick another source or generate fresh."
+3. **Rename button copy** for clarity: label the primary button "Generate fresh" (already done) and label the picker CTA "Animate selected".
 
-Restructure each to Kling's recommended pattern — **[Subject + action] + [Camera motion] + [Scene/atmosphere]** — ~60–90 words each, well under the 2500-char cap, no narration text, composition-lock preserved:
+### Honest limitation (called out in a small helper line under the buttons)
 
-- Drop the repeated "Starting from the exact provided image…" preamble (Kling already anchors to `start_image`; rephrase as "Subject and framing remain identical to the reference frame").
-- Use explicit camera verbs Kling recognizes (`static camera`, `slow push-in`, `slow horizontal truck`, `overhead lock`, `slow quarter-turn`) instead of percentage-based motion.
-- Preserve each moment's choreography: hook = emergence, dangle_1 = macro push-in, rehook = parallax truck, dangle_2 = dissection separation, verified_truth = evidence-board settle, close = quarter-turn + spiral vignette.
-
-### 3. Rewrite `negative_prompt`
-
-Per Kling guidance (short, targeted; over-stuffing dilutes it). Focus on our observed failure modes:
-
-```
-text, letters, captions, subtitles, watermark, logo, borders,
-morphing subject, species change, extra plants, human hands, people,
-jump cut, whip pan, camera shake, rapid zoom, style change, cartoon,
-oversaturation, blur, low quality
-```
-
-### 4. Tune Kling input params in `animated-animate-all/index.ts`
-
-Update the `input` block (Replicate `kwaivgi/kling-v2.1` surfaces these fields):
-
-```ts
-input: {
-  start_image: stillUrl,
-  prompt,
-  negative_prompt,
-  duration: 10,             // 5 | 10 — keep 10 for our 60s cut
-  aspect_ratio: "9:16",     // matches vertical stills; not set today
-  cfg_scale: 0.5,           // 0–1; 0.5 balances prompt vs. image fidelity
-  mode: "pro",              // std | pro — pro for higher motion quality
-}
-```
-
-Fields we're **not** adopting this turn (documented in memory for later): `image_tail` (needs a matching end-frame still we don't generate), `camera_control` (collides with camera language in each prompt), `dynamic_masks` / `static_mask` (require per-shot authoring), `callback_url` (needs a public webhook), `external_task_id` (not needed — we track via Replicate prediction id).
-
-### 5. Verify
-
-- Build compiles.
-- Add a single-line `console.log("kling input sample:", JSON.stringify(input))` on the first clip so the next real run is inspectable in edge logs. No generation triggered from this turn.
-
-### Files touched
-
-- `supabase/functions/animated-animate-all/index.ts` — prompts, negative prompt, input params, debug log.
-- `mem://reference/kling-v21` — new memory file with the docs + field-adoption notes.
-- `mem://index.md` — add the reference entry.
+Kling predictions already dispatched keep running on Replicate's side — we can't recall those credits. Stopping just detaches the UI and marks the row canceled so the pipeline's later updates don't fight your new run. No new run is blocked by the old one.
 
 ### Out of scope
 
-- Still generation, stitching, UI, source picker.
-- `camera_control` / `image_tail` / mask features (documented for later).
-- Regenerating existing clips — changes apply to the next run only.
+- Cancelling in-flight Replicate predictions (would need to track prediction ids per clip and hit the cancel endpoint; separate change).
+- Edge functions checking `queue_status === "canceled"` mid-loop to bail early — nice-to-have follow-up, not needed to unblock the picker.
+- Any change to the pipeline, prompts, or DB schema.
+
+### Files touched
+
+- `src/pages/Animated.tsx` only.
