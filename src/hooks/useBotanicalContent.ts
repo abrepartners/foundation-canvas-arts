@@ -161,7 +161,7 @@ export function useBotanicalContent() {
         description: `${generatedContent.plant_name} — images generating in background.`,
       });
 
-      pollForImages(data.content_id);
+      pollForImages(data.content_id, imageProvider);
 
       // Fire-and-forget virality scoring + hook rewrites.
       supabase.functions
