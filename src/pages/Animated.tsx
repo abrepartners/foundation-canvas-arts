@@ -250,6 +250,22 @@ export default function Animated() {
     }
   };
 
+  const stopRun = async () => {
+    if (!row?.id) return;
+    const canceledId = row.id;
+    setRow(null);
+    animateTriggered.current = null;
+    setPickerOpen(true);
+    await supabase
+      .from("botanical_animated")
+      .update({ queue_status: "canceled", error: "Canceled by user" })
+      .eq("id", canceledId);
+    toast({
+      title: "Stopped",
+      description: "Pick another source or generate fresh.",
+    });
+  };
+
 
   const retryStitch = async () => {
     if (!row?.id) return;
