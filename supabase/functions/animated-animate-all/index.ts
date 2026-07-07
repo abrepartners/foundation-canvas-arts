@@ -97,6 +97,19 @@ serve(async (req) => {
         const prompt = MOTION_BY_MOMENT[moment];
 
         try {
+          // Kling v2.1 image-to-video input. See mem://reference/kling-v21.
+          const klingInput = {
+            start_image: stillUrl,
+            prompt,
+            negative_prompt: NEGATIVE_PROMPT,
+            duration: 10,           // 5 | 10
+            aspect_ratio: "9:16",   // matches vertical stills
+            cfg_scale: 0.5,         // 0–1, balances prompt vs. image fidelity
+            mode: "pro",            // std | pro
+          };
+          if (idx === 0) {
+            console.log("kling input sample:", JSON.stringify(klingInput));
+          }
           // Create prediction.
           const createRes = await fetch(`${GW}/models/kwaivgi/kling-v2.1/predictions`, {
             method: "POST",
@@ -105,18 +118,7 @@ serve(async (req) => {
               "X-Connection-Api-Key": REPLICATE_API_KEY,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              input: {
-                start_image: stillUrl,
-                prompt,
-                duration: 10,
-                negative_prompt:
-                  "blurry, low quality, distorted, text artifacts, watermark, logo, frame border, " +
-                  "morphing subject, changing species, extra plants appearing, hands, people, " +
-                  "text overlays, captions, subtitles, jump cuts, whip pans, camera shake, " +
-                  "rapid zoom, style change, cartoon, oversaturated colors",
-              },
-            }),
+            body: JSON.stringify({ input: klingInput }),
           });
           if (!createRes.ok) {
             const txt = await createRes.text();
