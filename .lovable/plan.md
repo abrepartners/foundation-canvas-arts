@@ -1,23 +1,32 @@
 ## Diagnosis
 
-TikTok rejected the send with `picture_size_check_failed`. The stored botanical visuals are **1152×2048 JPEGs**, and TikTok photo carousels require the long side to be **≤ 1920px**. The HEAD fast-path I added last turn to avoid CPU timeouts was too permissive: it passed any JPEG under 8MB straight through without checking dimensions, so 2048px-tall images went to TikTok unchanged and got rejected.
+Latest job (`be6614df…`) died at `phase: normalizing` with "Background task stalled before contacting TikTok" — the 90s watchdog fired. The previous job (`b578a832…`) is the old `picture_size_check_failed` from before the fast-path fix.
+
+Root cause: with the HEAD fast-path removed, every send now decodes **6 × 1152×2048 PNG/JPEG** files with `imagescript` (pure JS, single-threaded) inside one edge function invocation. That blows past the CPU budget and the job never reaches TikTok — even though our source images are only barely over the 1920px limit.
 
 ## Fix
 
-In `supabase/functions/post-tiktok-carousel/index.ts`, tighten `normalizeToTikTokJpeg`:
+Stop doing pixel work inside the edge function. Supabase Storage already ships an image transformation endpoint that resizes server-side:
 
-1. **Remove the blanket HEAD fast-path**. Keep only the "already normalized" fast-path (URL contains `/tiktok-jpeg/` and ends in `.jpg`), so re-sends of the same carousel still skip decode.
-2. **Always decode + resize** first-time images so the long side ≤ 1920 and width ≤ 1080 for portrait — the existing resize math already handles this correctly, it just wasn't being reached.
-3. Keep the persistent cache at `tiktok-jpeg/<original>-<w>x<h>-qN.jpg` so subsequent sends of the same content reuse the resized JPEG (fast, no CPU cost, no timeout risk).
-4. Keep the 90s watchdog in `tiktok-send-status` as the safety net.
+```
+${SUPABASE_URL}/storage/v1/render/image/public/<bucket>/<path>?width=1080&height=1920&resize=contain&format=origin&quality=85
+```
 
-That's the only code change. Deploy `post-tiktok-carousel` afterward.
+Rewrite `normalizeToTikTokJpeg` in `supabase/functions/post-tiktok-carousel/index.ts`:
 
-## Why this won't reintroduce the CPU timeout
+1. Keep the "already normalized" fast-path (`/tiktok-jpeg/…jpg`).
+2. For every other URL, derive the bucket path from the public URL, then `fetch` the transform endpoint with `width=1080&height=1920&resize=contain&quality=85` and `format=origin` forced to JPEG via `&format=jpeg` (or fall back to setting `Accept: image/jpeg`).
+3. Upload the returned bytes to `tiktok-jpeg/<origPath>-1080x1920-q85.jpg` (upsert) — same cache key shape as today, so re-sends short-circuit.
+4. Return the public URL of that cached JPEG to feed into TikTok's `photo_images`.
+5. Remove the `imagescript` import entirely — no more in-process decode.
 
-The stall we saw earlier was a single job stuck at `normalizing` for hours — that was a cold path bug, not a systemic CPU issue. Normalizing 6 images sequentially with imagescript at 1080×1920 completes well under the Edge Function limit; after the first send, the cache path makes re-sends effectively free.
+Sequential fetch of 6 already-resized JPEGs from Supabase is I/O bound and completes in a couple of seconds, well under any CPU cap. The watchdog stays as a safety net.
+
+## Verification
+
+After deploy: press "Send to TikTok" on a pending item, watch `tiktok_send_jobs` progress `queued → normalizing → initializing → publish_id_received`, then confirm the draft lands in TikTok inbox.
 
 ## Out of scope
 
-- No change to TikTok API call, job schema, UI, or still-generation.
-- Not touching the animated pipeline.
+- No change to still generation, animated pipeline, UI, job schema, or TikTok API payload shape.
+- Not touching the 90s watchdog logic.
