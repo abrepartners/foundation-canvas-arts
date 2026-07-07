@@ -5,7 +5,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { ContentWithId, FacelessVisual, VisualHistoryEntry } from "@/hooks/useBotanicalContent";
-import { getDisplayTitle } from "@/lib/captionTitle";
+import { getDisplayTitle, stripCaptionTitle } from "@/lib/captionTitle";
 
 type SendPhase =
   | "idle"
@@ -616,7 +616,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
         {
           body: {
             title: getDisplayTitle(content),
-            description: content.caption,
+            description: stripCaptionTitle(content.caption),
             photo_images: imageUrls,
             content_id: content.id,
           },
