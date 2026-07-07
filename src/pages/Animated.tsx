@@ -112,12 +112,22 @@ function TimelineRow({ step, now, isLast }: { step: Step; now: number; isLast: b
   );
 }
 
+interface SourceOption {
+  id: string;
+  plant_name: string;
+  created_at: string;
+  stills: string[];
+}
+
 export default function Animated() {
   const [row, setRow] = useState<AnimatedRow | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [now, setNow] = useState<number>(Date.now());
   const animateTriggered = useRef<string | null>(null);
   const { toast } = useToast();
+  const [sources, setSources] = useState<SourceOption[]>([]);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Auto-resume: on mount, load the most recent unfinished row (or most recent done row to display).
   useEffect(() => {
@@ -130,6 +140,43 @@ export default function Animated() {
       if (data && data[0]) setRow(data[0] as unknown as AnimatedRow);
     })();
   }, []);
+
+  // Load recent botanical_content rows that have all 6 stills done.
+  const loadSources = async () => {
+    const { data } = await supabase
+      .from("botanical_content")
+      .select("id, plant_name, created_at, script_visuals")
+      .order("created_at", { ascending: false })
+      .limit(30);
+    if (!data) return;
+    const MOMENTS = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
+    const opts: SourceOption[] = [];
+    for (const item of data) {
+      let visuals: Array<{ moment: string; image_url?: string | null; status?: string }> = [];
+      try {
+        visuals = typeof item.script_visuals === "string"
+          ? JSON.parse(item.script_visuals)
+          : (item.script_visuals as typeof visuals);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(visuals)) continue;
+      const stills = MOMENTS.map((m) => visuals.find((v) => v.moment === m)?.image_url ?? "");
+      if (stills.some((u) => !u)) continue;
+      opts.push({
+        id: item.id,
+        plant_name: item.plant_name ?? "Unknown",
+        created_at: item.created_at,
+        stills,
+      });
+      if (opts.length >= 12) break;
+    }
+    setSources(opts);
+  };
+
+  useEffect(() => {
+    if (pickerOpen && sources.length === 0) loadSources();
+  }, [pickerOpen]);
 
   // Subscribe to row updates.
   useEffect(() => {
@@ -174,11 +221,13 @@ export default function Animated() {
       });
   }, [row?.id, row?.queue_status, toast]);
 
-  const start = async () => {
+  const start = async (sourceContentId?: string | null) => {
     setIsStarting(true);
     animateTriggered.current = null;
     try {
-      const { data, error } = await supabase.functions.invoke("animated-start");
+      const { data, error } = await supabase.functions.invoke("animated-start", {
+        body: sourceContentId ? { source_content_id: sourceContentId } : {},
+      });
       if (error) throw new Error(error.message);
       if (!data?.success) throw new Error(data?.error || "Failed to start");
       const { data: full } = await supabase
@@ -187,8 +236,10 @@ export default function Animated() {
         .eq("id", data.row_id)
         .single();
       setRow(full as unknown as AnimatedRow);
+      setPickerOpen(false);
+      setSelectedSourceId(null);
       toast({
-        title: "Generating animated video",
+        title: sourceContentId ? "Animating existing content" : "Generating animated video",
         description: "Runs entirely on our servers — feel free to close the tab.",
       });
     } catch (err) {
@@ -198,6 +249,7 @@ export default function Animated() {
       setIsStarting(false);
     }
   };
+
 
   const retryStitch = async () => {
     if (!row?.id) return;
