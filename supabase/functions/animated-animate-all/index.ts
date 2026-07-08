@@ -42,6 +42,7 @@ interface AnimatedRow {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
+
     const corsHeaders = corsHeadersFor(req);
     const __auth = await requireAuthorized(req);
     if (!__auth.ok) return __auth.response;

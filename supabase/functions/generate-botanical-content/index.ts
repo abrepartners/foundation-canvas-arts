@@ -386,12 +386,11 @@ Return ONLY this exact JSON structure:
 }`;
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
+
     const corsHeaders = corsHeadersFor(req);
     const __auth = await requireAuthorized(req);
     if (!__auth.ok) return __auth.response;
-    return new Response(null, { headers: corsHeaders });
-  }
 
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");

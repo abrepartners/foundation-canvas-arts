@@ -41,12 +41,11 @@ function json(payload: unknown, status = 200): Response {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeadersFor(req) });
+
     const corsHeaders = corsHeadersFor(req);
     const __auth = await requireAuthorized(req);
     if (!__auth.ok) return __auth.response;
-    return new Response("ok", { headers: corsHeaders });
-  }
 
   try {
     const CLIENT_KEY = Deno.env.get("TIKTOK_CLIENT_KEY");
