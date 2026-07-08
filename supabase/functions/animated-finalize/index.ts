@@ -1,11 +1,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor } from "../_shared/cors.ts";
+import { requireAuthorized } from "../_shared/auth.ts";
 
 // Accepts the client-stitched final MP4 as raw bytes (Content-Type: video/mp4)
 // with row_id in the query string. Uploads to storage and marks the row done.

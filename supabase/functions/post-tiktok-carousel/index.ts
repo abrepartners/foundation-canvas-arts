@@ -5,6 +5,8 @@
 // Note: TikTok photo posts only support PULL_FROM_URL, and the image URL
 // prefix must be verified in the TikTok developer portal (URL properties).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeadersFor } from "../_shared/cors.ts";
+import { requireAuthorized } from "../_shared/auth.ts";
 
 const BUCKET = "botanical-faceless-visuals";
 
@@ -67,12 +69,6 @@ async function normalizeToTikTokJpeg(
 
   return finalUrl;
 }
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
 
 const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 const CONTENT_INIT_URL =

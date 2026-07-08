@@ -2,12 +2,8 @@
 // status so the client can show progress until the carousel is in the user's
 // drafts/inbox (SEND_TO_USER_INBOX) or has failed.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor } from "../_shared/cors.ts";
+import { requireAuthorized } from "../_shared/auth.ts";
 
 const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 const STATUS_URL =

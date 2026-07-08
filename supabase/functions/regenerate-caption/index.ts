@@ -3,12 +3,8 @@
 // blocked from UPDATE by RLS by design).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor } from "../_shared/cors.ts";
+import { requireAuthorized } from "../_shared/auth.ts";
 
 const ALLOWED_TABLES = new Set(["botanical_content", "trend_content"]);
 
