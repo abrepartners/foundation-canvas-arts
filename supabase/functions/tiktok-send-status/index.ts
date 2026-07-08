@@ -42,6 +42,9 @@ function json(payload: unknown, status = 200): Response {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
+    const corsHeaders = corsHeadersFor(req);
+    const __auth = await requireAuthorized(req);
+    if (!__auth.ok) return __auth.response;
     return new Response("ok", { headers: corsHeaders });
   }
 

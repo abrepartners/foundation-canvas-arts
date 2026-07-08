@@ -24,7 +24,10 @@ const INITIAL_STEPS: Step[] = [
 const MOMENT_ORDER = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
+    const corsHeaders = corsHeadersFor(req);
+    const __auth = await requireAuthorized(req);
+    if (!__auth.ok) return __auth.response;
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

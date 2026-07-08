@@ -7,7 +7,10 @@ import { requireAuthorized } from "../_shared/auth.ts";
 // Accepts the client-stitched final MP4 as raw bytes (Content-Type: video/mp4)
 // with row_id in the query string. Uploads to storage and marks the row done.
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
+    const corsHeaders = corsHeadersFor(req);
+    const __auth = await requireAuthorized(req);
+    if (!__auth.ok) return __auth.response;
 
   try {
     const url = new URL(req.url);

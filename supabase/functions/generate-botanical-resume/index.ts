@@ -100,7 +100,10 @@ interface Visual {
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
+    const corsHeaders = corsHeadersFor(req);
+    const __auth = await requireAuthorized(req);
+    if (!__auth.ok) return __auth.response;
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

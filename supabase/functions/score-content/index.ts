@@ -28,7 +28,10 @@ Return ONLY valid JSON, no markdown, no prose:
 }`;
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeadersFor(req) });
+    const corsHeaders = corsHeadersFor(req);
+    const __auth = await requireAuthorized(req);
+    if (!__auth.ok) return __auth.response;
 
   try {
     const { content_id } = await req.json();
