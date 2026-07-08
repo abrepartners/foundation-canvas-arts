@@ -1,13 +1,11 @@
-// Shared auth guard for protected edge functions.
-// Accepts either the single authorized user's Supabase JWT, or the project
-// service role key (used for internal edge-to-edge invocations).
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Shared passcode guard for protected edge functions.
+// Accepts either the app passcode via the "x-app-passcode" header, or the
+// project service role key via the Authorization bearer (used for internal
+// edge-to-edge invocations).
 import { corsHeadersFor } from "./cors.ts";
 
-const ALLOWED_EMAIL = "info@nuelementsmedia.com";
-
 export type AuthResult =
-  | { ok: true; internal: boolean; email: string | null }
+  | { ok: true; internal: boolean }
   | { ok: false; response: Response };
 
 export async function requireAuthorized(req: Request): Promise<AuthResult> {
@@ -18,29 +16,22 @@ export async function requireAuthorized(req: Request): Promise<AuthResult> {
       headers: { ...cors, "Content-Type": "application/json" },
     });
 
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
+  // Internal service-role bypass (edge-to-edge calls).
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (serviceKey && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice("Bearer ".length).trim();
+    if (token && token === serviceKey) {
+      return { ok: true, internal: true };
+    }
+  }
+
+  const expected = Deno.env.get("APP_PASSCODE");
+  if (!expected) return { ok: false, response: unauthorized("Passcode not configured") };
+
+  const provided = req.headers.get("x-app-passcode")?.trim() ?? "";
+  if (!provided || provided !== expected) {
     return { ok: false, response: unauthorized() };
   }
-  const token = authHeader.slice("Bearer ".length).trim();
-  if (!token) return { ok: false, response: unauthorized() };
-
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (serviceKey && token === serviceKey) {
-    return { ok: true, internal: true, email: null };
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !anonKey) return { ok: false, response: unauthorized() };
-
-  const supabase = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data, error } = await supabase.auth.getUser();
-  const email = data?.user?.email?.toLowerCase() ?? null;
-  if (error || !email || email !== ALLOWED_EMAIL) {
-    return { ok: false, response: unauthorized("Forbidden") };
-  }
-  return { ok: true, internal: false, email };
+  return { ok: true, internal: false };
 }

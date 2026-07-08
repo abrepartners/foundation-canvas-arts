@@ -1,61 +1,46 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { ALLOWED_EMAIL, useAuthorizedSession } from "@/lib/auth";
-import { Navigate } from "react-router-dom";
-
-type Mode = "signin" | "signup";
+import { unlock, useUnlocked } from "@/lib/auth";
 
 export default function Login() {
-  const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [passcode, setPasscode] = useState("");
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const { authorized, ready } = useAuthorizedSession();
+  const unlocked = useUnlocked();
 
   const from = (location.state as { from?: string } | null)?.from ?? "/";
-
-  if (ready && authorized) {
-    return <Navigate to={from} replace />;
-  }
+  if (unlocked) return <Navigate to={from} replace />;
 
   const handle = async (e: FormEvent) => {
     e.preventDefault();
+    if (passcode.length !== 4) return;
     setBusy(true);
     try {
-      if (email.trim().toLowerCase() !== ALLOWED_EMAIL) {
-        toast({
-          title: "Access denied",
-          description: "This app is restricted to a single authorized account.",
-          variant: "destructive",
-        });
+      // Verify server-side by invoking a lightweight guarded function.
+      const { error } = await supabase.functions.invoke("score-content", {
+        body: { __ping: true },
+        headers: { "x-app-passcode": passcode },
+      });
+      // The function will return 400 (missing content_id) if passcode is OK,
+      // or 401 if not. supabase-js surfaces non-2xx as an error with context.
+      const status = (error as { context?: { status?: number } } | null)?.context?.status;
+      if (status === 401) {
+        toast({ title: "Wrong passcode", variant: "destructive" });
+        setPasscode("");
         return;
       }
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: { emailRedirectTo: window.location.origin },
-        });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        if (error) throw error;
-      }
+      unlock(passcode);
       navigate(from, { replace: true });
     } catch (err) {
       toast({
-        title: mode === "signup" ? "Sign up failed" : "Sign in failed",
+        title: "Sign in failed",
         description: err instanceof Error ? err.message : String(err),
         variant: "destructive",
       });
@@ -73,44 +58,28 @@ export default function Login() {
         <div className="space-y-1">
           <h1 className="text-2xl font-serif">Botanical Studio</h1>
           <p className="text-sm text-muted-foreground">
-            Private tool. Authorized access only.
+            Enter the 4-digit passcode to continue.
           </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="passcode">Passcode</Label>
           <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
+            id="passcode"
             type="password"
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="one-time-code"
             required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            maxLength={4}
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            className="text-center tracking-[0.5em] text-lg"
+            autoFocus
           />
         </div>
-        <Button type="submit" className="w-full" disabled={busy}>
-          {busy ? "Please wait…" : mode === "signup" ? "Create account" : "Sign in"}
+        <Button type="submit" className="w-full" disabled={busy || passcode.length !== 4}>
+          {busy ? "Checking…" : "Unlock"}
         </Button>
-        <button
-          type="button"
-          className="text-xs text-muted-foreground underline w-full text-center"
-          onClick={() => setMode((m) => (m === "signin" ? "signup" : "signin"))}
-        >
-          {mode === "signin"
-            ? "First time? Create your account"
-            : "Already have an account? Sign in"}
-        </button>
       </form>
     </main>
   );

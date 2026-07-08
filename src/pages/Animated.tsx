@@ -1,3 +1,4 @@
+import { invokeFn } from "@/lib/invokeFn";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
@@ -225,7 +226,7 @@ export default function Animated() {
     setIsStarting(true);
     animateTriggered.current = null;
     try {
-      const { data, error } = await supabase.functions.invoke("animated-start", {
+      const { data, error } = await invokeFn("animated-start", {
         body: sourceContentId ? { source_content_id: sourceContentId } : {},
       });
       if (error) throw new Error(error.message);
@@ -269,7 +270,7 @@ export default function Animated() {
 
   const retryStitch = async () => {
     if (!row?.id) return;
-    const { data, error } = await supabase.functions.invoke("animated-stitch", {
+    const { data, error } = await invokeFn("animated-stitch", {
       body: { row_id: row.id },
     });
     if (error || !data?.success) {
@@ -291,10 +292,10 @@ export default function Animated() {
       return;
     }
     const [{ error: e1 }, { error: e2 }] = await Promise.all([
-      supabase.functions.invoke("generate-botanical-resume", {
+      invokeFn("generate-botanical-resume", {
         body: { content_id: sourceId, image_provider: "openai" },
       }),
-      supabase.functions.invoke("animated-start-resume", { body: { row_id: row.id } }),
+      invokeFn("animated-start-resume", { body: { row_id: row.id } }),
     ]);
     if (e1 || e2) {
       toast({

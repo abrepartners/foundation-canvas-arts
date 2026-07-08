@@ -1,3 +1,4 @@
+import { invokeFn } from "@/lib/invokeFn";
 import { useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { useTrendContent, useTrendHistory } from "@/hooks/useTrendContent";
@@ -58,7 +59,7 @@ const Trends = () => {
   const handleSuggest = async () => {
     setTopicsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke(
+      const { data, error } = await invokeFn(
         "tiktok-trend-suggestions",
         { body: { subject } },
       );

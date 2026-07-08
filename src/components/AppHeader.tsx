@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Leaf, TrendingUp, Film, ListChecks, LogOut } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { lock } from "@/lib/auth";
 
 
 const TABS = [
@@ -22,8 +22,8 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isActive = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = () => {
+    lock();
     navigate("/login", { replace: true });
   };
 

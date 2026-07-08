@@ -1,3 +1,4 @@
+import { invokeFn } from "@/lib/invokeFn";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -64,7 +65,7 @@ export function useTrendContent() {
     setIsLoading(true);
     setError(null);
     try {
-      const { data, error: fnError } = await supabase.functions.invoke(
+      const { data, error: fnError } = await invokeFn(
         "generate-trend-content",
         { body: { subject, image_provider: imageProvider } },
       );
@@ -115,7 +116,7 @@ export function useTrendContent() {
     );
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke(
+      const { data, error: fnError } = await invokeFn(
         "regenerate-visual",
         {
           body: {
@@ -201,7 +202,7 @@ export function useTrendContent() {
   ) => {
     if (!content?.id) return null;
     try {
-      const { data, error: fnError } = await supabase.functions.invoke(
+      const { data, error: fnError } = await invokeFn(
         "regenerate-visual",
         {
           body: {
@@ -274,7 +275,7 @@ export function useTrendContent() {
     }
     setIsRegeneratingCaption(true);
     try {
-      const { data, error: fnError } = await supabase.functions.invoke(
+      const { data, error: fnError } = await invokeFn(
         "regenerate-caption",
         { body: { table: "trend_content", id: content.id } },
       );
