@@ -22,8 +22,8 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isActive = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = () => {
+    lock();
     navigate("/login", { replace: true });
   };
 
