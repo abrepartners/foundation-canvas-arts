@@ -1,54 +1,57 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useLocation, Navigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import type { Session } from "@supabase/supabase-js";
+import { Navigate, useLocation } from "react-router-dom";
 
-const ALLOWED_EMAIL = "info@nuelementsmedia.com";
+const UNLOCK_KEY = "app_unlocked";
+const PASSCODE_KEY = "app_passcode";
 
-export function useAuthorizedSession() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [ready, setReady] = useState(false);
+export function isUnlocked(): boolean {
+  try {
+    return sessionStorage.getItem(UNLOCK_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
+export function getPasscode(): string {
+  try {
+    return sessionStorage.getItem(PASSCODE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function unlock(passcode: string) {
+  try {
+    sessionStorage.setItem(UNLOCK_KEY, "1");
+    sessionStorage.setItem(PASSCODE_KEY, passcode);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function lock() {
+  try {
+    sessionStorage.removeItem(UNLOCK_KEY);
+    sessionStorage.removeItem(PASSCODE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function useUnlocked(): boolean {
+  const [ok, setOk] = useState(isUnlocked());
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => {
-      setSession(s);
-      setReady(true);
-    });
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setReady(true);
-    });
-    return () => sub.subscription.unsubscribe();
+    const check = () => setOk(isUnlocked());
+    window.addEventListener("storage", check);
+    return () => window.removeEventListener("storage", check);
   }, []);
-
-  const email = session?.user?.email?.toLowerCase() ?? null;
-  const authorized = !!session && email === ALLOWED_EMAIL;
-  return { session, ready, authorized, email };
+  return ok;
 }
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { ready, authorized, session } = useAuthorizedSession();
   const location = useLocation();
-  const navigate = useNavigate();
-
-  // Sign out unauthorized (wrong-email) sessions so they can't linger.
-  useEffect(() => {
-    if (ready && session && !authorized) {
-      supabase.auth.signOut().finally(() => navigate("/login", { replace: true }));
-    }
-  }, [ready, session, authorized, navigate]);
-
-  if (!ready) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground text-sm">
-        Loading…
-      </div>
-    );
-  }
-  if (!authorized) {
+  if (!isUnlocked()) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   return <>{children}</>;
 }
-
-export { ALLOWED_EMAIL };
