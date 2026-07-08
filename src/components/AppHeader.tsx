@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Leaf, TrendingUp, Film, ListChecks, LogOut } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { lock } from "@/lib/auth";
 
 
 const TABS = [
