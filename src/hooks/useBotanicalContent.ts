@@ -1,3 +1,4 @@
+import { invokeFn } from "@/lib/invokeFn";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -142,7 +143,7 @@ export function useBotanicalContent() {
     setError(null);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke(
+      const { data, error: fnError } = await invokeFn(
         "generate-botanical-content",
         { body: { image_provider: imageProvider } }
       );
@@ -204,7 +205,7 @@ export function useBotanicalContent() {
     });
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke(
+      const { data, error: fnError } = await invokeFn(
         "regenerate-visual",
         {
           body: {
@@ -266,7 +267,7 @@ export function useBotanicalContent() {
   ) => {
     if (!content?.id) return null;
     try {
-      const { data, error: fnError } = await supabase.functions.invoke(
+      const { data, error: fnError } = await invokeFn(
         "regenerate-visual",
         {
           body: {
@@ -328,7 +329,7 @@ export function useBotanicalContent() {
     }
     setIsRegeneratingCaption(true);
     try {
-      const { data, error: fnError } = await supabase.functions.invoke(
+      const { data, error: fnError } = await invokeFn(
         "regenerate-caption",
         { body: { table: "botanical_content", id: content.id } },
       );

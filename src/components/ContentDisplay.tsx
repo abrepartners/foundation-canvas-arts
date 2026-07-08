@@ -1,3 +1,4 @@
+import { invokeFn } from "@/lib/invokeFn";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { RotateCcw, Copy, Check, RefreshCw, Loader2, History, Sparkles, Send, X as XIcon } from "lucide-react";
@@ -541,7 +542,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       try {
-        const { data, error } = await supabase.functions.invoke(
+        const { data, error } = await invokeFn(
           "tiktok-send-status",
           { body: { job_id: jobId } },
         );
@@ -611,7 +612,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
     setSendPhase("initializing");
     setSendDetail(undefined);
     try {
-      const { data, error } = await supabase.functions.invoke(
+      const { data, error } = await invokeFn(
         "post-tiktok-carousel",
         {
           body: {

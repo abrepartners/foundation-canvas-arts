@@ -1,3 +1,4 @@
+import { invokeFn } from "@/lib/invokeFn";
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { AppHeader } from "@/components/AppHeader";
@@ -122,13 +123,13 @@ export default function Queue() {
     }
     toast({ title: "Hook swapped", description: "Re-scoring…" });
     // Re-score in background.
-    await supabase.functions.invoke("score-content", { body: { content_id: item.id } });
+    await invokeFn("score-content", { body: { content_id: item.id } });
     fetchItems();
   };
 
   const rescore = async (id: string) => {
     markBusy(id, true);
-    const { error } = await supabase.functions.invoke("score-content", { body: { content_id: id } });
+    const { error } = await invokeFn("score-content", { body: { content_id: id } });
     markBusy(id, false);
     if (error) {
       toast({ title: "Scoring failed", description: error.message, variant: "destructive" });
