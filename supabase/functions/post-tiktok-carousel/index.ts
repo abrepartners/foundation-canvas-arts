@@ -5,6 +5,8 @@
 // Note: TikTok photo posts only support PULL_FROM_URL, and the image URL
 // prefix must be verified in the TikTok developer portal (URL properties).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeadersFor } from "../_shared/cors.ts";
+import { requireAuthorized } from "../_shared/auth.ts";
 
 const BUCKET = "botanical-faceless-visuals";
 
@@ -68,12 +70,6 @@ async function normalizeToTikTokJpeg(
   return finalUrl;
 }
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
-
 const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 const CONTENT_INIT_URL =
   "https://open.tiktokapis.com/v2/post/publish/content/init/";
@@ -100,9 +96,11 @@ function json(payload: unknown, status = 200): Response {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeadersFor(req) });
+
+    const corsHeaders = corsHeadersFor(req);
+    const __auth = await requireAuthorized(req);
+    if (!__auth.ok) return __auth.response;
 
   try {
     const CLIENT_KEY = Deno.env.get("TIKTOK_CLIENT_KEY");
