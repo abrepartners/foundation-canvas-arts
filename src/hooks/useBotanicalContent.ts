@@ -129,11 +129,9 @@ export function useBotanicalContent() {
         visuals.some((v) => v.status !== "done" && !v.image_url)
       ) {
         lastResumeAt = now;
-        supabase.functions
-          .invoke("generate-botanical-resume", {
-            body: { content_id: contentId, image_provider: imageProvider },
-          })
-          .catch((e) => console.warn("resume invoke failed", e));
+        invokeFn("generate-botanical-resume", {
+          body: { content_id: contentId, image_provider: imageProvider },
+        }).catch((e) => console.warn("resume invoke failed", e));
       }
     }
   };
@@ -165,8 +163,7 @@ export function useBotanicalContent() {
       pollForImages(data.content_id, imageProvider);
 
       // Fire-and-forget virality scoring + hook rewrites.
-      supabase.functions
-        .invoke("score-content", { body: { content_id: data.content_id } })
+      invokeFn("score-content", { body: { content_id: data.content_id } })
         .catch((e) => console.warn("score-content failed", e));
     } catch (err) {
       const raw = err instanceof Error ? err.message : "Unknown error";
@@ -422,10 +419,9 @@ export function useContentHistory() {
   };
 
   const deleteItem = async (id: string) => {
-    const { error } = await supabase
-      .from("botanical_content")
-      .delete()
-      .eq("id", id);
+    const { error } = await invokeFn("queue-moderation", {
+      body: { id, action: "delete" },
+    });
 
     if (error) {
       toast({ title: "Delete failed", description: error.message, variant: "destructive" });

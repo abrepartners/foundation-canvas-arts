@@ -217,8 +217,7 @@ export default function Animated() {
     if (row.queue_status !== "stills_ready") return;
     if (animateTriggered.current === row.id) return;
     animateTriggered.current = row.id;
-    supabase.functions
-      .invoke("animated-animate-all", { body: { row_id: row.id } })
+    invokeFn("animated-animate-all", { body: { row_id: row.id } })
       .then(({ data, error }) => {
         if (error || !data?.success) {
           toast({
