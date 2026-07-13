@@ -85,10 +85,7 @@ export default function Queue() {
 
   const setStatus = async (id: string, status: "approved" | "rejected" | "pending") => {
     markBusy(id, true);
-    const { error } = await supabase
-      .from("botanical_content")
-      .update({ queue_status: status })
-      .eq("id", id);
+    const { error } = await invokeFn("queue-moderation", { body: { id, status } });
     markBusy(id, false);
     if (error) {
       toast({ title: "Update failed", description: error.message, variant: "destructive" });
@@ -109,13 +106,13 @@ export default function Queue() {
     const variants = (item.hook_variants ?? []).filter((v) => v !== newHook);
     if (oldHook) variants.push(oldHook);
 
-    const { error } = await supabase
-      .from("botanical_content")
-      .update({
+    const { error } = await invokeFn("queue-moderation", {
+      body: {
+        id: item.id,
         script: JSON.stringify(newScript),
         hook_variants: variants.slice(0, 2),
-      })
-      .eq("id", item.id);
+      },
+    });
     markBusy(item.id, false);
     if (error) {
       toast({ title: "Swap failed", description: error.message, variant: "destructive" });
