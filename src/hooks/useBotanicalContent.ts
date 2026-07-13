@@ -419,10 +419,9 @@ export function useContentHistory() {
   };
 
   const deleteItem = async (id: string) => {
-    const { error } = await supabase
-      .from("botanical_content")
-      .delete()
-      .eq("id", id);
+    const { error } = await invokeFn("queue-moderation", {
+      body: { id, action: "delete" },
+    });
 
     if (error) {
       toast({ title: "Delete failed", description: error.message, variant: "destructive" });
