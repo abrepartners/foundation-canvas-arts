@@ -15,6 +15,12 @@ interface Step {
   ended_at?: string;
 }
 
+interface CostBreakdown {
+  stills?: { total_usd: number; count?: number };
+  clips?: { total_usd: number; mode?: string; total_seconds?: number };
+  stitch?: { total_usd: number };
+}
+
 interface AnimatedRow {
   id: string;
   plant_name: string | null;
@@ -28,6 +34,8 @@ interface AnimatedRow {
   progress: { stage?: string; steps?: Step[] } | null;
   created_at: string;
   updated_at?: string;
+  cost_breakdown?: CostBreakdown | null;
+  cost_usd?: number | null;
 }
 
 function StepRow({ step }: { step: Step }) {
@@ -464,6 +472,23 @@ export default function Animated() {
               {steps.map((s) => (
                 <StepRow key={s.key} step={s} />
               ))}
+              {(row.cost_usd != null || row.cost_breakdown) && (
+                <div className="mt-2 pt-2 border-t border-border/40 flex items-center justify-between text-xs font-body text-muted-foreground">
+                  <span>
+                    Estimated cost
+                    {row.cost_breakdown && (
+                      <span className="ml-2 text-muted-foreground/70">
+                        {row.cost_breakdown.stills ? `stills $${row.cost_breakdown.stills.total_usd.toFixed(2)}` : ""}
+                        {row.cost_breakdown.clips ? ` · clips $${row.cost_breakdown.clips.total_usd.toFixed(2)}` : ""}
+                        {row.cost_breakdown.stitch ? ` · stitch $${row.cost_breakdown.stitch.total_usd.toFixed(2)}` : ""}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-foreground font-medium">
+                    ${(row.cost_usd ?? 0).toFixed(2)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
