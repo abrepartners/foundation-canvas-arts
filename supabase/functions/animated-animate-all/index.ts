@@ -3,6 +3,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { mergeCost } from "../_shared/cost.ts";
+import { clipsCost } from "../_shared/pricing.ts";
 
 const ORDER = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;
 type Moment = (typeof ORDER)[number];
@@ -204,7 +206,8 @@ serve(async (req) => {
         return; // error already recorded
       }
 
-      // All 6 clips ready — kick off server-side stitch.
+      // All 6 clips ready — record clip cost then kick off server-side stitch.
+      await mergeCost(supabase, row_id, "clips", clipsCost(6, 10, "pro"));
       await supabase
         .from("botanical_animated")
         .update({

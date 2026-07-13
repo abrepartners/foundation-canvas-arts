@@ -1,26 +1,66 @@
-## Add stop + unblock the picker on `/animated`
+## What we're actually running (not Seedance)
 
-The picker and "Animate this one" button are gated on `isRunning`, so once a run starts you can't switch sources. Fix both problems:
+Nothing in this codebase touches `bytedance/seedance-1-pro` — grep confirms zero references. The `/animated` pipeline uses:
 
-### Changes to `src/pages/Animated.tsx`
+| Stage | Model | File | Approx. list price | Per finished job |
+|---|---|---|---|---|
+| 6 hero stills | `openai/gpt-image-2` (high) | `regenerate-visual` | ~$0.19 / image | ~$1.14 |
+| 6 clips, 10s each, **mode: "pro"**, 9:16 | `kwaivgi/kling-v2.1` | `animated-animate-all` | ~$0.28 / sec | ~$16.80 |
+| Final stitch | `fofr/video-concat` | `animated-stitch` | trivial | ~$0.02 |
+| **Total** | | | | **≈ $18 / video** |
 
-1. **Enable the picker and start buttons at all times.** Remove `isRunning` from the `disabled` predicate on "Choose source", "Animate this one", and "Generate fresh". Keep `isStarting` (the in-flight invoke) as the only guard. Starting a new run creates a new `botanical_animated` row and the UI swaps to it.
-2. **Add a "Stop" button** shown only when `isRunning`, sitting next to "Generate fresh":
-   - Optimistically clears `row` from local state and resets `animateTriggered.current = null` so the picker becomes the primary surface again.
-   - Writes `{ queue_status: "canceled", error: "Canceled by user" }` to that row so the sidebar/history reflects the state.
-   - Toast: "Stopped — you can pick another source or generate fresh."
-3. **Rename button copy** for clarity: label the primary button "Generate fresh" (already done) and label the picker CTA "Animate selected".
+So the Seedance line on your Replicate bill came from somewhere else on that Replicate account (playground, another app, a manual test). Worth checking `replicate.com/account/billing` → usage log to find which project/token generated it.
 
-### Honest limitation (called out in a small helper line under the buttons)
+That said — we still want per-job cost tracking so this can never be a mystery again. Here's that piece.
 
-Kling predictions already dispatched keep running on Replicate's side — we can't recall those credits. Stopping just detaches the UI and marks the row canceled so the pipeline's later updates don't fight your new run. No new run is blocked by the old one.
+## Build: per-job cost tracking
 
-### Out of scope
+Goal: every animated job records what it cost, visible in the UI. No design or generation changes.
 
-- Cancelling in-flight Replicate predictions (would need to track prediction ids per clip and hit the cancel endpoint; separate change).
-- Edge functions checking `queue_status === "canceled"` mid-loop to bail early — nice-to-have follow-up, not needed to unblock the picker.
-- Any change to the pipeline, prompts, or DB schema.
+### 1. Schema (migration)
+
+Add to `botanical_animated`:
+- `cost_breakdown jsonb default '{}'::jsonb` — `{ stills, clips, stitch, total_usd }`
+- `cost_usd numeric(10,4)` — denormalized total for sorting/summing
+
+Keep existing RLS. Edge functions write via service role, so no new grants needed.
+
+### 2. Pricing constants
+
+New `supabase/functions/_shared/pricing.ts` — single source of truth so a price change is one edit:
+
+```ts
+export const PRICING = {
+  "openai/gpt-image-2":   { unit_usd: 0.19 },
+  "kwaivgi/kling-v2.1":   { std_usd_per_sec: 0.08, pro_usd_per_sec: 0.28 },
+  "fofr/video-concat":    { flat_usd: 0.02 },
+} as const;
+```
+
+### 3. Write cost as each stage finishes
+
+Small helper `_shared/cost.ts` → `mergeCost(supabase, row_id, patch)` does a read-modify-write JSON merge and recomputes `cost_usd` so stages don't clobber each other.
+
+- `regenerate-visual` (animated path, `image_provider: "openai"`): on success, merge `cost_breakdown.stills = { model, count: 6, unit_usd, total_usd: 1.14 }` onto the parent `botanical_animated` row (row_id already threaded).
+- `animated-animate-all`: after all 6 clips succeed, merge `cost_breakdown.clips = { model: "kwaivgi/kling-v2.1", mode: "pro", seconds: 60, unit_usd_per_sec, total_usd: 16.80 }`.
+- `animated-stitch`: on success, merge `cost_breakdown.stitch = { model, total_usd: 0.02 }`; helper recomputes `cost_usd`.
+
+### 4. UI surface (read-only, no restyle)
+
+- `src/pages/Animated.tsx` — small line under progress steps: `Estimated cost: $18.02` once `cost_usd` populates.
+- `src/pages/Queue.tsx` — add a "Cost" column for animated rows + footer total for visible rows.
+- `src/components/HistorySidebar.tsx` — append `· $18.02` after the plant name when `cost_usd` is set.
+
+All read directly from the row; no new edge function.
+
+### 5. Not in scope (flagging only)
+
+- Switching Kling `mode: "pro"` → `"std"` (~1/3.5 the cost, ~$4.80/job) or moving to `wan-video/wan-2.2-i2v-fast` — you said don't change generation logic. Say the word and it's a one-line change.
+- Cancelling in-flight Replicate predictions.
+- Backfilling `cost_usd` on the 2 existing rows — trivial one-shot if you want it.
 
 ### Files touched
 
-- `src/pages/Animated.tsx` only.
+- new: `supabase/migrations/<ts>_add_cost_tracking.sql`, `supabase/functions/_shared/pricing.ts`, `supabase/functions/_shared/cost.ts`
+- edit: `supabase/functions/regenerate-visual/index.ts`, `supabase/functions/animated-animate-all/index.ts`, `supabase/functions/animated-stitch/index.ts`
+- edit UI: `src/pages/Animated.tsx`, `src/pages/Queue.tsx`, `src/components/HistorySidebar.tsx`
