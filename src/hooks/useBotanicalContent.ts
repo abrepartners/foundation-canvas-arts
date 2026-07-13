@@ -129,11 +129,9 @@ export function useBotanicalContent() {
         visuals.some((v) => v.status !== "done" && !v.image_url)
       ) {
         lastResumeAt = now;
-        supabase.functions
-          .invoke("generate-botanical-resume", {
-            body: { content_id: contentId, image_provider: imageProvider },
-          })
-          .catch((e) => console.warn("resume invoke failed", e));
+        invokeFn("generate-botanical-resume", {
+          body: { content_id: contentId, image_provider: imageProvider },
+        }).catch((e) => console.warn("resume invoke failed", e));
       }
     }
   };
