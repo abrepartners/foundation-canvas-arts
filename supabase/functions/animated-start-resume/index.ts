@@ -2,6 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { mergeCost } from "../_shared/cost.ts";
+import { stillsCost } from "../_shared/pricing.ts";
 
 const INITIAL_STEPS = [
   { key: "script", label: "Picking plant + writing script", status: "pending" },
@@ -95,6 +97,7 @@ serve(async (req) => {
             .eq("id", rowId);
 
           if (doneCount === 6 && ordered.every((v) => v.image_url)) {
+            await mergeCost(supabase, rowId, "stills", stillsCost(6));
             await supabase
               .from("botanical_animated")
               .update({
