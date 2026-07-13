@@ -18,6 +18,8 @@ export type Database = {
         Row: {
           caption: string | null
           clip_urls: string[] | null
+          cost_breakdown: Json
+          cost_usd: number | null
           created_at: string
           error: string | null
           final_video_url: string | null
@@ -34,6 +36,8 @@ export type Database = {
         Insert: {
           caption?: string | null
           clip_urls?: string[] | null
+          cost_breakdown?: Json
+          cost_usd?: number | null
           created_at?: string
           error?: string | null
           final_video_url?: string | null
@@ -50,6 +54,8 @@ export type Database = {
         Update: {
           caption?: string | null
           clip_urls?: string[] | null
+          cost_breakdown?: Json
+          cost_usd?: number | null
           created_at?: string
           error?: string | null
           final_video_url?: string | null
