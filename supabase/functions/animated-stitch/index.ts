@@ -3,6 +3,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { mergeCost } from "../_shared/cost.ts";
+import { stitchCost } from "../_shared/pricing.ts";
 
 interface Step {
   key: string;
@@ -123,6 +125,8 @@ serve(async (req) => {
         const { data: pub } = supabase.storage
           .from("botanical-faceless-visuals")
           .getPublicUrl(path);
+
+        await mergeCost(supabase, row_id, "stitch", stitchCost());
 
         await supabase
           .from("botanical_animated")
