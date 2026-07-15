@@ -35,7 +35,13 @@ serve(async (req) => {
     if (!__auth.ok) return __auth.response;
 
   try {
-    const { content_id } = await req.json();
+    const body = await req.json();
+    if (body?.__ping) {
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { content_id } = body;
     if (!content_id) {
       return new Response(JSON.stringify({ error: "content_id required" }), {
         status: 400,
