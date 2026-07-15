@@ -48,9 +48,10 @@ var get_plant_default = defineTool2({
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async ({ id }) => {
+    const env = globalThis.Deno?.env;
     const supabase = createClient2(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_PUBLISHABLE_KEY,
+      env?.get("SUPABASE_URL") ?? "",
+      env?.get("SUPABASE_PUBLISHABLE_KEY") ?? env?.get("SUPABASE_ANON_KEY") ?? "",
       { auth: { persistSession: false, autoRefreshToken: false } }
     );
     const { data, error } = await supabase.from("botanical_content").select(
