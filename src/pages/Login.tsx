@@ -23,13 +23,11 @@ export default function Login() {
     if (passcode.length !== 4) return;
     setBusy(true);
     try {
-      // Verify server-side by invoking a lightweight guarded function.
+      // Verify server-side by pinging a guarded function.
       const { error } = await supabase.functions.invoke("score-content", {
         body: { __ping: true },
         headers: { "x-app-passcode": passcode },
       });
-      // The function will return 400 (missing content_id) if passcode is OK,
-      // or 401 if not. supabase-js surfaces non-2xx as an error with context.
       const status = (error as { context?: { status?: number } } | null)?.context?.status;
       if (status === 401) {
         toast({ title: "Wrong passcode", variant: "destructive" });
