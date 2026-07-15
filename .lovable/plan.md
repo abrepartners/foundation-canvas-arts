@@ -1,20 +1,24 @@
-## The bug
+## Problem
 
-`supabase/functions/post-tiktok-carousel/index.ts` defines a module-level `json()` helper (lines 91–96) that references a `corsHeaders` variable that only exists inside the request handler (line 101). Every response path — success, validation error, and catch — goes through `json()`, so the function throws `ReferenceError: corsHeaders is not defined` before it can reply. The browser sees "Failed to send a request to the Edge Function" and the UI shows "TikTok rejected the carousel."
+Every edge function call from the preview fails with "Failed to send a request to the Edge Function" / "Failed to fetch". Network logs show the browser origin is:
 
-This is a regression from the earlier CORS lockdown pass that converted a module-level `corsHeaders` constant into the per-request `corsHeadersFor(req)` call but did not update the helper.
+`https://2dc683a5-50ba-401b-94db-7cc9b6c8ca80.lovableproject.com`
+
+But `supabase/functions/_shared/cors.ts` only allows:
+- `https://foundation-canvas-arts.lovable.app`
+- `https://id-preview--...lovable.app`
+- `http://localhost:8080`, `http://localhost:5173`
+
+The `.lovableproject.com` preview origin isn't in the allowlist, so the CORS preflight is rejected and the browser blocks the POST — the request never reaches the function (that's why edge logs are empty).
 
 ## Fix
 
-1. Move the `json()` helper inside the `Deno.serve` handler (after `const corsHeaders = corsHeadersFor(req)`), so it closes over the per-request headers. No behavior change to any response body or status.
-2. Leave everything else (auth guard, background job, TikTok payload, polling) untouched — those all work; they just never got to run because the response helper crashed first.
+Update `supabase/functions/_shared/cors.ts` to also allow the `lovableproject.com` preview origin.
 
-## Verification
+Two options:
+1. Add the exact hostname `https://2dc683a5-50ba-401b-94db-7cc9b6c8ca80.lovableproject.com` to the `ALLOWED_ORIGINS` set.
+2. Switch to a regex/suffix check that allows any `*.lovableproject.com` and `*.lovable.app` origin (more robust — preview URLs can change).
 
-- Rebuild typechecks.
-- From the Kiwi post, click **Send to TikTok** and confirm the progress bar advances past "Initializing" to "Uploading to TikTok" and the job row in `tiktok_send_jobs` moves through `queued → normalizing → initializing → publish_id_received`.
-- If TikTok itself rejects the carousel after that, the real provider error will now surface in the banner instead of the generic edge-function failure.
+Recommend option 2: match origins whose hostname ends in `.lovable.app`, `.lovableproject.com`, or is `localhost` on any port. This survives future preview URL changes without needing another patch.
 
-## Files touched
-
-- `supabase/functions/post-tiktok-carousel/index.ts` (single small edit)
+No other files change. This affects every edge function since they all import `corsHeadersFor` from this shared module, so the fix unblocks generation, TikTok send, MCP, animated pipeline, etc. in one edit.

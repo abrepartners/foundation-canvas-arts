@@ -1,16 +1,24 @@
 // Per-request CORS headers restricted to this app's origins.
-const ALLOWED_ORIGINS = new Set([
-  "https://foundation-canvas-arts.lovable.app",
-  "https://id-preview--2dc683a5-50ba-401b-94db-7cc9b6c8ca80.lovable.app",
-  "http://localhost:8080",
-  "http://localhost:5173",
-]);
-
 const DEFAULT_ORIGIN = "https://foundation-canvas-arts.lovable.app";
+
+function isAllowedOrigin(origin: string): boolean {
+  if (!origin) return false;
+  try {
+    const url = new URL(origin);
+    const host = url.hostname;
+    if (host === "localhost" || host === "127.0.0.1") return true;
+    if (host.endsWith(".lovable.app")) return true;
+    if (host.endsWith(".lovableproject.com")) return true;
+    if (host.endsWith(".lovable.dev")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 export function corsHeadersFor(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
-  const allow = ALLOWED_ORIGINS.has(origin) ? origin : DEFAULT_ORIGIN;
+  const allow = isAllowedOrigin(origin) ? origin : DEFAULT_ORIGIN;
   return {
     "Access-Control-Allow-Origin": allow,
     "Vary": "Origin",
