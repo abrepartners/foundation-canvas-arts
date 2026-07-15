@@ -18,9 +18,10 @@ var list_plants_default = defineTool({
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async ({ limit }) => {
+    const env = globalThis.Deno?.env;
     const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_PUBLISHABLE_KEY,
+      env?.get("SUPABASE_URL") ?? "",
+      env?.get("SUPABASE_PUBLISHABLE_KEY") ?? env?.get("SUPABASE_ANON_KEY") ?? "",
       { auth: { persistSession: false, autoRefreshToken: false } }
     );
     const cap = Math.min(Math.max(limit ?? 25, 1), 100);
