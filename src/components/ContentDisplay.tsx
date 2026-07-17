@@ -235,16 +235,46 @@ function FacelessVisualsSection({
   onRegenerate,
   onRegenerateAll,
   onRestoreVersion,
+  autoResumeExhausted,
+  onRetryStuck,
+  isRetryingStuck,
 }: {
   visuals: FacelessVisual[];
   onRegenerate?: (moment: string) => Promise<string | null>;
   onRegenerateAll?: () => Promise<void>;
   onRestoreVersion?: (moment: string, entry: VisualHistoryEntry) => Promise<string | null>;
+  autoResumeExhausted?: boolean;
+  onRetryStuck?: () => Promise<void>;
+  isRetryingStuck?: boolean;
 }) {
   const [expandedPrompts, setExpandedPrompts] = useState<Set<number>>(new Set());
   const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set());
   const [regenerating, setRegenerating] = useState<Set<string>>(new Set());
   const [regenAllRunning, setRegenAllRunning] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Track when each moment first entered a "generating/queued" state locally,
+  // so we can show elapsed time even when the backend hasn't stamped started_at.
+  const startedAtRef = useRef<Record<string, number>>({});
+  const anyPending = visuals.some((v) => !v.image_url && v.status !== "error");
+
+  useEffect(() => {
+    for (const v of visuals) {
+      const pending = !v.image_url && v.status !== "error";
+      if (pending && !startedAtRef.current[v.moment]) {
+        startedAtRef.current[v.moment] = Date.now();
+      }
+      if (v.image_url || v.status === "error") {
+        delete startedAtRef.current[v.moment];
+      }
+    }
+  }, [visuals]);
+
+  useEffect(() => {
+    if (!anyPending && !regenerating.size) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [anyPending, regenerating.size]);
 
   const sortedVisuals = [...visuals].sort(
     (a, b) => momentOrder.indexOf(a.moment) - momentOrder.indexOf(b.moment)
