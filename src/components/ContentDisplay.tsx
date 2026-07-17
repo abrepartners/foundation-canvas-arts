@@ -523,7 +523,7 @@ function FacelessVisualsSection({
                     ) : (
                       <span className="text-xs text-muted-foreground">Waiting…</span>
                     )}
-                    {onRegenerate && (state === "failed" || (!busy && state === "queued")) && (
+                    {onRegenerate && state === "failed" && (
                       <Button
                         variant={state === "failed" ? "default" : "ghost"}
                         size="sm"
