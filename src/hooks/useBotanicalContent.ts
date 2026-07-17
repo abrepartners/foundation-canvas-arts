@@ -80,7 +80,13 @@ export function useBotanicalContent() {
   const [content, setContent] = useState<ContentWithId | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoResumeExhausted, setAutoResumeExhausted] = useState(false);
+  const [isRetryingStuck, setIsRetryingStuck] = useState(false);
+  const [activeContentId, setActiveContentId] = useState<string | null>(null);
+  const [activeProvider, setActiveProvider] = useState<"lovable" | "replicate" | "openai">("replicate");
   const { toast } = useToast();
+
+  const MAX_AUTO_RESUMES = 2;
 
   const pollForImages = async (
     contentId: string,
@@ -89,11 +95,17 @@ export function useBotanicalContent() {
     const INTERVAL_MS = 2000;
     const MAX_POLLS = 300; // ~10 min ceiling
     const RESUME_AFTER_POLLS = 20; // ~40s before first auto-resume
-    const RESUME_COOLDOWN_MS = 90_000; // don't restack resume jobs
+    const RESUME_COOLDOWN_MS = 90_000;
     let lastResumeAt = 0;
+    let autoResumeCount = 0;
 
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, INTERVAL_MS));
+
+      // Pause work while the tab is hidden — avoids background Replicate calls.
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        continue;
+      }
 
       const { data, error: dbError } = await supabase
         .from("botanical_content")
@@ -121,24 +133,46 @@ export function useBotanicalContent() {
         );
       if (allSettled) return;
 
-      // Auto-nudge stuck visuals via resume function.
       const now = Date.now();
       if (
+        autoResumeCount < MAX_AUTO_RESUMES &&
         i >= RESUME_AFTER_POLLS &&
         now - lastResumeAt > RESUME_COOLDOWN_MS &&
         visuals.some((v) => v.status !== "done" && !v.image_url)
       ) {
         lastResumeAt = now;
+        autoResumeCount++;
         invokeFn("generate-botanical-resume", {
           body: { content_id: contentId, image_provider: imageProvider },
         }).catch((e) => console.warn("resume invoke failed", e));
+        if (autoResumeCount >= MAX_AUTO_RESUMES) {
+          setAutoResumeExhausted(true);
+        }
       }
+    }
+  };
+
+  const retryStuck = async () => {
+    if (!activeContentId) return;
+    setIsRetryingStuck(true);
+    try {
+      const { error: fnError } = await invokeFn("generate-botanical-resume", {
+        body: { content_id: activeContentId, image_provider: activeProvider },
+      });
+      if (fnError) throw new Error(fnError.message);
+      toast({ title: "Retrying stuck images", description: "Kicked off a fresh attempt for pending slots." });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast({ title: "Retry failed", description: msg, variant: "destructive" });
+    } finally {
+      setIsRetryingStuck(false);
     }
   };
 
   const generate = async (imageProvider: "lovable" | "replicate" | "openai" = "replicate") => {
     setIsLoading(true);
     setError(null);
+    setAutoResumeExhausted(false);
 
     try {
       const { data, error: fnError } = await invokeFn(
@@ -154,6 +188,8 @@ export function useBotanicalContent() {
         id: data.content_id,
       };
       setContent(generatedContent);
+      setActiveContentId(data.content_id);
+      setActiveProvider(imageProvider);
 
       toast({
         title: "Content generated",
