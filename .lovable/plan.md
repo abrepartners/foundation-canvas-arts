@@ -1,24 +1,54 @@
+
 ## Problem
 
-Every edge function call from the preview fails with "Failed to send a request to the Edge Function" / "Failed to fetch". Network logs show the browser origin is:
+On the content package page, the 6 faceless-visual tiles show three different, contradictory states ("Queued" / "Generating…" / "Working…") depending on whether the backend has written status, the local button was clicked, or nothing has happened yet. There's also no way to see *why* a still has been spinning for minutes, and the background poller keeps invoking `generate-botanical-resume` every ~90s, which spins up fresh Replicate predictions — the user is worried this silently re-bills.
 
-`https://2dc683a5-50ba-401b-94db-7cc9b6c8ca80.lovableproject.com`
+## Fix (frontend + poller only, no new backend logic)
 
-But `supabase/functions/_shared/cors.ts` only allows:
-- `https://foundation-canvas-arts.lovable.app`
-- `https://id-preview--...lovable.app`
-- `http://localhost:8080`, `http://localhost:5173`
+### 1. One status vocabulary everywhere
 
-The `.lovableproject.com` preview origin isn't in the allowlist, so the CORS preflight is rejected and the browser blocks the POST — the request never reaches the function (that's why edge logs are empty).
+Collapse the tile status into a single 4-state model that the badge, the empty-tile CTA, and the overlay all read from:
 
-## Fix
+| State | When | Badge | Tile CTA |
+|---|---|---|---|
+| Queued | slot exists, no image, `status` is undefined/`queued`, no `started_at` | grey "Queued" | disabled "Waiting…" |
+| Generating | `status === "generating"` OR local click in flight | pulsing "Generating · 42s" (live elapsed from `started_at`) | disabled spinner "Generating…" |
+| Ready | `image_url` present | no badge | Regenerate icon |
+| Failed | `status === "error"` or `error` set | red "Failed" | red "Retry" with error tooltip |
 
-Update `supabase/functions/_shared/cors.ts` to also allow the `lovableproject.com` preview origin.
+Remove the "Working…" string entirely — the button label always mirrors the badge.
 
-Two options:
-1. Add the exact hostname `https://2dc683a5-50ba-401b-94db-7cc9b6c8ca80.lovableproject.com` to the `ALLOWED_ORIGINS` set.
-2. Switch to a regex/suffix check that allows any `*.lovableproject.com` and `*.lovable.app` origin (more robust — preview URLs can change).
+### 2. Per-tile visibility
 
-Recommend option 2: match origins whose hostname ends in `.lovable.app`, `.lovableproject.com`, or is `localhost` on any port. This survives future preview URL changes without needing another patch.
+- Show live elapsed time under Generating tiles (ticks every 1s in the hook, driven by a single `useEffect` timer, not per-tile).
+- When elapsed > 90s, add a subtle "Taking longer than usual" line under the badge.
+- When `status === "error"`, surface the error message inline (already partly there — make it always visible, not just when there's no image).
 
-No other files change. This affects every edge function since they all import `corsHeadersFor` from this shared module, so the fix unblocks generation, TikTok send, MCP, animated pipeline, etc. in one edit.
+### 3. Top-of-section summary strip
+
+Above the 6-tile grid, replace the current one-line counter with a compact strip:
+- `X / 6 ready · Y generating · Z failed`
+- Overall elapsed since generation started (from oldest `started_at` in the batch)
+- A single "Retry stuck" button (only enabled when there are failed or stalled >2min slots, and only after auto-resume budget is exhausted — see #4).
+
+### 4. Cap the auto-resume so Replicate isn't re-billed forever
+
+`pollForImages` in `src/hooks/useBotanicalContent.ts` currently re-invokes `generate-botanical-resume` every 90s indefinitely while the tab is open. Change it to:
+
+- Max **2** auto-resume invocations per generation (was: unbounded).
+- Only auto-resume slots that are `error` OR `generating` with `started_at` older than 2 min. Slots that are freshly generating are left alone.
+- After the 2nd auto-resume, stop polling for resumes and enable the manual "Retry stuck" button in the summary strip. UI text: "Auto-retry paused to avoid extra Replicate charges. Click to retry manually."
+- Stop the poll loop entirely when everything is Ready or Failed (already the case) OR when the tab is hidden (`document.visibilityState === "hidden"`) and resume when it comes back — avoids background billing while user is away.
+
+### 5. Files touched
+
+- `src/components/ContentDisplay.tsx` — new status-vocabulary logic, live elapsed timer, summary strip, "Retry stuck" button, remove "Working…"/"Pending…" strings.
+- `src/hooks/useBotanicalContent.ts` — cap `pollForImages` auto-resume to 2, add visibility-hidden pause, expose `retryStuck(imageProvider)` so the summary strip button can trigger a manual resume.
+- `src/pages/Index.tsx` — pass `retryStuck` through to `ContentDisplay`.
+
+No edge function or DB changes. No change to the Animated page (its stepper already has this pattern).
+
+## Out of scope
+
+- Kling clip status on the Animated page — its stepper already surfaces per-clip progress and cost.
+- Cancelling in-flight Replicate predictions server-side (Replicate's connector-gateway doesn't expose cancel from our current pipeline; auto-resume cap is the practical guard).
