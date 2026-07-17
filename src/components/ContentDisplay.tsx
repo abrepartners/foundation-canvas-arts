@@ -629,7 +629,7 @@ function ContentCard({ title, children, copyText }: { title: string; children: R
   );
 }
 
-export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegenerateAll, onRestoreVersion, onRegenerateCaption, isRegeneratingCaption }: ContentDisplayProps) {
+export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegenerateAll, onRestoreVersion, onRegenerateCaption, isRegeneratingCaption, autoResumeExhausted, onRetryStuck, isRetryingStuck }: ContentDisplayProps) {
   const { toast } = useToast();
   const [sendPhase, setSendPhase] = useState<SendPhase>("idle");
   const [sendDetail, setSendDetail] = useState<string | undefined>(undefined);
