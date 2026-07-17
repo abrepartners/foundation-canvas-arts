@@ -13,7 +13,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 
 const Index = () => {
-  const { content, isLoading, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion, regenerateCaption, isRegeneratingCaption } =
+  const { content, isLoading, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion, regenerateCaption, isRegeneratingCaption, autoResumeExhausted, retryStuck, isRetryingStuck } =
     useBotanicalContent();
   const {
     history,
@@ -171,6 +171,9 @@ const Index = () => {
                 onRestoreVersion={restoreVisualVersion}
                 onRegenerateCaption={regenerateCaption}
                 isRegeneratingCaption={isRegeneratingCaption}
+                autoResumeExhausted={autoResumeExhausted}
+                onRetryStuck={retryStuck}
+                isRetryingStuck={isRetryingStuck}
               />
             )}
           </div>
