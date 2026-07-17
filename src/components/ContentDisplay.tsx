@@ -802,6 +802,9 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
             onRegenerate={onRegenerateVisual}
             onRegenerateAll={onRegenerateAll}
             onRestoreVersion={onRestoreVersion}
+            autoResumeExhausted={autoResumeExhausted}
+            onRetryStuck={onRetryStuck}
+            isRetryingStuck={isRetryingStuck}
           />
         )}
 
