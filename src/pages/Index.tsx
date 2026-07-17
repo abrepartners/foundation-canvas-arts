@@ -171,6 +171,9 @@ const Index = () => {
                 onRestoreVersion={restoreVisualVersion}
                 onRegenerateCaption={regenerateCaption}
                 isRegeneratingCaption={isRegeneratingCaption}
+                autoResumeExhausted={autoResumeExhausted}
+                onRetryStuck={retryStuck}
+                isRetryingStuck={isRetryingStuck}
               />
             )}
           </div>
