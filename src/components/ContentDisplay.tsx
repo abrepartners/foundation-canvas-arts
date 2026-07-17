@@ -339,11 +339,25 @@ function FacelessVisualsSection({
     }
   };
 
-  const imagesGenerated = sortedVisuals.filter((v) => v.image_url).length;
-  const inFlightCount = sortedVisuals.filter(
-    (v) => (v.status === "queued" || v.status === "generating") && !v.image_url,
+  const readyCount = sortedVisuals.filter((v) => v.image_url).length;
+  const failedCount = sortedVisuals.filter(
+    (v) => !v.image_url && (v.status === "error" || !!v.error),
   ).length;
-  const anyInFlight = inFlightCount > 0 || regenerating.size > 0;
+  const generatingCount = sortedVisuals.filter(
+    (v) => !v.image_url && (v.status === "queued" || v.status === "generating" || regenerating.has(v.moment)) && v.status !== "error",
+  ).length;
+  const anyInFlight = generatingCount > 0;
+
+  // Overall elapsed since the oldest pending slot started.
+  const pendingStarts = Object.values(startedAtRef.current);
+  const overallElapsedMs = pendingStarts.length ? now - Math.min(...pendingStarts) : 0;
+
+  const fmtElapsed = (ms: number) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    return `${m}m ${(s % 60).toString().padStart(2, "0")}s`;
+  };
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
@@ -369,44 +383,103 @@ function FacelessVisualsSection({
           <CopyButton text={allPrompts} />
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {visuals.length} unique moments • {imagesGenerated} ready
-        {inFlightCount > 0 && ` • ${inFlightCount} in progress`}
-      </p>
+
+      {/* Summary strip */}
+      <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-body">
+        <span className="text-foreground">
+          <span className="font-medium">{readyCount} / {sortedVisuals.length}</span> ready
+        </span>
+        {generatingCount > 0 && (
+          <span className="text-primary inline-flex items-center gap-1">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {generatingCount} generating
+          </span>
+        )}
+        {failedCount > 0 && (
+          <span className="text-destructive">{failedCount} failed</span>
+        )}
+        {anyInFlight && overallElapsedMs > 0 && (
+          <span className="text-muted-foreground tabular-nums">· elapsed {fmtElapsed(overallElapsedMs)}</span>
+        )}
+        {onRetryStuck && (failedCount > 0 || (autoResumeExhausted && generatingCount > 0)) && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onRetryStuck()}
+            disabled={isRetryingStuck}
+            className="ml-auto text-xs h-7"
+            title="Kick off a fresh Replicate attempt for pending or failed slots"
+          >
+            {isRetryingStuck ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3 mr-1" />
+            )}
+            Retry stuck
+          </Button>
+        )}
+        {autoResumeExhausted && generatingCount > 0 && (
+          <span className="basis-full text-[11px] text-muted-foreground inline-flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            Auto-retry paused to avoid extra Replicate charges. Click "Retry stuck" to try again.
+          </span>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {sortedVisuals.map((visual, idx) => {
           const isRegenerating = regenerating.has(visual.moment);
           const hasImage = !!visual.image_url;
-          const hasError = !!visual.error || visual.status === "error";
+          const hasError = !hasImage && (!!visual.error || visual.status === "error");
           const history = visual.history ?? [];
           const historyOpen = expandedHistory.has(visual.moment);
-          // A slot is "busy" if backend says queued/generating OR local UI click.
-          const backendBusy =
-            (visual.status === "queued" || visual.status === "generating") &&
-            !hasImage;
-          const busy = isRegenerating || backendBusy;
-          const statusLabel: { text: string; tone: string } | null = backendBusy
-            ? visual.status === "queued"
-              ? { text: "Queued", tone: "bg-muted text-muted-foreground border-border" }
-              : { text: "Generating…", tone: "bg-primary/15 text-primary border-primary/30 animate-pulse" }
+
+          // Unified state model: Ready | Generating | Failed | Queued
+          const state: "ready" | "generating" | "failed" | "queued" = hasImage
+            ? "ready"
             : hasError
-              ? { text: "Failed", tone: "bg-destructive/15 text-destructive border-destructive/30" }
-              : hasImage
-                ? null
-                : null;
+              ? "failed"
+              : (isRegenerating || visual.status === "generating")
+                ? "generating"
+                : "queued";
+          const busy = state === "generating" || state === "queued";
+
+          const startedAt = startedAtRef.current[visual.moment];
+          const elapsedMs = startedAt ? now - startedAt : 0;
+          const takingLong = state === "generating" && elapsedMs > 90_000;
+
+          const badge = (() => {
+            if (state === "ready") return null;
+            if (state === "generating") {
+              return {
+                text: `Generating · ${fmtElapsed(elapsedMs)}`,
+                tone: "bg-primary/15 text-primary border-primary/30 animate-pulse",
+                icon: <Loader2 className="h-2.5 w-2.5 animate-spin" />,
+              };
+            }
+            if (state === "failed") {
+              return {
+                text: "Failed",
+                tone: "bg-destructive/15 text-destructive border-destructive/30",
+                icon: null,
+              };
+            }
+            return {
+              text: "Queued",
+              tone: "bg-muted text-muted-foreground border-border",
+              icon: null,
+            };
+          })();
 
           return (
             <div key={idx} className="space-y-2">
               <div className="aspect-[9/16] rounded-lg overflow-hidden bg-muted/50 border border-border relative group">
-                {statusLabel && (
+                {badge && (
                   <span
-                    className={`absolute top-2 left-2 z-10 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-body backdrop-blur ${statusLabel.tone}`}
+                    className={`absolute top-2 left-2 z-10 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-body backdrop-blur ${badge.tone}`}
                   >
-                    {visual.status === "generating" && (
-                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                    )}
-                    {statusLabel.text}
+                    {badge.icon}
+                    {badge.text}
                   </span>
                 )}
                 {hasImage ? (
@@ -434,31 +507,32 @@ function FacelessVisualsSection({
                   </>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-3 text-center">
-                    {hasError ? (
-                      <p className="text-[10px] text-destructive font-body leading-tight line-clamp-3">
+                    {state === "failed" && visual.error ? (
+                      <p className="text-[10px] text-destructive font-body leading-tight line-clamp-4">
                         {visual.error}
                       </p>
-                    ) : backendBusy ? (
-                      <Loader2 className="h-5 w-5 animate-spin text-primary/60" />
+                    ) : state === "generating" ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin text-primary/60" />
+                        {takingLong && (
+                          <p className="text-[10px] text-muted-foreground font-body leading-tight">
+                            Taking longer than usual…
+                          </p>
+                        )}
+                      </>
                     ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {onRegenerate ? "Pending…" : "No image"}
-                      </span>
+                      <span className="text-xs text-muted-foreground">Waiting…</span>
                     )}
-                    {onRegenerate && (
+                    {onRegenerate && (state === "failed" || (!busy && state === "queued")) && (
                       <Button
-                        variant={hasError ? "default" : "ghost"}
+                        variant={state === "failed" ? "default" : "ghost"}
                         size="sm"
                         onClick={() => handleRegen(visual.moment)}
                         disabled={busy}
                         className="text-xs"
                       >
-                        {busy ? (
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                        ) : (
-                          <RefreshCw className="h-3 w-3 mr-1" />
-                        )}
-                        {busy ? "Working…" : hasError ? "Retry" : "Generate"}
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        {state === "failed" ? "Retry" : "Generate"}
                       </Button>
                     )}
                   </div>
