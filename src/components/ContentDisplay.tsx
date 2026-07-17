@@ -136,6 +136,9 @@ interface ContentDisplayProps {
   onRestoreVersion?: (moment: string, entry: VisualHistoryEntry) => Promise<string | null>;
   onRegenerateCaption?: () => Promise<string | null>;
   isRegeneratingCaption?: boolean;
+  autoResumeExhausted?: boolean;
+  onRetryStuck?: () => Promise<void>;
+  isRetryingStuck?: boolean;
 }
 
 function CopyButton({ text }: { text: string }) {
