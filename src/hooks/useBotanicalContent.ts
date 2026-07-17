@@ -339,6 +339,8 @@ export function useBotanicalContent() {
   const reset = () => {
     setContent(null);
     setError(null);
+    setActiveContentId(null);
+    setAutoResumeExhausted(false);
   };
 
   const loadFromHistory = (saved: SavedContent) => {
@@ -352,6 +354,8 @@ export function useBotanicalContent() {
       part2_hook: saved.part2_hook,
       faceless_visuals: saved.faceless_visuals,
     });
+    setActiveContentId(saved.id);
+    setAutoResumeExhausted(false);
   };
 
   const [isRegeneratingCaption, setIsRegeneratingCaption] = useState(false);
@@ -382,7 +386,22 @@ export function useBotanicalContent() {
     }
   };
 
-  return { content, isLoading, error, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion, regenerateCaption, isRegeneratingCaption };
+  return {
+    content,
+    isLoading,
+    error,
+    generate,
+    reset,
+    loadFromHistory,
+    regenerateVisual,
+    regenerateAllVisuals,
+    restoreVisualVersion,
+    regenerateCaption,
+    isRegeneratingCaption,
+    autoResumeExhausted,
+    retryStuck,
+    isRetryingStuck,
+  };
 }
 
 export function useContentHistory() {
