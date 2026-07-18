@@ -4,7 +4,29 @@ import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw, StopCircle } from "lucide-react";
+
+// Client mirror of supabase/functions/_shared/pricing.ts. Any change here must
+// match the server; the server rejects mismatched pricing_version.
+const PRICING_VERSION = "2026-07-17-a";
+const CLIP_COUNT = 6;
+const CLIP_SECONDS = 10;
+const KLING_PRO_USD_PER_SEC = 0.28;
+const STITCH_USD = 0.02;
+const STILLS_UNIT_USD = 0.19;
+const CLIPS_TOTAL = +(CLIP_COUNT * CLIP_SECONDS * KLING_PRO_USD_PER_SEC).toFixed(2); // 16.80
+const PAID_TOTAL = +(CLIPS_TOTAL + STITCH_USD).toFixed(2); // 16.82
+const STILLS_TOTAL = +(CLIP_COUNT * STILLS_UNIT_USD).toFixed(2); // 1.14
 
 interface Step {
   key: string;
@@ -36,6 +58,9 @@ interface AnimatedRow {
   updated_at?: string;
   cost_breakdown?: CostBreakdown | null;
   cost_usd?: number | null;
+  source_content_id?: string | null;
+  stop_requested_at?: string | null;
+  cost_confirmed_at?: string | null;
 }
 
 function StepRow({ step }: { step: Step }) {
@@ -131,14 +156,16 @@ interface SourceOption {
 export default function Animated() {
   const [row, setRow] = useState<AnimatedRow | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [now, setNow] = useState<number>(Date.now());
-  const animateTriggered = useRef<string | null>(null);
   const { toast } = useToast();
   const [sources, setSources] = useState<SourceOption[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Auto-resume: on mount, load the most recent unfinished row (or most recent done row to display).
+  // Load most recent row (any status) so the UI can show its state.
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -150,7 +177,6 @@ export default function Animated() {
     })();
   }, []);
 
-  // Load recent botanical_content rows that have all 6 stills done.
   const loadSources = async () => {
     const { data } = await supabase
       .from("botanical_content")
@@ -166,9 +192,7 @@ export default function Animated() {
         visuals = typeof item.script_visuals === "string"
           ? JSON.parse(item.script_visuals)
           : (item.script_visuals as typeof visuals);
-      } catch {
-        continue;
-      }
+      } catch { continue; }
       if (!Array.isArray(visuals)) continue;
       const stills = MOMENTS.map((m) => visuals.find((v) => v.moment === m)?.image_url ?? "");
       if (stills.some((u) => !u)) continue;
@@ -185,9 +209,9 @@ export default function Animated() {
 
   useEffect(() => {
     if (pickerOpen && sources.length === 0) loadSources();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickerOpen]);
 
-  // Subscribe to row updates.
   useEffect(() => {
     if (!row?.id) return;
     const channel = supabase
@@ -205,39 +229,35 @@ export default function Animated() {
     };
   }, [row?.id]);
 
-  // Tick once a minute for "stuck" detection.
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Auto-trigger animation step once stills are ready.
-  useEffect(() => {
-    if (!row?.id) return;
-    if (row.queue_status !== "stills_ready") return;
-    if (animateTriggered.current === row.id) return;
-    animateTriggered.current = row.id;
-    invokeFn("animated-animate-all", { body: { row_id: row.id } })
-      .then(({ data, error }) => {
-        if (error || !data?.success) {
-          toast({
-            title: "Animation start failed",
-            description: error?.message || data?.error || "Unknown",
-            variant: "destructive",
-          });
-        }
-      });
-  }, [row?.id, row?.queue_status, toast]);
-
   const start = async (sourceContentId?: string | null) => {
     setIsStarting(true);
-    animateTriggered.current = null;
     try {
       const { data, error } = await invokeFn("animated-start", {
         body: sourceContentId ? { source_content_id: sourceContentId } : {},
       });
-      if (error) throw new Error(error.message);
-      if (!data?.success) throw new Error(data?.error || "Failed to start");
+      if (error) {
+        // 409 conflict = active_run_exists. Focus that run.
+        // supabase functions.invoke bundles non-2xx into error.message.
+        throw new Error(error.message);
+      }
+      if (!data?.success) {
+        if (data?.error === "active_run_exists" && data?.active_run?.id) {
+          const { data: full } = await supabase
+            .from("botanical_animated").select("*").eq("id", data.active_run.id).single();
+          setRow(full as unknown as AnimatedRow);
+          toast({
+            title: "Another run is active",
+            description: `Focused the existing run (${data.active_run.plant_name ?? data.active_run.queue_status}). Stop it first to start a new one.`,
+          });
+          return;
+        }
+        throw new Error(data?.error || "Failed to start");
+      }
       const { data: full } = await supabase
         .from("botanical_animated")
         .select("*")
@@ -247,8 +267,8 @@ export default function Animated() {
       setPickerOpen(false);
       setSelectedSourceId(null);
       toast({
-        title: sourceContentId ? "Animating existing content" : "Generating animated video",
-        description: "Runs entirely on our servers — feel free to close the tab.",
+        title: sourceContentId ? "Preparing selected stills" : "Preparing fresh stills",
+        description: "You'll be asked to review the animation cost before any paid provider jobs run.",
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -260,32 +280,53 @@ export default function Animated() {
 
   const stopRun = async () => {
     if (!row?.id) return;
-    const canceledId = row.id;
-    setRow(null);
-    animateTriggered.current = null;
-    setPickerOpen(true);
-    await supabase
-      .from("botanical_animated")
-      .update({ queue_status: "canceled", error: "Canceled by user" })
-      .eq("id", canceledId);
-    toast({
-      title: "Stopped",
-      description: "Pick another source or generate fresh.",
-    });
+    setIsStopping(true);
+    try {
+      const { data, error } = await invokeFn("animated-stop", { body: { row_id: row.id } });
+      if (error) throw new Error(error.message);
+      const summary = data as { canceled?: unknown[]; already_finished?: unknown[]; failed_to_cancel?: unknown[] };
+      toast({
+        title: "Stop requested",
+        description:
+          `Canceled ${summary?.canceled?.length ?? 0} · already finished ${summary?.already_finished?.length ?? 0}` +
+          ((summary?.failed_to_cancel?.length ?? 0) > 0 ? ` · ${summary!.failed_to_cancel!.length} could not cancel` : ""),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: "Stop failed", description: msg, variant: "destructive" });
+    } finally {
+      setIsStopping(false);
+    }
   };
 
+  const confirmAndAnimate = async () => {
+    if (!row?.id) return;
+    setIsConfirming(true);
+    try {
+      const { data, error } = await invokeFn("animated-animate-all", {
+        body: {
+          row_id: row.id,
+          confirmed_estimate_usd: PAID_TOTAL,
+          pricing_version: PRICING_VERSION,
+        },
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.success) throw new Error(data?.error || "Failed to start animation");
+      setConfirmOpen(false);
+      toast({ title: "Animation started", description: `Paid provider jobs submitted (~$${PAID_TOTAL.toFixed(2)}).` });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: "Animation start failed", description: msg, variant: "destructive" });
+    } finally {
+      setIsConfirming(false);
+    }
+  };
 
   const retryStitch = async () => {
     if (!row?.id) return;
-    const { data, error } = await invokeFn("animated-stitch", {
-      body: { row_id: row.id },
-    });
+    const { data, error } = await invokeFn("animated-stitch", { body: { row_id: row.id } });
     if (error || !data?.success) {
-      toast({
-        title: "Retry failed",
-        description: error?.message || data?.error || "Unknown",
-        variant: "destructive",
-      });
+      toast({ title: "Retry failed", description: error?.message || data?.error || "Unknown", variant: "destructive" });
     } else {
       toast({ title: "Stitch restarted", description: "Server is re-assembling the video." });
     }
@@ -293,25 +334,21 @@ export default function Animated() {
 
   const retryStills = async () => {
     if (!row?.id) return;
-    const sourceId = (row as unknown as { source_content_id?: string }).source_content_id;
-    if (!sourceId) {
-      toast({ title: "Cannot retry", description: "Missing source content id.", variant: "destructive" });
-      return;
-    }
-    const [{ error: e1 }, { error: e2 }] = await Promise.all([
-      invokeFn("generate-botanical-resume", {
-        body: { content_id: sourceId, image_provider: "openai" },
-      }),
-      invokeFn("animated-start-resume", { body: { row_id: row.id } }),
-    ]);
-    if (e1 || e2) {
+    const { data, error } = await invokeFn("animated-start-resume", {
+      body: { row_id: row.id, manual: true },
+    });
+    if (error) {
+      toast({ title: "Retry failed", description: error.message, variant: "destructive" });
+    } else if (!data?.success) {
       toast({
-        title: "Retry failed",
-        description: e1?.message || e2?.message || "Unknown",
+        title: "Retry unavailable",
+        description: data?.error === "retry_budget_exhausted"
+          ? `Manual retry budget exhausted (${data.used}/${data.limit}).`
+          : (data?.error || "Unknown"),
         variant: "destructive",
       });
     } else {
-      toast({ title: "Retrying stuck stills", description: "Resuming image generation." });
+      toast({ title: "Retrying stuck stills", description: "Bounded polling window opened." });
     }
   };
 
@@ -319,7 +356,7 @@ export default function Animated() {
     return (
       row?.progress?.steps ?? [
         { key: "script", label: "Picking plant + writing script", status: "pending" },
-        { key: "stills", label: "Designing 6 hero stills (OpenAI gpt-image-2)", status: "pending" },
+        { key: "stills", label: "Preparing 6 hero stills", status: "pending" },
         { key: "clips", label: "Animating 6 clips (Kling v2.1, 10s each)", status: "pending" },
         { key: "stitch", label: "Stitching final 60s video", status: "pending" },
         { key: "save", label: "Saving to library", status: "pending" },
@@ -332,6 +369,9 @@ export default function Animated() {
     row?.queue_status === "stills_ready" ||
     row?.queue_status === "animating" ||
     row?.queue_status === "stitching";
+
+  const awaitingConfirmation =
+    row?.queue_status === "stills_ready" && !row?.stop_requested_at && !row?.cost_confirmed_at;
 
   const stillsStep = steps.find((s) => s.key === "stills");
   const stillsCount = (() => {
@@ -350,11 +390,13 @@ export default function Animated() {
     row?.updated_at &&
     now - new Date(row.updated_at).getTime() > 5 * 60 * 1000;
 
+  const stillsFresh = !!row && stillsStep?.detail !== "6 / 6 (reused)";
+
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
         title="Animated Video"
-        subtitle="One click. 60-second silent vertical MP4. Fully automatic."
+        subtitle="60-second silent vertical MP4 · paid animation requires review"
         contained
       />
 
@@ -363,7 +405,7 @@ export default function Animated() {
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
               <h2 className="font-serif text-lg text-foreground">
-                {row?.plant_name || "Ready to generate"}
+                {row?.plant_name || "Ready to prepare stills"}
               </h2>
               {row?.verified_fact && (
                 <p className="text-sm text-muted-foreground font-body mt-1">{row.verified_fact}</p>
@@ -379,28 +421,42 @@ export default function Animated() {
                 {pickerOpen ? "Close picker" : "Choose source"}
               </Button>
               {isRunning && (
-                <Button variant="destructive" size="lg" onClick={stopRun} disabled={isStarting}>
-                  <StopCircle className="h-4 w-4 mr-2" />
-                  Stop
+                <Button variant="destructive" size="lg" onClick={stopRun} disabled={isStopping}>
+                  {isStopping ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <StopCircle className="h-4 w-4 mr-2" />}
+                  {isStopping ? "Stopping…" : "Stop run & cancel provider jobs"}
                 </Button>
               )}
-              <Button onClick={() => start()} disabled={isStarting} size="lg">
+              <Button onClick={() => start()} disabled={isStarting || isRunning} size="lg">
                 {isStarting ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <Sparkles className="h-4 w-4 mr-2" />
                 )}
-                {isStarting ? "Starting…" : isRunning ? "Generate another" : "Generate fresh"}
+                {isStarting ? "Starting…" : "Prepare fresh stills"}
               </Button>
             </div>
           </div>
 
           {isRunning && (
             <p className="text-xs text-muted-foreground font-body mb-3">
-              Stopping detaches the UI and marks this run canceled. Clips already sent to Kling can't be recalled.
+              Stopping marks this run canceled on the server and attempts to cancel every non-terminal provider prediction.
+              Clips that already succeeded remain billable.
             </p>
           )}
 
+          {awaitingConfirmation && (
+            <div className="rounded-md border border-primary/40 bg-primary/5 p-3 mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-body text-foreground">Stills ready for review.</p>
+                <p className="text-xs text-muted-foreground font-body">
+                  Next step starts <span className="font-medium">paid provider jobs</span> (~${PAID_TOTAL.toFixed(2)}).
+                </p>
+              </div>
+              <Button onClick={() => setConfirmOpen(true)} size="sm">
+                Review cost and start animation
+              </Button>
+            </div>
+          )}
 
           {pickerOpen && (
             <div className="rounded-md border border-border/60 bg-background/50 p-3 mb-4 space-y-2">
@@ -408,9 +464,7 @@ export default function Animated() {
                 Pick an existing generation to animate
               </p>
               {sources.length === 0 ? (
-                <p className="text-sm text-muted-foreground font-body py-4 text-center">
-                  Loading recent content…
-                </p>
+                <p className="text-sm text-muted-foreground font-body py-4 text-center">Loading recent content…</p>
               ) : (
                 <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
                   {sources.map((s) => {
@@ -421,30 +475,18 @@ export default function Animated() {
                         type="button"
                         onClick={() => setSelectedSourceId(selected ? null : s.id)}
                         className={`w-full flex items-center gap-3 p-2 rounded-md border text-left transition-colors ${
-                          selected
-                            ? "border-primary bg-primary/5"
-                            : "border-border/60 hover:bg-muted/40"
+                          selected ? "border-primary bg-primary/5" : "border-border/60 hover:bg-muted/40"
                         }`}
                       >
                         <div className="flex gap-0.5 flex-shrink-0">
                           {s.stills.slice(0, 6).map((u, i) => (
-                            <img
-                              key={i}
-                              src={u}
-                              alt=""
-                              className="w-6 h-10 object-cover rounded-sm border border-border/40"
-                            />
+                            <img key={i} src={u} alt="" className="w-6 h-10 object-cover rounded-sm border border-border/40" />
                           ))}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-body text-foreground truncate">{s.plant_name}</p>
                           <p className="text-xs text-muted-foreground font-body">
-                            {new Date(s.created_at).toLocaleString([], {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {new Date(s.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                           </p>
                         </div>
                       </button>
@@ -455,16 +497,15 @@ export default function Animated() {
               <div className="flex justify-end gap-2 pt-1">
                 <Button
                   size="sm"
-                  disabled={!selectedSourceId || isStarting}
+                  disabled={!selectedSourceId || isStarting || isRunning}
                   onClick={() => selectedSourceId && start(selectedSourceId)}
                 >
                   <Sparkles className="h-4 w-4 mr-2" />
-                  Animate selected
+                  Prepare selected stills
                 </Button>
               </div>
             </div>
           )}
-
 
           {row && (
             <div className="rounded-md border border-border/60 bg-background/50 p-3 mb-4">
@@ -507,10 +548,10 @@ export default function Animated() {
           {stillsStuck && (
             <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 mb-4 flex items-center justify-between gap-3">
               <p className="text-sm text-foreground font-body">
-                Stills have been stalled &gt;2 minutes ({stillsCount} / 6). You can retry the stuck images.
+                Stills have been stalled &gt;2 minutes ({stillsCount} / 6). Manual retry is bounded — the server limits attempts per run.
               </p>
               <Button variant="outline" size="sm" onClick={retryStills}>
-                <RotateCw className="h-4 w-4 mr-2" /> Retry stills
+                <RotateCw className="h-4 w-4 mr-2" /> Retry stuck stills
               </Button>
             </div>
           )}
@@ -585,9 +626,51 @@ export default function Animated() {
         </div>
 
         <p className="text-xs text-muted-foreground font-body text-center">
-          Runs entirely on our servers. Close the tab anytime — your video will be waiting when you come back.
+          Stills are prepared before any paid animation. You must review the cost and click confirm to start Kling clips and stitching.
         </p>
       </main>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Start paid animation?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p>
+                  Confirming will submit paid third-party provider jobs. Once submitted, canceled clips may still incur charges.
+                </p>
+                <div className="rounded-md border border-border p-3 bg-muted/30 font-body">
+                  <div className="flex justify-between">
+                    <span>6 × 10s Kling v2.1 Pro clips</span>
+                    <span className="tabular-nums">${CLIPS_TOTAL.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Stitch estimate</span>
+                    <span className="tabular-nums">${STITCH_USD.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-medium border-t border-border/60 mt-1 pt-1">
+                    <span>Paid animation total</span>
+                    <span className="tabular-nums">${PAID_TOTAL.toFixed(2)}</span>
+                  </div>
+                  {stillsFresh && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Fresh stills already incurred separately: ~${STILLS_TOTAL.toFixed(2)} (6 × OpenAI gpt-image-2). Not part of this confirmation.
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">Pricing version: {PRICING_VERSION}</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isConfirming}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmAndAnimate} disabled={isConfirming}>
+              {isConfirming ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {isConfirming ? "Starting…" : `Confirm & start paid jobs ($${PAID_TOTAL.toFixed(2)})`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
