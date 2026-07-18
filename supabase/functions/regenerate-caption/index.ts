@@ -43,13 +43,6 @@ Hard rules:
 Return ONLY the caption text. No JSON, no code fences, no preamble, no explanation.`;
 
 
-function json(payload: unknown, status = 200): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 async function runReplicateCaption(
   systemInstruction: string,
   prompt: string,
@@ -104,9 +97,14 @@ async function runReplicateCaption(
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
 
-    const corsHeaders = corsHeadersFor(req);
-    const __auth = await requireAuthorized(req);
-    if (!__auth.ok) return __auth.response;
+  const corsHeaders = corsHeadersFor(req);
+  const json = (payload: unknown, status = 200): Response =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  const __auth = await requireAuthorized(req);
+  if (!__auth.ok) return __auth.response;
 
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
