@@ -15,25 +15,31 @@ interface Step {
 
 const INITIAL_STEPS: Step[] = [
   { key: "script", label: "Picking plant + writing script", status: "pending" },
-  { key: "stills", label: "Designing 6 hero stills (OpenAI gpt-image-2)", status: "pending" },
+  { key: "stills", label: "Preparing 6 hero stills", status: "pending" },
   { key: "clips", label: "Animating 6 clips (Kling v2.1, 10s each)", status: "pending" },
   { key: "stitch", label: "Stitching final 60s video", status: "pending" },
   { key: "save", label: "Saving to library", status: "pending" },
 ];
 
 const MOMENT_ORDER = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;
+const ACTIVE_STATUSES = ["pending_confirmation", "generating", "stills_ready", "animating", "stitching"];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
+  const corsHeaders = corsHeadersFor(req);
+  const auth = await requireAuthorized(req);
+  if (!auth.ok) return auth.response;
 
-    const corsHeaders = corsHeadersFor(req);
-    const __auth = await requireAuthorized(req);
-    if (!__auth.ok) return __auth.response;
+  const json = (payload: unknown, status = 200) =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(SUPABASE_URL, SERVICE);
 
     let providedSourceId: string | null = null;
     try {
@@ -41,11 +47,26 @@ serve(async (req) => {
       if (body && typeof body.source_content_id === "string") {
         providedSourceId = body.source_content_id;
       }
-    } catch {
-      // no body / not JSON — treat as fresh-generation flow
+    } catch { /* no body */ }
+
+    // Reject if an active run already exists — surface it for the UI to focus.
+    const { data: active } = await supabase
+      .from("botanical_animated")
+      .select("id, queue_status, plant_name, created_at")
+      .in("queue_status", ACTIVE_STATUSES)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (active) {
+      return json({
+        success: false,
+        error: "active_run_exists",
+        active_run: active,
+      }, 409);
     }
 
-    // 1. Insert the animated row immediately so the UI gets an id to subscribe to.
+    // Insert the row. If the unique index fires because another request slipped
+    // in concurrently, we return the active row so the UI can focus it.
     const { data: row, error: insertError } = await supabase
       .from("botanical_animated")
       .insert({
@@ -60,10 +81,23 @@ serve(async (req) => {
       .select("id")
       .single();
 
-    if (insertError || !row?.id) throw new Error(insertError?.message ?? "Insert failed");
+    if (insertError || !row?.id) {
+      // Unique-violation on the single-active partial index.
+      const { data: existing } = await supabase
+        .from("botanical_animated")
+        .select("id, queue_status, plant_name, created_at")
+        .in("queue_status", ACTIVE_STATUSES)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        return json({ success: false, error: "active_run_exists", active_run: existing }, 409);
+      }
+      return json({ success: false, error: insertError?.message ?? "Insert failed" }, 500);
+    }
     const rowId = row.id;
 
-    // 2. Background: either reuse an existing botanical_content row, or generate a fresh one.
+    // Background: generate fresh content or reuse existing stills.
     const bg = async () => {
       try {
         let sourceId: string;
@@ -88,9 +122,7 @@ serve(async (req) => {
             visuals = typeof src.script_visuals === "string"
               ? JSON.parse(src.script_visuals)
               : (src.script_visuals as typeof visuals);
-          } catch {
-            visuals = [];
-          }
+          } catch { visuals = []; }
 
           const stills = MOMENT_ORDER.map((m) => {
             const v = visuals.find((x) => x.moment === m);
@@ -120,6 +152,7 @@ serve(async (req) => {
         }
 
         const now = new Date().toISOString();
+        const stillsLabel = reusedStills ? "Preparing selected stills" : "Preparing fresh stills";
         const updatePayload: Record<string, unknown> = {
           source_content_id: sourceId,
           plant_name: content.plant_name,
@@ -127,15 +160,15 @@ serve(async (req) => {
           script: content.script,
           caption: content.caption,
           progress: {
-            stage: reusedStills ? "clips" : "stills",
+            stage: reusedStills ? "review" : "stills",
             steps: INITIAL_STEPS.map((s) => {
               if (s.key === "script") {
                 return { ...s, status: "done", ended_at: now, detail: content.plant_name };
               }
               if (s.key === "stills") {
                 return reusedStills
-                  ? { ...s, status: "done", started_at: now, ended_at: now, detail: "6 / 6 (reused)" }
-                  : { ...s, status: "running", started_at: now, detail: "0 / 6" };
+                  ? { ...s, status: "done", label: stillsLabel, started_at: now, ended_at: now, detail: "6 / 6 (reused)" }
+                  : { ...s, status: "running", label: stillsLabel, started_at: now, detail: "0 / 6" };
               }
               return s;
             }),
@@ -143,13 +176,13 @@ serve(async (req) => {
         };
         if (reusedStills) {
           updatePayload.still_urls = reusedStills;
+          // Reused stills go straight to review — user must confirm cost.
           updatePayload.queue_status = "stills_ready";
         }
 
         await supabase.from("botanical_animated").update(updatePayload).eq("id", rowId);
 
-        // If we generated fresh stills, hand off polling. If we reused, the client's
-        // stills_ready effect will trigger animated-animate-all directly.
+        // Only hand off polling for fresh generation. NEVER auto-invoke animate.
         if (!reusedStills) {
           await supabase.functions.invoke("animated-start-resume", { body: { row_id: rowId } });
         }
@@ -163,23 +196,15 @@ serve(async (req) => {
       }
     };
 
-    // @ts-ignore - EdgeRuntime is available
+    // @ts-expect-error EdgeRuntime is provided by the Supabase edge runtime
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
-      // @ts-ignore
+      // @ts-expect-error EdgeRuntime is provided by the Supabase edge runtime
       EdgeRuntime.waitUntil(bg());
-    } else {
-      bg();
-    }
+    } else { bg(); }
 
-    return new Response(JSON.stringify({ success: true, row_id: rowId }), {
-      status: 202,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ success: true, row_id: rowId }, 202);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return new Response(JSON.stringify({ success: false, error: msg }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ success: false, error: msg }, 500);
   }
 });

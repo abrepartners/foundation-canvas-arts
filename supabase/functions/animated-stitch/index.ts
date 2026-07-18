@@ -5,6 +5,7 @@ import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
 import { mergeCost } from "../_shared/cost.ts";
 import { stitchCost } from "../_shared/pricing.ts";
+import { claimJob, isStopped, updateJob } from "../_shared/providerJobs.ts";
 
 interface Step {
   key: string;
@@ -13,34 +14,44 @@ interface Step {
   detail?: string;
 }
 
+const CONCAT_MODEL = "fofr/video-concat";
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
+  const corsHeaders = corsHeadersFor(req);
+  const auth = await requireAuthorized(req);
+  if (!auth.ok) return auth.response;
 
-    const corsHeaders = corsHeadersFor(req);
-    const __auth = await requireAuthorized(req);
-    if (!__auth.ok) return __auth.response;
+  const json = (payload: unknown, status = 200) =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
 
   try {
     const { row_id } = await req.json();
-    if (!row_id) throw new Error("Missing row_id");
+    if (!row_id) return json({ error: "Missing row_id" }, 400);
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY")!;
     if (!LOVABLE_API_KEY || !REPLICATE_API_KEY) throw new Error("Replicate connector not configured");
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SERVICE);
 
     const { data: row, error: fetchErr } = await supabase
       .from("botanical_animated")
-      .select("id, clip_urls, progress, plant_name")
+      .select("id, clip_urls, progress, stop_requested_at, queue_status")
       .eq("id", row_id)
       .single();
-    if (fetchErr || !row) throw new Error("Row not found");
+    if (fetchErr || !row) return json({ error: "Row not found" }, 404);
+    if (row.stop_requested_at || ["canceled", "done", "error"].includes(row.queue_status)) {
+      return json({ error: `Row is ${row.queue_status}` }, 409);
+    }
 
     const clips: string[] = (row.clip_urls ?? []).filter(Boolean);
-    if (clips.length !== 6) throw new Error(`Expected 6 clips, got ${clips.length}`);
+    if (clips.length !== 6) return json({ error: `Expected 6 clips, got ${clips.length}` }, 409);
 
     const baseSteps: Step[] = (row.progress?.steps as Step[]) ?? [];
     const markStitchRunning = baseSteps.map((s) =>
@@ -57,29 +68,49 @@ serve(async (req) => {
 
     const bg = async () => {
       try {
+        if (await isStopped(supabase, row_id)) return;
         const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+        const claim = await claimJob(supabase, row_id, "stitch", "replicate", CONCAT_MODEL);
+        const job = claim.job;
+        let predId = job.prediction_id ?? null;
 
-        // Use fofr/video-concat (official) — accepts videos[] of URLs, returns mp4.
-        const createRes = await fetch(`${GW}/models/fofr/video-concat/predictions`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "X-Connection-Api-Key": REPLICATE_API_KEY,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ input: { videos: clips } }),
-        });
-        if (!createRes.ok) {
-          const txt = await createRes.text();
-          throw new Error(`Concat create failed ${createRes.status}: ${txt.slice(0, 300)}`);
+        if (job.status === "succeeded" && job.output_url) {
+          // Nothing to do; existing output_url will be re-uploaded below via the
+          // usual path. To keep it simple, force a fresh submit only if no id.
+          predId = job.prediction_id;
         }
-        const pred = await createRes.json();
-        const predId = pred.id;
 
-        // Poll up to ~5 min.
+        if (claim.claimed || !predId) {
+          if (await isStopped(supabase, row_id)) return;
+          await updateJob(supabase, job.id, { status: "submitting" });
+          const createRes = await fetch(`${GW}/models/${CONCAT_MODEL}/predictions`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              "X-Connection-Api-Key": REPLICATE_API_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ input: { videos: clips } }),
+          });
+          if (!createRes.ok) {
+            const txt = await createRes.text();
+            await updateJob(supabase, job.id, { status: "failed", error: `create ${createRes.status}: ${txt.slice(0, 240)}` });
+            throw new Error(`Concat create failed ${createRes.status}: ${txt.slice(0, 240)}`);
+          }
+          const pred = await createRes.json();
+          predId = pred.id;
+          await updateJob(supabase, job.id, { status: "running", prediction_id: predId });
+        } else {
+          await updateJob(supabase, job.id, { status: "running" });
+        }
+
         let outputUrl: string | null = null;
         for (let i = 0; i < 100; i++) {
           await new Promise((r) => setTimeout(r, 3000));
+          if (await isStopped(supabase, row_id)) {
+            await updateJob(supabase, job.id, { status: "canceled", error: "stopped mid-poll" });
+            return;
+          }
           const pollRes = await fetch(`${GW}/predictions/${predId}`, {
             headers: {
               Authorization: `Bearer ${LOVABLE_API_KEY}`,
@@ -93,12 +124,16 @@ serve(async (req) => {
             break;
           }
           if (p.status === "failed" || p.status === "canceled") {
+            await updateJob(supabase, job.id, { status: p.status, error: p.error ?? null });
             throw new Error(`Concat ${p.status}: ${p.error ?? ""}`);
           }
         }
-        if (!outputUrl) throw new Error("Concat timed out");
+        if (!outputUrl) {
+          await updateJob(supabase, job.id, { status: "expired", error: "poll timeout" });
+          throw new Error("Concat timed out");
+        }
 
-        // Mark stitch done, save running.
+        if (await isStopped(supabase, row_id)) return;
         await supabase
           .from("botanical_animated")
           .update({
@@ -113,7 +148,6 @@ serve(async (req) => {
           })
           .eq("id", row_id);
 
-        // Download MP4 and upload to bucket.
         const mp4Res = await fetch(outputUrl);
         if (!mp4Res.ok) throw new Error(`Download failed: ${mp4Res.status}`);
         const mp4Bytes = new Uint8Array(await mp4Res.arrayBuffer());
@@ -126,8 +160,10 @@ serve(async (req) => {
           .from("botanical-faceless-visuals")
           .getPublicUrl(path);
 
+        await updateJob(supabase, job.id, { status: "succeeded", output_url: pub.publicUrl });
         await mergeCost(supabase, row_id, "stitch", stitchCost());
 
+        if (await isStopped(supabase, row_id)) return;
         await supabase
           .from("botanical_animated")
           .update({
@@ -145,30 +181,26 @@ serve(async (req) => {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("animated-stitch bg error:", msg);
-        await supabase
-          .from("botanical_animated")
-          .update({ queue_status: "error", error: `stitch: ${msg}` })
-          .eq("id", row_id);
+        if (!(await isStopped(supabase, row_id))) {
+          await supabase
+            .from("botanical_animated")
+            .update({ queue_status: "error", error: `stitch: ${msg}` })
+            .eq("id", row_id);
+        }
       }
     };
 
-    // @ts-ignore
+    // @ts-expect-error EdgeRuntime is provided by the Supabase edge runtime
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
-      // @ts-ignore
+      // @ts-expect-error EdgeRuntime is provided by the Supabase edge runtime
       EdgeRuntime.waitUntil(bg());
     } else {
       bg();
     }
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 202,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ success: true }, 202);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return new Response(JSON.stringify({ success: false, error: msg }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ success: false, error: msg }, 500);
   }
 });
