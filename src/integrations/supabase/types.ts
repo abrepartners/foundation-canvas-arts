@@ -14,22 +14,80 @@ export type Database = {
   }
   public: {
     Tables: {
+      animation_provider_jobs: {
+        Row: {
+          attempt: number
+          created_at: string
+          error: string | null
+          id: string
+          job_key: string
+          model: string | null
+          output_url: string | null
+          prediction_id: string | null
+          provider: string
+          row_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempt?: number
+          created_at?: string
+          error?: string | null
+          id?: string
+          job_key: string
+          model?: string | null
+          output_url?: string | null
+          prediction_id?: string | null
+          provider?: string
+          row_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempt?: number
+          created_at?: string
+          error?: string | null
+          id?: string
+          job_key?: string
+          model?: string | null
+          output_url?: string | null
+          prediction_id?: string | null
+          provider?: string
+          row_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "animation_provider_jobs_row_id_fkey"
+            columns: ["row_id"]
+            isOneToOne: false
+            referencedRelation: "botanical_animated"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       botanical_animated: {
         Row: {
           caption: string | null
           clip_urls: string[] | null
           cost_breakdown: Json
+          cost_confirmed_at: string | null
+          cost_confirmed_estimate_usd: number | null
           cost_usd: number | null
           created_at: string
           error: string | null
           final_video_url: string | null
           id: string
           plant_name: string | null
+          pricing_version: string | null
           progress: Json
           queue_status: string
+          retry_counts: Json
           script: Json | null
           source_content_id: string | null
           still_urls: string[] | null
+          stop_requested_at: string | null
           updated_at: string
           verified_fact: string | null
         }
@@ -37,17 +95,22 @@ export type Database = {
           caption?: string | null
           clip_urls?: string[] | null
           cost_breakdown?: Json
+          cost_confirmed_at?: string | null
+          cost_confirmed_estimate_usd?: number | null
           cost_usd?: number | null
           created_at?: string
           error?: string | null
           final_video_url?: string | null
           id?: string
           plant_name?: string | null
+          pricing_version?: string | null
           progress?: Json
           queue_status?: string
+          retry_counts?: Json
           script?: Json | null
           source_content_id?: string | null
           still_urls?: string[] | null
+          stop_requested_at?: string | null
           updated_at?: string
           verified_fact?: string | null
         }
@@ -55,17 +118,22 @@ export type Database = {
           caption?: string | null
           clip_urls?: string[] | null
           cost_breakdown?: Json
+          cost_confirmed_at?: string | null
+          cost_confirmed_estimate_usd?: number | null
           cost_usd?: number | null
           created_at?: string
           error?: string | null
           final_video_url?: string | null
           id?: string
           plant_name?: string | null
+          pricing_version?: string | null
           progress?: Json
           queue_status?: string
+          retry_counts?: Json
           script?: Json | null
           source_content_id?: string | null
           still_urls?: string[] | null
+          stop_requested_at?: string | null
           updated_at?: string
           verified_fact?: string | null
         }
