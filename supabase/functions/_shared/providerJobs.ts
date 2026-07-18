@@ -1,6 +1,9 @@
 // Durable idempotency for third-party provider submissions (Replicate/Kling/
-// stitch). One active row per (row_id, job_key) is enforced by a partial
-// unique index in the database, so concurrent invocations cannot both POST.
+// stitch). Uses the claim_provider_job SQL RPC so claiming, attempt counting,
+// and terminal-attempt caps are serialised on the parent botanical_animated
+// row. Loser calls MUST NOT POST to the provider — they wait via
+// waitForActiveJob until the winner records prediction_id or reaches a
+// terminal status.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any;
 
@@ -28,65 +31,81 @@ export interface ProviderJob {
   updated_at: string;
 }
 
-export type ClaimResult =
-  | { claimed: true; job: ProviderJob }
-  | { claimed: false; job: ProviderJob };
+export interface ClaimOutcome {
+  claimed: boolean; // true only when this call created a new attempt row
+  exhausted: boolean; // attempt cap reached; no new work should be started
+  job: ProviderJob;
+}
 
-// Atomically claim (row_id, job_key). If an active row already exists we
-// return it so the caller can resume polling instead of re-submitting.
+export const DEFAULT_MAX_ATTEMPTS = 3;
+
+// Atomic claim via SQL RPC. Only ONE caller ever sees claimed=true for a
+// given (row_id, job_key) attempt. Everyone else sees the existing active
+// or reuseable succeeded row.
 export async function claimJob(
   supabase: SB,
   rowId: string,
   jobKey: string,
   provider = "replicate",
   model?: string,
-): Promise<ClaimResult> {
-  // Latest attempt for this key (any status)
-  const { data: latest } = await supabase
-    .from("animation_provider_jobs")
-    .select("*")
-    .eq("row_id", rowId)
-    .eq("job_key", jobKey)
-    .order("attempt", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (latest && ["claimed", "submitting", "running"].includes(latest.status)) {
-    return { claimed: false, job: latest as ProviderJob };
-  }
-  if (latest && latest.status === "succeeded") {
-    return { claimed: false, job: latest as ProviderJob };
-  }
-
-  const nextAttempt = latest ? (latest.attempt as number) + 1 : 1;
-  const insertPayload = {
+  maxAttempts: number = DEFAULT_MAX_ATTEMPTS,
+): Promise<ClaimOutcome> {
+  const { data, error } = await supabase.rpc("claim_provider_job", {
+    _row_id: rowId,
+    _job_key: jobKey,
+    _provider: provider,
+    _model: model ?? null,
+    _max_attempts: maxAttempts,
+  });
+  if (error) throw new Error(`claim_provider_job failed: ${error.message}`);
+  const r = Array.isArray(data) ? data[0] : data;
+  if (!r) throw new Error("claim_provider_job returned no row");
+  const nowIso = new Date().toISOString();
+  const job: ProviderJob = {
+    id: r.job_id,
     row_id: rowId,
     job_key: jobKey,
     provider,
     model: model ?? null,
-    status: "claimed",
-    attempt: nextAttempt,
+    prediction_id: r.prediction_id ?? null,
+    status: r.job_status as JobStatus,
+    attempt: r.attempt,
+    output_url: r.output_url ?? null,
+    error: null,
+    created_at: nowIso,
+    updated_at: nowIso,
   };
-  const { data: inserted, error } = await supabase
-    .from("animation_provider_jobs")
-    .insert(insertPayload)
-    .select("*")
-    .single();
+  return { claimed: !!r.claimed, exhausted: !!r.exhausted, job };
+}
 
-  if (!error && inserted) return { claimed: true, job: inserted as ProviderJob };
-
-  // Lost the race — someone else claimed between our SELECT and INSERT.
-  const { data: existing } = await supabase
-    .from("animation_provider_jobs")
-    .select("*")
-    .eq("row_id", rowId)
-    .eq("job_key", jobKey)
-    .in("status", ["claimed", "submitting", "running", "succeeded"])
-    .order("attempt", { ascending: false })
-    .limit(1)
-    .single();
-  if (existing) return { claimed: false, job: existing as ProviderJob };
-  throw new Error(`claimJob failed: ${error?.message ?? "unknown"}`);
+// Loser path: block until the winner records a prediction_id or the winning
+// attempt reaches a terminal status. Returns the latest snapshot regardless.
+export async function waitForActiveJob(
+  supabase: SB,
+  jobId: string,
+  timeoutMs = 60_000,
+  intervalMs = 1500,
+): Promise<{ status: JobStatus; prediction_id: string | null; output_url: string | null }> {
+  const deadline = Date.now() + timeoutMs;
+  let last: { status: JobStatus; prediction_id: string | null; output_url: string | null } = {
+    status: "claimed",
+    prediction_id: null,
+    output_url: null,
+  };
+  while (Date.now() < deadline) {
+    const { data } = await supabase
+      .from("animation_provider_jobs")
+      .select("status, prediction_id, output_url")
+      .eq("id", jobId)
+      .maybeSingle();
+    if (data) {
+      last = data as typeof last;
+      if (last.prediction_id) return last;
+      if (["succeeded", "failed", "canceled", "expired"].includes(last.status)) return last;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return last;
 }
 
 export async function updateJob(
