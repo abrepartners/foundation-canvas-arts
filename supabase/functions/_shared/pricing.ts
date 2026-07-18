@@ -1,11 +1,11 @@
 // Replicate list prices (USD). Single source of truth — update PRICING_VERSION
 // whenever any published price changes so the client-server cost confirmation
 // handshake fails-fast on stale confirmations.
-export const PRICING_VERSION = "2026-07-17-a";
+export const PRICING_VERSION = "2026-07-17-b";
 
 export const PRICING = {
-  "openai/gpt-image-2": { unit_usd: 0.19 },
-  "kwaivgi/kling-v2.1": { std_usd_per_sec: 0.08, pro_usd_per_sec: 0.28 },
+  "openai/gpt-image-2": { unit_usd: 0.128 },
+  "kwaivgi/kling-v2.1": { std_usd_per_sec: 0.05, pro_usd_per_sec: 0.09 },
   "fofr/video-concat": { flat_usd: 0.02 },
 } as const;
 
@@ -14,6 +14,7 @@ export const PRICING = {
 export const ANIMATION_CLIP_COUNT = 6;
 export const ANIMATION_CLIP_SECONDS = 10;
 export const ANIMATION_MODE: "pro" | "std" = "pro";
+export const MAX_PROVIDER_ATTEMPTS = 3;
 
 export function stillsCost(count: number) {
   const unit = PRICING["openai/gpt-image-2"].unit_usd;
@@ -59,5 +60,9 @@ export function paidAnimationEstimate() {
     clips,
     stitch,
     total_usd: +(clips.total_usd + stitch.total_usd).toFixed(4),
+    max_attempts: MAX_PROVIDER_ATTEMPTS,
+    retry_ceiling_usd: +(
+      (clips.total_usd + stitch.total_usd) * MAX_PROVIDER_ATTEMPTS
+    ).toFixed(4),
   };
 }

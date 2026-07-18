@@ -3,6 +3,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { guardedUpdateAnimated } from "../_shared/guardedUpdate.ts";
+import { hasActiveProviderJobs } from "../_shared/providerJobs.ts";
 
 interface Step {
   key: string;
@@ -147,7 +149,7 @@ serve(async (req) => {
         } else {
           const { data: gen, error: genError } = await supabase.functions.invoke(
             "generate-botanical-content",
-            { body: { image_provider: "openai" } },
+            { body: { image_provider: "openai", animation_row_id: rowId } },
           );
           if (genError) throw new Error(genError.message);
           if (!gen?.success) throw new Error(gen?.error ?? "generate-botanical-content failed");
@@ -184,7 +186,8 @@ serve(async (req) => {
           updatePayload.queue_status = "stills_ready";
         }
 
-        await supabase.from("botanical_animated").update(updatePayload).eq("id", rowId);
+        const applied = await guardedUpdateAnimated(supabase, rowId, updatePayload);
+        if (!applied) return;
 
         // Only hand off polling for fresh generation. NEVER auto-invoke animate.
         if (!reusedStills) {
@@ -193,10 +196,11 @@ serve(async (req) => {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("animated-start bg error:", msg);
-        await supabase
-          .from("botanical_animated")
-          .update({ queue_status: "error", error: msg })
-          .eq("id", rowId);
+        const providerStillActive = await hasActiveProviderJobs(supabase, rowId);
+        await guardedUpdateAnimated(supabase, rowId, {
+          ...(providerStillActive ? {} : { queue_status: "error" }),
+          error: msg,
+        });
       }
     };
 

@@ -3,10 +3,10 @@
 // supabase function: mcp
 // Bundled from src/lib/mcp/index.ts by @lovable.dev/mcp-js.
 // src/lib/mcp/index.ts
-import { defineMcp } from "npm:@lovable.dev/mcp-js@0.22.0";
+import { defineMcp } from "npm:@lovable.dev/mcp-js@0.22.2";
 
 // src/lib/mcp/tools/list-plants.ts
-import { defineTool } from "npm:@lovable.dev/mcp-js@0.22.0";
+import { defineTool } from "npm:@lovable.dev/mcp-js@0.22.2";
 import { createClient } from "npm:@supabase/supabase-js@^2.90.0";
 import { z } from "npm:zod@^4.4.3";
 var list_plants_default = defineTool({
@@ -37,7 +37,7 @@ var list_plants_default = defineTool({
 });
 
 // src/lib/mcp/tools/get-plant.ts
-import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@0.22.0";
+import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@0.22.2";
 import { createClient as createClient2 } from "npm:@supabase/supabase-js@^2.90.0";
 import { z as z2 } from "npm:zod@^4.4.3";
 var get_plant_default = defineTool2({
@@ -72,7 +72,7 @@ var get_plant_default = defineTool2({
 });
 
 // src/lib/mcp/tools/list-trends.ts
-import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@0.22.0";
+import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@0.22.2";
 import { createClient as createClient3 } from "npm:@supabase/supabase-js@^2.90.0";
 import { z as z3 } from "npm:zod@^4.4.3";
 var list_trends_default = defineTool3({
@@ -112,5 +112,5 @@ var mcp_default = defineMcp({
 });
 
 // lovable-mcp-supabase-entry.ts
-import { createSupabaseHandler } from "npm:@lovable.dev/mcp-js@0.22.0/stacks/supabase";
+import { createSupabaseHandler } from "npm:@lovable.dev/mcp-js@0.22.2/stacks/supabase";
 Deno.serve(createSupabaseHandler(mcp_default, { functionName: "mcp" }));

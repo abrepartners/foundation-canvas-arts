@@ -14,8 +14,10 @@ import {
   PRICING_VERSION,
 } from "../_shared/pricing.ts";
 import {
+  cancelSubmittedPredictionIfStopped,
   claimJob,
   DEFAULT_MAX_ATTEMPTS,
+  hasActiveProviderJobs,
   isStopped,
   updateJob,
   waitForActiveJob,
@@ -199,7 +201,21 @@ serve(async (req) => {
           }
           const pred = await createRes.json();
           predId = pred.id;
+          if (typeof predId !== "string" || !predId) {
+            await updateJob(supabase, job.id, { status: "failed", error: "missing prediction id" });
+            throw new Error("Kling returned no prediction id");
+          }
           await updateJob(supabase, job.id, { status: "running", prediction_id: predId });
+          if (await cancelSubmittedPredictionIfStopped(
+            supabase,
+            row_id,
+            job.id,
+            predId,
+            LOVABLE_API_KEY,
+            REPLICATE_API_KEY,
+          )) {
+            throw new Error("stopped");
+          }
         } else {
           // Loser path: winner already owns this attempt. Wait for them —
           // never POST. If the winner produced a succeeded output while we
@@ -222,7 +238,6 @@ serve(async (req) => {
         for (let i = 0; i < 160; i++) {
           await new Promise((r) => setTimeout(r, 3000));
           if (await isStopped(supabase, row_id)) {
-            if (claim.claimed) await updateJob(supabase, job.id, { status: "canceled", error: "stopped mid-poll" });
             throw new Error("stopped");
           }
           const pollRes = await fetch(`${GW}/predictions/${predId}`, {
@@ -243,7 +258,10 @@ serve(async (req) => {
           }
         }
         if (!outputUrl) {
-          if (claim.claimed) await updateJob(supabase, job.id, { status: "expired", error: "poll timeout" });
+          await updateJob(supabase, job.id, {
+            status: "running",
+            error: "poll timeout; provider status unknown",
+          });
           throw new Error("Kling timed out");
         }
 
@@ -290,7 +308,11 @@ serve(async (req) => {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg === "stopped") return;
         console.error("animate bg error:", msg);
-        await guardedUpdateAnimated(supabase, row_id, { queue_status: "error", error: msg });
+        const providerStillActive = await hasActiveProviderJobs(supabase, row_id);
+        await guardedUpdateAnimated(supabase, row_id, {
+          ...(providerStillActive ? {} : { queue_status: "error" }),
+          error: msg,
+        });
         return;
       }
 

@@ -2,6 +2,14 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { isStopped, updateJob } from "../_shared/providerJobs.ts";
+import {
+  generateTrackedReplicateImage,
+  type TrackedImageResult,
+} from "../_shared/trackedReplicate.ts";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseClient = any;
 
 const STALE_GENERATING_MS = 60_000;
 
@@ -18,7 +26,7 @@ async function runReplicatePrediction(
     "Content-Type": "application/json",
   };
   let createRes: Response | null = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     createRes = await fetch(`${GW}/models/${model}/predictions`, {
       method: "POST",
       headers,
@@ -57,20 +65,39 @@ async function generateImageBytes(
   prompt: string,
   lovableApiKey: string,
   replicateApiKey: string | undefined,
-): Promise<Uint8Array> {
+  tracking?: {
+    supabase: SupabaseClient;
+    animationRowId: string;
+    jobKey: string;
+  },
+): Promise<{ bytes: Uint8Array; jobId?: string }> {
   if (provider === "openai" || provider === "replicate") {
     if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
     const model = provider === "openai" ? "openai/gpt-image-2" : "black-forest-labs/flux-1.1-pro";
     const input = provider === "openai"
       ? { prompt, quality: "high", aspect_ratio: "9:16", output_format: "jpeg" }
       : { prompt, aspect_ratio: "9:16", output_format: "jpeg", safety_tolerance: 2 };
+    if (tracking) {
+      const result: TrackedImageResult = await generateTrackedReplicateImage({
+        supabase: tracking.supabase,
+        rowId: tracking.animationRowId,
+        jobKey: tracking.jobKey,
+        model,
+        input,
+        lovableApiKey,
+        replicateApiKey,
+        pollLimit: 45,
+      });
+      return result;
+    }
+
     const url = await runReplicatePrediction(model, input, lovableApiKey, replicateApiKey);
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 30_000);
     try {
       const imgRes = await fetch(url, { signal: ctrl.signal });
       if (!imgRes.ok) throw new Error(`Image fetch failed: ${imgRes.status}`);
-      return new Uint8Array(await imgRes.arrayBuffer());
+      return { bytes: new Uint8Array(await imgRes.arrayBuffer()) };
     } finally { clearTimeout(t); }
   }
   const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -87,7 +114,7 @@ async function generateImageBytes(
   const b64 = d?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
   if (!b64) throw new Error("No image data");
   const data = String(b64).replace(/^data:image\/\w+;base64,/, "");
-  return Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+  return { bytes: Uint8Array.from(atob(data), (c) => c.charCodeAt(0)) };
 }
 
 interface Visual {
@@ -179,24 +206,44 @@ serve(async (req) => {
 
     const bg = async () => {
       for (const v of stuck) {
+        if (animationRowId && await isStopped(supabase, animationRowId)) return;
         await mergeVisual(v.moment, {
           status: "generating",
           error: null,
           started_at: new Date().toISOString(),
         });
         try {
-          const bytes = await generateImageBytes(provider, v.prompt, LOVABLE, REPLICATE);
+          const imageResult = await generateImageBytes(
+            provider,
+            v.prompt,
+            LOVABLE,
+            REPLICATE,
+            animationRowId
+              ? {
+                  supabase,
+                  animationRowId,
+                  jobKey: `still:${v.moment}`,
+                }
+              : undefined,
+          );
           const ext = provider === "lovable" ? "png" : "jpg";
           const path = `${contentId}/${v.moment}.${ext}`;
           const { error: upErr } = await supabase.storage
             .from("botanical-faceless-visuals")
-            .upload(path, bytes, {
+            .upload(path, imageResult.bytes, {
               contentType: ext === "jpg" ? "image/jpeg" : "image/png",
               upsert: true,
             });
           if (upErr) throw new Error(`upload: ${upErr.message}`);
           const { data: u } = supabase.storage
             .from("botanical-faceless-visuals").getPublicUrl(path);
+          if (imageResult.jobId) {
+            await updateJob(supabase, imageResult.jobId, {
+              status: "succeeded",
+              output_url: u.publicUrl,
+              error: null,
+            });
+          }
           await mergeVisual(v.moment, { image_url: u.publicUrl, status: "done", error: null });
           console.log(`resume: done ${v.moment}`);
         } catch (err) {
@@ -209,9 +256,9 @@ serve(async (req) => {
       }
     };
 
-    // @ts-ignore EdgeRuntime
+    // @ts-expect-error EdgeRuntime is provided by the Supabase edge runtime
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
-      // @ts-ignore
+      // @ts-expect-error EdgeRuntime is provided by the Supabase edge runtime
       EdgeRuntime.waitUntil(bg());
     } else {
       bg();

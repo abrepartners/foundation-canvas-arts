@@ -5,6 +5,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { guardedUpdateAnimated } from "../_shared/guardedUpdate.ts";
+import { hasActiveProviderJobs } from "../_shared/providerJobs.ts";
 
 const INITIAL_STEPS = [
   { key: "script", label: "Picking plant + writing script", status: "pending" },
@@ -122,36 +124,31 @@ serve(async (req) => {
           const doneCount = ordered.filter((v) => v.image_url && v.status === "done").length;
           const stillUrls = ordered.map((v) => v.image_url || "");
 
-          await supabase
-            .from("botanical_animated")
-            .update({
-              still_urls: stillUrls,
+          const progressApplied = await guardedUpdateAnimated(supabase, rowId, {
+            still_urls: stillUrls,
+            progress: {
+              stage: "stills",
+              steps: INITIAL_STEPS.map((s) => {
+                if (s.key === "script") return { ...s, status: "done", detail: plantName ?? "" };
+                if (s.key === "stills") return { ...s, status: doneCount === 6 ? "done" : "running", detail: `${doneCount} / 6` };
+                return s;
+              }),
+            },
+          });
+          if (!progressApplied) return;
+
+          if (doneCount === 6 && ordered.every((v) => v.image_url)) {
+            await guardedUpdateAnimated(supabase, rowId, {
+              queue_status: "stills_ready",
               progress: {
-                stage: "stills",
+                stage: "review",
                 steps: INITIAL_STEPS.map((s) => {
                   if (s.key === "script") return { ...s, status: "done", detail: plantName ?? "" };
-                  if (s.key === "stills") return { ...s, status: doneCount === 6 ? "done" : "running", detail: `${doneCount} / 6` };
+                  if (s.key === "stills") return { ...s, status: "done", detail: "6 / 6" };
                   return s;
                 }),
               },
-            })
-            .eq("id", rowId);
-
-          if (doneCount === 6 && ordered.every((v) => v.image_url)) {
-            await supabase
-              .from("botanical_animated")
-              .update({
-                queue_status: "stills_ready",
-                progress: {
-                  stage: "review",
-                  steps: INITIAL_STEPS.map((s) => {
-                    if (s.key === "script") return { ...s, status: "done", detail: plantName ?? "" };
-                    if (s.key === "stills") return { ...s, status: "done", detail: "6 / 6" };
-                    return s;
-                  }),
-                },
-              })
-              .eq("id", rowId);
+            });
             return;
           }
 
@@ -179,10 +176,11 @@ serve(async (req) => {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("animated-start-resume bg error:", msg);
-        await supabase
-          .from("botanical_animated")
-          .update({ queue_status: "error", error: msg })
-          .eq("id", rowId);
+        const providerStillActive = await hasActiveProviderJobs(supabase, rowId);
+        await guardedUpdateAnimated(supabase, rowId, {
+          ...(providerStillActive ? {} : { queue_status: "error" }),
+          error: msg,
+        });
       }
     };
 

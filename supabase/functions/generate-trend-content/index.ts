@@ -19,7 +19,7 @@ async function runReplicatePrediction(
   };
 
   let createRes: Response | null = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     createRes = await fetch(`${GW}/models/${model}/predictions`, {
       method: "POST",
       headers: authHeaders,
@@ -657,9 +657,9 @@ Rules:
       }
     };
 
-    // @ts-ignore EdgeRuntime
+    // @ts-expect-error EdgeRuntime is provided by the Supabase edge runtime
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
-      // @ts-ignore
+      // @ts-expect-error EdgeRuntime is provided by the Supabase edge runtime
       EdgeRuntime.waitUntil(generateAllImages());
     } else {
       generateAllImages();

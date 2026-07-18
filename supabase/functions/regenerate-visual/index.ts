@@ -283,7 +283,7 @@ serve(async (req) => {
             };
 
       let createRes: Response | null = null;
-      for (let attempt = 0; attempt < 4; attempt++) {
+      for (let attempt = 0; attempt < 3; attempt++) {
         createRes = await fetch(`${GW}/models/${model}/predictions`, {
           method: "POST",
           headers: {
@@ -303,7 +303,7 @@ serve(async (req) => {
           /* ignore */
         }
         console.log(
-          `Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`,
+          `Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/3)`,
         );
         await new Promise((r) => setTimeout(r, waitSec * 1000));
       }

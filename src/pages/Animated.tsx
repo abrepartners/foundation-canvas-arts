@@ -28,6 +28,8 @@ interface Pricing {
   clips: { total_usd: number; total_seconds?: number; mode?: string };
   stitch: { total_usd: number };
   paid_total_usd: number;
+  max_attempts: number;
+  retry_ceiling_usd: number;
 }
 
 interface Step {
@@ -682,9 +684,13 @@ export default function Animated() {
                         <span>Paid animation total</span>
                         <span className="tabular-nums">${pricing.paid_total_usd.toFixed(2)}</span>
                       </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Each provider job is capped at {pricing.max_attempts} attempts. If every attempt is billable,
+                        the configured retry ceiling is ${pricing.retry_ceiling_usd.toFixed(2)}.
+                      </p>
                       {stillsFresh && (
                         <p className="text-xs text-muted-foreground mt-2">
-                          Fresh stills already incurred separately: ~${pricing.stills.total_usd.toFixed(2)} ({pricing.stills.count ?? pricing.clip_count} × OpenAI gpt-image-2). Not part of this confirmation.
+                          Fresh stills already incurred separately: ~${pricing.stills.total_usd.toFixed(2)} ({pricing.stills.count ?? pricing.clip_count} × OpenAI gpt-image-2), with a configured retry ceiling of ${(pricing.stills.total_usd * pricing.max_attempts).toFixed(2)}. Not part of this confirmation.
                         </p>
                       )}
                     </div>
