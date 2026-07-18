@@ -4,6 +4,8 @@
 // row. Loser calls MUST NOT POST to the provider — they wait via
 // waitForActiveJob until the winner records prediction_id or reaches a
 // terminal status.
+import { MAX_PROVIDER_ATTEMPTS } from "./pricing.ts";
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any;
 
@@ -26,6 +28,7 @@ export interface ProviderJob {
   status: JobStatus;
   attempt: number;
   output_url: string | null;
+  output_data: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;
@@ -37,7 +40,7 @@ export interface ClaimOutcome {
   job: ProviderJob;
 }
 
-export const DEFAULT_MAX_ATTEMPTS = 3;
+export const DEFAULT_MAX_ATTEMPTS = MAX_PROVIDER_ATTEMPTS;
 
 // Atomic claim via SQL RPC. Only ONE caller ever sees claimed=true for a
 // given (row_id, job_key) attempt. Everyone else sees the existing active
@@ -71,6 +74,7 @@ export async function claimJob(
     status: r.job_status as JobStatus,
     attempt: r.attempt,
     output_url: r.output_url ?? null,
+    output_data: null,
     error: null,
     created_at: nowIso,
     updated_at: nowIso,
@@ -133,6 +137,15 @@ export async function isStopped(supabase: SB, rowId: string): Promise<boolean> {
   return false;
 }
 
+export async function hasActiveProviderJobs(supabase: SB, rowId: string): Promise<boolean> {
+  const { count } = await supabase
+    .from("animation_provider_jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("row_id", rowId)
+    .in("status", ["claimed", "submitting", "running"]);
+  return (count ?? 0) > 0;
+}
+
 // Best-effort provider-side cancel via Replicate's cancel endpoint.
 export async function cancelReplicatePrediction(
   predictionId: string,
@@ -149,4 +162,46 @@ export async function cancelReplicatePrediction(
   });
   const body = await res.text().catch(() => "");
   return { ok: res.ok, status: res.status, body };
+}
+
+// Close the narrow race where Stop lands after the provider accepts a POST
+// but before the prediction id is visible to animated-stop. Call this right
+// after persisting a newly returned prediction id.
+export async function cancelSubmittedPredictionIfStopped(
+  supabase: SB,
+  rowId: string,
+  jobId: string,
+  predictionId: string,
+  lovableApiKey: string,
+  replicateApiKey: string,
+): Promise<boolean> {
+  if (!await isStopped(supabase, rowId)) return false;
+
+  const result = await cancelReplicatePrediction(
+    predictionId,
+    lovableApiKey,
+    replicateApiKey,
+  );
+  if (result.ok) {
+    await updateJob(supabase, jobId, {
+      prediction_id: predictionId,
+      status: "canceled",
+      error: "stopped immediately after submit",
+    });
+    return true;
+  }
+
+  const reason = `cancel failed: HTTP ${result.status}: ${result.body.slice(0, 160)}`;
+  const { data: current } = await supabase
+    .from("animation_provider_jobs")
+    .select("status")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (current?.status !== "canceled") {
+    await updateJob(supabase, jobId, {
+      prediction_id: predictionId,
+      error: reason,
+    });
+  }
+  return true;
 }

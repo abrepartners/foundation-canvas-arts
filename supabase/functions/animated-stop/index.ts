@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
-import { cancelReplicatePrediction } from "../_shared/providerJobs.ts";
+import { cancelReplicatePrediction, updateJob } from "../_shared/providerJobs.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
@@ -76,7 +76,7 @@ serve(async (req) => {
     const failed: Array<{ job_key: string; reason: string }> = [];
 
     for (const j of jobs ?? []) {
-      if (["succeeded", "failed", "canceled", "expired"].includes(j.status)) {
+      if (["succeeded", "failed", "canceled"].includes(j.status)) {
         already.push({ job_key: j.job_key, status: j.status });
         continue;
       }
@@ -90,7 +90,9 @@ serve(async (req) => {
         continue;
       }
       if (!LOVABLE || !REPLICATE) {
-        failed.push({ job_key: j.job_key, reason: "provider creds unavailable" });
+        const reason = "provider creds unavailable";
+        await updateJob(supabase, j.id, { error: `cancel failed: ${reason}` });
+        failed.push({ job_key: j.job_key, reason });
         continue;
       }
       try {
@@ -102,10 +104,14 @@ serve(async (req) => {
             .eq("id", j.id);
           canceled.push({ job_key: j.job_key, prediction_id: j.prediction_id });
         } else {
-          failed.push({ job_key: j.job_key, reason: `HTTP ${r.status}: ${r.body.slice(0, 160)}` });
+          const reason = `HTTP ${r.status}: ${r.body.slice(0, 160)}`;
+          await updateJob(supabase, j.id, { error: `cancel failed: ${reason}` });
+          failed.push({ job_key: j.job_key, reason });
         }
       } catch (e) {
-        failed.push({ job_key: j.job_key, reason: e instanceof Error ? e.message : String(e) });
+        const reason = e instanceof Error ? e.message : String(e);
+        await updateJob(supabase, j.id, { error: `cancel failed: ${reason}` });
+        failed.push({ job_key: j.job_key, reason });
       }
     }
 

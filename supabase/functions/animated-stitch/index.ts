@@ -7,8 +7,10 @@ import { mergeCost } from "../_shared/cost.ts";
 import { stitchCost } from "../_shared/pricing.ts";
 import { guardedUpdateAnimated } from "../_shared/guardedUpdate.ts";
 import {
+  cancelSubmittedPredictionIfStopped,
   claimJob,
   DEFAULT_MAX_ATTEMPTS,
+  hasActiveProviderJobs,
   isStopped,
   updateJob,
   waitForActiveJob,
@@ -118,7 +120,19 @@ serve(async (req) => {
           }
           const pred = await createRes.json();
           predId = pred.id;
+          if (typeof predId !== "string" || !predId) {
+            await updateJob(supabase, job.id, { status: "failed", error: "missing prediction id" });
+            throw new Error("Concat returned no prediction id");
+          }
           await updateJob(supabase, job.id, { status: "running", prediction_id: predId });
+          if (await cancelSubmittedPredictionIfStopped(
+            supabase,
+            row_id,
+            job.id,
+            predId,
+            LOVABLE_API_KEY,
+            REPLICATE_API_KEY,
+          )) return;
         } else {
           // Loser: wait for winner. Never POST.
           const w = await waitForActiveJob(supabase, job.id, 60_000);
@@ -143,7 +157,6 @@ serve(async (req) => {
           for (let i = 0; i < 100; i++) {
             await new Promise((r) => setTimeout(r, 3000));
             if (await isStopped(supabase, row_id)) {
-              if (claim.claimed) await updateJob(supabase, job.id, { status: "canceled", error: "stopped mid-poll" });
               return;
             }
             const pollRes = await fetch(`${GW}/predictions/${predId}`, {
@@ -164,7 +177,10 @@ serve(async (req) => {
             }
           }
           if (!outputUrl) {
-            if (claim.claimed) await updateJob(supabase, job.id, { status: "expired", error: "poll timeout" });
+            await updateJob(supabase, job.id, {
+              status: "running",
+              error: "poll timeout; provider status unknown",
+            });
             throw new Error("Concat timed out");
           }
         }
@@ -211,7 +227,11 @@ serve(async (req) => {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("animated-stitch bg error:", msg);
-        await guardedUpdateAnimated(supabase, row_id, { queue_status: "error", error: `stitch: ${msg}` });
+        const providerStillActive = await hasActiveProviderJobs(supabase, row_id);
+        await guardedUpdateAnimated(supabase, row_id, {
+          ...(providerStillActive ? {} : { queue_status: "error" }),
+          error: `stitch: ${msg}`,
+        });
       }
     };
 

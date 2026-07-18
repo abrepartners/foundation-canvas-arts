@@ -4,14 +4,14 @@
 // The final apply goes through guarded_update_animated so a stopped or
 // terminal run cannot be silently advanced by a straggling provider call.
 import { guardedUpdateAnimated } from "./guardedUpdate.ts";
-// deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any;
 
 export async function mergeCost(
   supabase: SB,
   rowId: string,
   stage: "stills" | "clips" | "stitch",
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   patch: Record<string, any>,
 ) {
   const { data: row, error } = await supabase

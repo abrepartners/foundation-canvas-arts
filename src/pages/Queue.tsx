@@ -20,7 +20,7 @@ interface QueueItem {
   plant_name: string | null;
   verified_fact: string | null;
   caption: string | null;
-  script: any;
+  script: unknown;
   virality_score: number | null;
   score_reasoning: string | null;
   hook_variants: string[] | null;
@@ -28,12 +28,14 @@ interface QueueItem {
   created_at: string;
 }
 
-function parseHook(script: any): string {
+function parseHook(script: unknown): string {
   let s = script;
   if (typeof s === "string") {
     try { s = JSON.parse(s); } catch { return ""; }
   }
-  return s?.hook ?? "";
+  if (!s || typeof s !== "object" || !("hook" in s)) return "";
+  const hook = (s as { hook?: unknown }).hook;
+  return typeof hook === "string" ? hook : "";
 }
 
 function captionTitle(caption: string | null): string {
@@ -101,8 +103,11 @@ export default function Queue() {
     if (typeof script === "string") {
       try { script = JSON.parse(script); } catch { script = {}; }
     }
-    const oldHook = script?.hook ?? "";
-    const newScript = { ...script, hook: newHook };
+    const scriptObject = script && typeof script === "object"
+      ? script as Record<string, unknown>
+      : {};
+    const oldHook = typeof scriptObject.hook === "string" ? scriptObject.hook : "";
+    const newScript = { ...scriptObject, hook: newHook };
     const variants = (item.hook_variants ?? []).filter((v) => v !== newHook);
     if (oldHook) variants.push(oldHook);
 

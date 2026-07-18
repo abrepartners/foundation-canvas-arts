@@ -22,6 +22,7 @@ export type Database = {
           id: string
           job_key: string
           model: string | null
+          output_data: string | null
           output_url: string | null
           prediction_id: string | null
           provider: string
@@ -36,6 +37,7 @@ export type Database = {
           id?: string
           job_key: string
           model?: string | null
+          output_data?: string | null
           output_url?: string | null
           prediction_id?: string | null
           provider?: string
@@ -50,6 +52,7 @@ export type Database = {
           id?: string
           job_key?: string
           model?: string | null
+          output_data?: string | null
           output_url?: string | null
           prediction_id?: string | null
           provider?: string

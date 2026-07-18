@@ -67,11 +67,13 @@ serve(async (req) => {
       });
     }
 
-    let script: any = row.script;
+    let script: unknown = row.script;
     if (typeof script === "string") {
       try { script = JSON.parse(script); } catch { script = {}; }
     }
-    const hook = script?.hook ?? "";
+    const hook = script && typeof script === "object" && "hook" in script
+      ? String((script as { hook?: unknown }).hook ?? "")
+      : "";
     const captionFirstLine = (row.caption ?? "").split("\n").find((l: string) => l.trim().startsWith("**"))?.replace(/\*\*/g, "").trim() ?? "";
 
     const userPrompt = `Hook: ${hook}
@@ -115,9 +117,12 @@ Plant: ${row.plant_name ?? ""}`;
 
     const json = await aiRes.json();
     const raw = json?.choices?.[0]?.message?.content ?? "{}";
-    let parsed: any;
+    let parsed: Record<string, unknown>;
     try {
-      parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const value: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
+      parsed = value && typeof value === "object"
+        ? value as Record<string, unknown>
+        : {};
     } catch {
       parsed = {};
     }
@@ -125,7 +130,7 @@ Plant: ${row.plant_name ?? ""}`;
     const score = Math.max(0, Math.min(100, parseInt(parsed.score, 10) || 0));
     const reasoning = String(parsed.reasoning ?? "").slice(0, 280);
     const variants = Array.isArray(parsed.variants)
-      ? parsed.variants.slice(0, 2).map((v: any) => String(v).slice(0, 280))
+      ? parsed.variants.slice(0, 2).map((v: unknown) => String(v).slice(0, 280))
       : [];
 
     const { error: updateErr } = await supabase

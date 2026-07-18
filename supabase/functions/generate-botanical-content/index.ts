@@ -3,6 +3,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { isStopped, updateJob } from "../_shared/providerJobs.ts";
+import {
+  generateTrackedReplicateImage,
+  generateTrackedReplicateText,
+  type TrackedImageResult,
+} from "../_shared/trackedReplicate.ts";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseClient = any;
 
 // Run a Replicate prediction for any official model, return output URL.
 async function runReplicatePrediction(
@@ -19,7 +28,7 @@ async function runReplicatePrediction(
   };
 
   let createRes: Response | null = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     createRes = await fetch(`${GW}/models/${model}/predictions`, {
       method: "POST",
       headers: authHeaders,
@@ -35,7 +44,7 @@ async function runReplicatePrediction(
       /* ignore */
     }
     console.log(
-      `Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/4)`,
+      `Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/3)`,
     );
     await new Promise((r) => setTimeout(r, waitSec * 1000));
   }
@@ -73,9 +82,24 @@ async function runReplicateTextCompletion(
   input: Record<string, unknown>,
   lovableApiKey: string,
   replicateApiKey: string,
+  tracking?: {
+    supabase: SupabaseClient;
+    animationRowId: string;
+  },
 ): Promise<string> {
   const GW = "https://connector-gateway.lovable.dev/replicate/v1";
   const model = "google/gemini-2.5-flash";
+  if (tracking) {
+    return generateTrackedReplicateText({
+      supabase: tracking.supabase,
+      rowId: tracking.animationRowId,
+      jobKey: "content:text",
+      model,
+      input,
+      lovableApiKey,
+      replicateApiKey,
+    });
+  }
   const createRes = await fetch(`${GW}/models/${model}/predictions`, {
     method: "POST",
     headers: {
@@ -123,7 +147,12 @@ async function generateImageBytes(
   prompt: string,
   lovableApiKey: string,
   replicateApiKey: string | undefined,
-): Promise<Uint8Array> {
+  tracking?: {
+    supabase: SupabaseClient;
+    animationRowId: string;
+    jobKey: string;
+  },
+): Promise<{ bytes: Uint8Array; jobId?: string }> {
   if (provider === "openai" || provider === "replicate") {
     if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
     const model =
@@ -145,16 +174,24 @@ async function generateImageBytes(
             safety_tolerance: 2,
             prompt_upsampling: false,
           };
-    const url = await runReplicatePrediction(
-      model,
-      input,
-      lovableApiKey,
-      replicateApiKey,
-    );
+    if (tracking) {
+      const result: TrackedImageResult = await generateTrackedReplicateImage({
+        supabase: tracking.supabase,
+        rowId: tracking.animationRowId,
+        jobKey: tracking.jobKey,
+        model,
+        input,
+        lovableApiKey,
+        replicateApiKey,
+      });
+      return result;
+    }
+
+    const url = await runReplicatePrediction(model, input, lovableApiKey, replicateApiKey);
     const imgRes = await fetch(url);
     if (!imgRes.ok)
       throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
-    return new Uint8Array(await imgRes.arrayBuffer());
+    return { bytes: new Uint8Array(await imgRes.arrayBuffer()) };
   }
 
   // Default: Lovable AI (Nano Banana)
@@ -183,7 +220,7 @@ async function generateImageBytes(
     throw new Error("No image data from Lovable AI");
   }
   const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
-  return Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+  return { bytes: Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0)) };
 }
 
 const EXCLUDE_COUNT = 50;
@@ -407,14 +444,13 @@ serve(async (req) => {
 
     // Default to Replicate Flux 1.1 Pro for photoreal output.
     // Accept "lovable" (Gemini) or "openai" (gpt-image-2) overrides.
+    const requestBody = await req.json().catch(() => ({}));
     let imageProvider: "lovable" | "replicate" | "openai" = "replicate";
-    try {
-      const body = await req.json();
-      if (body?.image_provider === "lovable") imageProvider = "lovable";
-      else if (body?.image_provider === "openai") imageProvider = "openai";
-    } catch {
-      // no body — default to replicate
-    }
+    if (requestBody?.image_provider === "lovable") imageProvider = "lovable";
+    else if (requestBody?.image_provider === "openai") imageProvider = "openai";
+    const animationRowId = typeof requestBody?.animation_row_id === "string"
+      ? requestBody.animation_row_id
+      : null;
     if (!REPLICATE_API_KEY) {
       throw new Error(
         "REPLICATE_API_KEY not configured — required for Replicate-hosted generation",
@@ -424,6 +460,10 @@ serve(async (req) => {
 
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    if (animationRowId && await isStopped(supabase, animationRowId)) {
+      throw new Error("Animation run was stopped before content generation");
+    }
 
     // Fetch recent plants for novelty constraint
     const { data: recentPlants, error: fetchError } = await supabase
@@ -480,10 +520,14 @@ Repetition is NOT allowed.
       },
       LOVABLE_API_KEY,
       REPLICATE_API_KEY,
+      animationRowId ? { supabase, animationRowId } : undefined,
     );
 
     if (!rawContent) {
       throw new Error("No content received from AI");
+    }
+    if (animationRowId && await isStopped(supabase, animationRowId)) {
+      throw new Error("Animation run was stopped after content generation");
     }
 
     console.log("Raw AI response length:", rawContent.length);
@@ -661,18 +705,28 @@ Repetition is NOT allowed.
       visual: (typeof visualsInitial)[number],
     ): Promise<{ ok: true } | { ok: false; msg: string }> => {
       try {
-        const imageBuffer = await generateImageBytes(
+        if (animationRowId && await isStopped(supabase, animationRowId)) {
+          return { ok: false, msg: "stopped" };
+        }
+        const imageResult = await generateImageBytes(
           imageProvider,
           visual.prompt,
           LOVABLE_API_KEY,
           REPLICATE_API_KEY,
+          animationRowId
+            ? {
+                supabase,
+                animationRowId,
+                jobKey: `still:${visual.moment}`,
+              }
+            : undefined,
         );
         const ext = imageProvider === "lovable" ? "png" : "jpg";
         const filePath = `${contentId}/${visual.moment}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
           .from("botanical-faceless-visuals")
-          .upload(filePath, imageBuffer, {
+          .upload(filePath, imageResult.bytes, {
             contentType: ext === "jpg" ? "image/jpeg" : "image/png",
             upsert: true,
           });
@@ -681,6 +735,14 @@ Repetition is NOT allowed.
         const { data: urlData } = supabase.storage
           .from("botanical-faceless-visuals")
           .getPublicUrl(filePath);
+
+        if (imageResult.jobId) {
+          await updateJob(supabase, imageResult.jobId, {
+            status: "succeeded",
+            output_url: urlData.publicUrl,
+            error: null,
+          });
+        }
 
         console.log(`Image complete for ${visual.moment}`);
         await mergeVisual(visual.moment, {
@@ -698,6 +760,7 @@ Repetition is NOT allowed.
       await mergeVisual(visual.moment, { status: "generating", error: null });
       const first = await generateOneAttempt(visual);
       if (first.ok) return;
+      if (first.msg === "stopped") return;
       console.warn(`Retrying ${visual.moment} after error:`, first.msg);
       await new Promise((r) => setTimeout(r, 4000));
       const second = await generateOneAttempt(visual);
@@ -752,9 +815,9 @@ Repetition is NOT allowed.
     };
 
     // Fire and forget via EdgeRuntime.waitUntil (keeps function alive)
-    // @ts-ignore - EdgeRuntime is available in Supabase edge runtime
+    // @ts-expect-error EdgeRuntime is available in Supabase edge runtime
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
-      // @ts-ignore
+      // @ts-expect-error EdgeRuntime is available in Supabase edge runtime
       EdgeRuntime.waitUntil(generateAllImages());
     } else {
       // Fallback: run without waiting

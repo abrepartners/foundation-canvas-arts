@@ -28,6 +28,8 @@ serve(async (req) => {
     clips: paid.clips,
     stitch: paid.stitch,
     paid_total_usd: paid.total_usd,
+    max_attempts: paid.max_attempts,
+    retry_ceiling_usd: paid.retry_ceiling_usd,
   };
   return new Response(JSON.stringify(body), {
     status: 200,
