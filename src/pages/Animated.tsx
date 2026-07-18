@@ -166,6 +166,21 @@ export default function Animated() {
   const [sources, setSources] = useState<SourceOption[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pricing, setPricing] = useState<Pricing | null>(null);
+
+  // Fetch canonical pricing from the server on mount. The confirm dialog
+  // stays disabled until this resolves so the client never guesses.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await invokeFn<Pricing>("animated-pricing", { body: {} });
+        if (error) throw new Error(error.message);
+        if (data) setPricing(data);
+      } catch (err) {
+        console.warn("pricing fetch failed:", err);
+      }
+    })();
+  }, []);
 
   // Load most recent row (any status) so the UI can show its state.
   useEffect(() => {
