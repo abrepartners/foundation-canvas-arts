@@ -33,19 +33,17 @@ const TERMINAL_STATUSES = new Set([
   "FAILED",
 ]);
 
-function json(payload: unknown, status = 200): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeadersFor(req) });
 
-    const corsHeaders = corsHeadersFor(req);
-    const __auth = await requireAuthorized(req);
-    if (!__auth.ok) return __auth.response;
+  const corsHeaders = corsHeadersFor(req);
+  const json = (payload: unknown, status = 200): Response =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  const __auth = await requireAuthorized(req);
+  if (!__auth.ok) return __auth.response;
 
   try {
     const CLIENT_KEY = Deno.env.get("TIKTOK_CLIENT_KEY");

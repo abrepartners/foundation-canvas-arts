@@ -53,7 +53,7 @@ function SendProgress({
             : isFailed
             ? "TikTok rejected the carousel."
             : isTimeout
-            ? "Still processing on TikTok's side — check the app in a minute."
+            ? "Delivery status is unavailable. Check TikTok drafts before retrying."
             : "Sending to TikTok…"}
         </p>
         {(isDone || isFailed || isTimeout) && (
@@ -696,13 +696,15 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
       } catch (e) {
         consecutiveErrors++;
         if (consecutiveErrors >= 3) {
-          const msg = e instanceof Error ? e.message : "Status check failed";
-          setSendPhase("failed");
-          setSendDetail(msg);
+          const technicalMessage =
+            e instanceof Error ? e.message : "Status check failed";
+          const msg =
+            "The send started, but its delivery status could not be checked. Check TikTok drafts before sending again.";
+          setSendPhase("timeout");
+          setSendDetail(`${msg} (${technicalMessage})`);
           toast({
-            title: "Status check failed",
+            title: "TikTok status unavailable",
             description: msg,
-            variant: "destructive",
           });
           return;
         }
@@ -710,7 +712,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
     }
     setSendPhase("timeout");
     setSendDetail(
-      "TikTok is still processing — check the app shortly, or the Approval Queue for the job record.",
+      "TikTok has not returned a final status yet. Check drafts before sending again, or review the Approval Queue for the job record.",
     );
   };
 
