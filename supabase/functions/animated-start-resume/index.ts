@@ -175,7 +175,7 @@ serve(async (req) => {
         }
 
         // Do NOT self-chain. Client decides whether to invoke again (manual).
-        console.log(`animated-start-resume: window closed for ${rowId} (${bucket}=${nextCounts[bucket]})`);
+        console.log(`animated-start-resume: window closed for ${rowId} (${bucket}=${rpcRow.used})`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("animated-start-resume bg error:", msg);
@@ -192,7 +192,7 @@ serve(async (req) => {
       EdgeRuntime.waitUntil(bg());
     } else { bg(); }
 
-    return json({ success: true, retry_counts: nextCounts }, 202);
+    return json({ success: true, bucket, used: rpcRow.used, limit: rpcRow.limit_value }, 202);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return json({ success: false, error: msg }, 500);
