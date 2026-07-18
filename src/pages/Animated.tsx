@@ -477,7 +477,7 @@ export default function Animated() {
               <div>
                 <p className="text-sm font-body text-foreground">Stills ready for review.</p>
                 <p className="text-xs text-muted-foreground font-body">
-                  Next step starts <span className="font-medium">paid provider jobs</span> (~${PAID_TOTAL.toFixed(2)}).
+                  Next step starts <span className="font-medium">paid provider jobs</span>{pricing ? ` (~$${pricing.paid_total_usd.toFixed(2)})` : ""}.
                 </p>
               </div>
               <Button onClick={() => setConfirmOpen(true)} size="sm">
