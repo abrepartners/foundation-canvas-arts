@@ -1,4 +1,4 @@
-import { invokeFn } from "@/lib/invokeFn";
+import { invokeFn, readFnError } from "@/lib/invokeFn";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,17 +16,19 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw, StopCircle } from "lucide-react";
 
-// Client mirror of supabase/functions/_shared/pricing.ts. Any change here must
-// match the server; the server rejects mismatched pricing_version.
-const PRICING_VERSION = "2026-07-17-a";
+// Fallback shown until the pricing endpoint responds. The server is the
+// source of truth; the confirm dialog is disabled until pricing is fetched.
 const CLIP_COUNT = 6;
-const CLIP_SECONDS = 10;
-const KLING_PRO_USD_PER_SEC = 0.28;
-const STITCH_USD = 0.02;
-const STILLS_UNIT_USD = 0.19;
-const CLIPS_TOTAL = +(CLIP_COUNT * CLIP_SECONDS * KLING_PRO_USD_PER_SEC).toFixed(2); // 16.80
-const PAID_TOTAL = +(CLIPS_TOTAL + STITCH_USD).toFixed(2); // 16.82
-const STILLS_TOTAL = +(CLIP_COUNT * STILLS_UNIT_USD).toFixed(2); // 1.14
+interface Pricing {
+  pricing_version: string;
+  clip_count: number;
+  clip_seconds: number;
+  mode: string;
+  stills: { total_usd: number; count?: number };
+  clips: { total_usd: number; total_seconds?: number; mode?: string };
+  stitch: { total_usd: number };
+  paid_total_usd: number;
+}
 
 interface Step {
   key: string;
