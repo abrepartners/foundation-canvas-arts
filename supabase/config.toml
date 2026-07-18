@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.tiktok-oauth]
 verify_jwt = false
+
+[functions.animated-stop]
+verify_jwt = false
