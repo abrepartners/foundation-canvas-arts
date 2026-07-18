@@ -5,7 +5,14 @@ import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
 import { mergeCost } from "../_shared/cost.ts";
 import { stitchCost } from "../_shared/pricing.ts";
-import { claimJob, isStopped, updateJob } from "../_shared/providerJobs.ts";
+import { guardedUpdateAnimated } from "../_shared/guardedUpdate.ts";
+import {
+  claimJob,
+  DEFAULT_MAX_ATTEMPTS,
+  isStopped,
+  updateJob,
+  waitForActiveJob,
+} from "../_shared/providerJobs.ts";
 
 interface Step {
   key: string;
@@ -42,7 +49,7 @@ serve(async (req) => {
 
     const { data: row, error: fetchErr } = await supabase
       .from("botanical_animated")
-      .select("id, clip_urls, progress, stop_requested_at, queue_status")
+      .select("id, clip_urls, progress, stop_requested_at, queue_status, final_video_url")
       .eq("id", row_id)
       .single();
     if (fetchErr || !row) return json({ error: "Row not found" }, 404);
@@ -58,29 +65,41 @@ serve(async (req) => {
       s.key === "stitch" ? { ...s, status: "running" as const } : s,
     );
 
-    await supabase
-      .from("botanical_animated")
-      .update({
-        queue_status: "stitching",
-        progress: { stage: "stitch", steps: markStitchRunning },
-      })
-      .eq("id", row_id);
+    await guardedUpdateAnimated(supabase, row_id, {
+      queue_status: "stitching",
+      progress: { stage: "stitch", steps: markStitchRunning },
+    });
 
     const bg = async () => {
       try {
         if (await isStopped(supabase, row_id)) return;
         const GW = "https://connector-gateway.lovable.dev/replicate/v1";
-        const claim = await claimJob(supabase, row_id, "stitch", "replicate", CONCAT_MODEL);
+        const claim = await claimJob(supabase, row_id, "stitch", "replicate", CONCAT_MODEL, DEFAULT_MAX_ATTEMPTS);
         const job = claim.job;
-        let predId = job.prediction_id ?? null;
 
-        if (job.status === "succeeded" && job.output_url) {
-          // Nothing to do; existing output_url will be re-uploaded below via the
-          // usual path. To keep it simple, force a fresh submit only if no id.
-          predId = job.prediction_id;
+        // Full succeeded reuse: if the parent row already has a final URL
+        // matching the succeeded stitch output_url, mark done without any
+        // new provider work or download.
+        if (job.status === "succeeded" && job.output_url && row.final_video_url === job.output_url) {
+          await guardedUpdateAnimated(supabase, row_id, {
+            queue_status: "done",
+            progress: {
+              stage: "done",
+              steps: baseSteps.map((s) =>
+                s.key === "stitch" || s.key === "save" ? { ...s, status: "done" as const } : s,
+              ),
+            },
+          });
+          return;
+        }
+        if (claim.exhausted) {
+          await guardedUpdateAnimated(supabase, row_id, { queue_status: "error", error: "stitch attempt cap reached" });
+          return;
         }
 
-        if (claim.claimed || !predId) {
+        let predId: string | null = job.prediction_id;
+
+        if (claim.claimed) {
           if (await isStopped(supabase, row_id)) return;
           await updateJob(supabase, job.id, { status: "submitting" });
           const createRes = await fetch(`${GW}/models/${CONCAT_MODEL}/predictions`, {
@@ -101,52 +120,66 @@ serve(async (req) => {
           predId = pred.id;
           await updateJob(supabase, job.id, { status: "running", prediction_id: predId });
         } else {
-          await updateJob(supabase, job.id, { status: "running" });
+          // Loser: wait for winner. Never POST.
+          const w = await waitForActiveJob(supabase, job.id, 60_000);
+          if (w.status === "succeeded" && w.output_url) {
+            // Fall through — treat like reuse below.
+            job.status = "succeeded";
+            job.output_url = w.output_url;
+          } else if (["failed", "canceled", "expired"].includes(w.status)) {
+            await guardedUpdateAnimated(supabase, row_id, { queue_status: "error", error: `stitch winner terminal (${w.status})` });
+            return;
+          } else {
+            predId = w.prediction_id;
+            if (!predId) {
+              await guardedUpdateAnimated(supabase, row_id, { queue_status: "error", error: "stitch winner never produced prediction_id" });
+              return;
+            }
+          }
         }
 
-        let outputUrl: string | null = null;
-        for (let i = 0; i < 100; i++) {
-          await new Promise((r) => setTimeout(r, 3000));
-          if (await isStopped(supabase, row_id)) {
-            await updateJob(supabase, job.id, { status: "canceled", error: "stopped mid-poll" });
-            return;
-          }
-          const pollRes = await fetch(`${GW}/predictions/${predId}`, {
-            headers: {
-              Authorization: `Bearer ${LOVABLE_API_KEY}`,
-              "X-Connection-Api-Key": REPLICATE_API_KEY,
-            },
-          });
-          if (!pollRes.ok) continue;
-          const p = await pollRes.json();
-          if (p.status === "succeeded") {
-            outputUrl = Array.isArray(p.output) ? p.output[0] : p.output;
-            break;
-          }
-          if (p.status === "failed" || p.status === "canceled") {
-            await updateJob(supabase, job.id, { status: p.status, error: p.error ?? null });
-            throw new Error(`Concat ${p.status}: ${p.error ?? ""}`);
-          }
-        }
+        let outputUrl: string | null = job.status === "succeeded" ? job.output_url : null;
         if (!outputUrl) {
-          await updateJob(supabase, job.id, { status: "expired", error: "poll timeout" });
-          throw new Error("Concat timed out");
+          for (let i = 0; i < 100; i++) {
+            await new Promise((r) => setTimeout(r, 3000));
+            if (await isStopped(supabase, row_id)) {
+              if (claim.claimed) await updateJob(supabase, job.id, { status: "canceled", error: "stopped mid-poll" });
+              return;
+            }
+            const pollRes = await fetch(`${GW}/predictions/${predId}`, {
+              headers: {
+                Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                "X-Connection-Api-Key": REPLICATE_API_KEY,
+              },
+            });
+            if (!pollRes.ok) continue;
+            const p = await pollRes.json();
+            if (p.status === "succeeded") {
+              outputUrl = Array.isArray(p.output) ? p.output[0] : p.output;
+              break;
+            }
+            if (p.status === "failed" || p.status === "canceled") {
+              if (claim.claimed) await updateJob(supabase, job.id, { status: p.status, error: p.error ?? null });
+              throw new Error(`Concat ${p.status}: ${p.error ?? ""}`);
+            }
+          }
+          if (!outputUrl) {
+            if (claim.claimed) await updateJob(supabase, job.id, { status: "expired", error: "poll timeout" });
+            throw new Error("Concat timed out");
+          }
         }
 
         if (await isStopped(supabase, row_id)) return;
-        await supabase
-          .from("botanical_animated")
-          .update({
-            progress: {
-              stage: "save",
-              steps: baseSteps.map((s) => {
-                if (s.key === "stitch") return { ...s, status: "done" as const };
-                if (s.key === "save") return { ...s, status: "running" as const };
-                return s;
-              }),
-            },
-          })
-          .eq("id", row_id);
+        await guardedUpdateAnimated(supabase, row_id, {
+          progress: {
+            stage: "save",
+            steps: baseSteps.map((s) => {
+              if (s.key === "stitch") return { ...s, status: "done" as const };
+              if (s.key === "save") return { ...s, status: "running" as const };
+              return s;
+            }),
+          },
+        });
 
         const mp4Res = await fetch(outputUrl);
         if (!mp4Res.ok) throw new Error(`Download failed: ${mp4Res.status}`);
@@ -164,29 +197,21 @@ serve(async (req) => {
         await mergeCost(supabase, row_id, "stitch", stitchCost());
 
         if (await isStopped(supabase, row_id)) return;
-        await supabase
-          .from("botanical_animated")
-          .update({
-            queue_status: "done",
-            final_video_url: pub.publicUrl,
-            progress: {
-              stage: "done",
-              steps: baseSteps.map((s) => {
-                if (s.key === "stitch" || s.key === "save") return { ...s, status: "done" as const };
-                return s;
-              }),
-            },
-          })
-          .eq("id", row_id);
+        await guardedUpdateAnimated(supabase, row_id, {
+          queue_status: "done",
+          final_video_url: pub.publicUrl,
+          progress: {
+            stage: "done",
+            steps: baseSteps.map((s) => {
+              if (s.key === "stitch" || s.key === "save") return { ...s, status: "done" as const };
+              return s;
+            }),
+          },
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("animated-stitch bg error:", msg);
-        if (!(await isStopped(supabase, row_id))) {
-          await supabase
-            .from("botanical_animated")
-            .update({ queue_status: "error", error: `stitch: ${msg}` })
-            .eq("id", row_id);
-        }
+        await guardedUpdateAnimated(supabase, row_id, { queue_status: "error", error: `stitch: ${msg}` });
       }
     };
 

@@ -49,6 +49,10 @@ serve(async (req) => {
       }
     } catch { /* no body */ }
 
+    // Sweep stale active rows (idle > 30 min with no in-flight provider job)
+    // so a crashed run cannot permanently block new runs.
+    await supabase.rpc("expire_stale_active_animated", { _threshold_seconds: 1800 });
+
     // Reject if an active run already exists — surface it for the UI to focus.
     const { data: active } = await supabase
       .from("botanical_animated")

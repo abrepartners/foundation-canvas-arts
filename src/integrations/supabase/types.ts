@@ -314,7 +314,40 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      claim_provider_job: {
+        Args: {
+          _job_key: string
+          _max_attempts: number
+          _model: string
+          _provider: string
+          _row_id: string
+        }
+        Returns: {
+          attempt: number
+          claimed: boolean
+          exhausted: boolean
+          job_id: string
+          job_status: string
+          output_url: string
+          prediction_id: string
+        }[]
+      }
+      consume_animation_retry: {
+        Args: { _bucket: string; _limit_value: number; _row_id: string }
+        Returns: {
+          allowed: boolean
+          limit_value: number
+          used: number
+        }[]
+      }
+      expire_stale_active_animated: {
+        Args: { _threshold_seconds?: number }
+        Returns: number
+      }
+      guarded_update_animated: {
+        Args: { _patch: Json; _row_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

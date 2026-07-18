@@ -115,11 +115,17 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const contentId: string | undefined = body?.content_id;
     const provider: "openai" | "lovable" | "replicate" = body?.image_provider ?? "openai";
+    // Optional: parent animation row id so future provider-job tracking for
+    // stills can attribute retries/costs to the correct animation run.
+    const animationRowId: string | null = typeof body?.animation_row_id === "string"
+      ? body.animation_row_id
+      : null;
     if (!contentId) {
       return new Response(JSON.stringify({ success: false, error: "content_id required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (animationRowId) console.log(`generate-botanical-resume: animation_row_id=${animationRowId}`);
 
     const { data: row, error: readErr } = await supabase
       .from("botanical_content")

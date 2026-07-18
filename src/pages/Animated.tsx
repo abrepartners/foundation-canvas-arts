@@ -1,4 +1,4 @@
-import { invokeFn } from "@/lib/invokeFn";
+import { invokeFn, readFnError } from "@/lib/invokeFn";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,17 +16,19 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw, StopCircle } from "lucide-react";
 
-// Client mirror of supabase/functions/_shared/pricing.ts. Any change here must
-// match the server; the server rejects mismatched pricing_version.
-const PRICING_VERSION = "2026-07-17-a";
+// Fallback shown until the pricing endpoint responds. The server is the
+// source of truth; the confirm dialog is disabled until pricing is fetched.
 const CLIP_COUNT = 6;
-const CLIP_SECONDS = 10;
-const KLING_PRO_USD_PER_SEC = 0.28;
-const STITCH_USD = 0.02;
-const STILLS_UNIT_USD = 0.19;
-const CLIPS_TOTAL = +(CLIP_COUNT * CLIP_SECONDS * KLING_PRO_USD_PER_SEC).toFixed(2); // 16.80
-const PAID_TOTAL = +(CLIPS_TOTAL + STITCH_USD).toFixed(2); // 16.82
-const STILLS_TOTAL = +(CLIP_COUNT * STILLS_UNIT_USD).toFixed(2); // 1.14
+interface Pricing {
+  pricing_version: string;
+  clip_count: number;
+  clip_seconds: number;
+  mode: string;
+  stills: { total_usd: number; count?: number };
+  clips: { total_usd: number; total_seconds?: number; mode?: string };
+  stitch: { total_usd: number };
+  paid_total_usd: number;
+}
 
 interface Step {
   key: string;
@@ -164,6 +166,21 @@ export default function Animated() {
   const [sources, setSources] = useState<SourceOption[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pricing, setPricing] = useState<Pricing | null>(null);
+
+  // Fetch canonical pricing from the server on mount. The confirm dialog
+  // stays disabled until this resolves so the client never guesses.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await invokeFn<Pricing>("animated-pricing", { body: {} });
+        if (error) throw new Error(error.message);
+        if (data) setPricing(data);
+      } catch (err) {
+        console.warn("pricing fetch failed:", err);
+      }
+    })();
+  }, []);
 
   // Load most recent row (any status) so the UI can show its state.
   useEffect(() => {
@@ -241,23 +258,22 @@ export default function Animated() {
         body: sourceContentId ? { source_content_id: sourceContentId } : {},
       });
       if (error) {
-        // 409 conflict = active_run_exists. Focus that run.
-        // supabase functions.invoke bundles non-2xx into error.message.
-        throw new Error(error.message);
-      }
-      if (!data?.success) {
-        if (data?.error === "active_run_exists" && data?.active_run?.id) {
+        // Parse 409 conflict → focus the returned active run.
+        const parsed = await readFnError(error);
+        const body = parsed.body as { error?: string; active_run?: { id: string; plant_name?: string; queue_status?: string } } | null;
+        if (parsed.status === 409 && body?.error === "active_run_exists" && body?.active_run?.id) {
           const { data: full } = await supabase
-            .from("botanical_animated").select("*").eq("id", data.active_run.id).single();
+            .from("botanical_animated").select("*").eq("id", body.active_run.id).single();
           setRow(full as unknown as AnimatedRow);
           toast({
             title: "Another run is active",
-            description: `Focused the existing run (${data.active_run.plant_name ?? data.active_run.queue_status}). Stop it first to start a new one.`,
+            description: `Focused the existing run (${body.active_run.plant_name ?? body.active_run.queue_status}). Stop it first to start a new one.`,
           });
           return;
         }
-        throw new Error(data?.error || "Failed to start");
+        throw new Error(body?.error || error.message);
       }
+      if (!data?.success) throw new Error(data?.error || "Failed to start");
       const { data: full } = await supabase
         .from("botanical_animated")
         .select("*")
@@ -300,20 +316,32 @@ export default function Animated() {
   };
 
   const confirmAndAnimate = async () => {
-    if (!row?.id) return;
+    if (!row?.id || !pricing) return;
     setIsConfirming(true);
     try {
       const { data, error } = await invokeFn("animated-animate-all", {
         body: {
           row_id: row.id,
-          confirmed_estimate_usd: PAID_TOTAL,
-          pricing_version: PRICING_VERSION,
+          confirmed_estimate_usd: pricing.paid_total_usd,
+          pricing_version: pricing.pricing_version,
         },
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        const parsed = await readFnError(error);
+        const body = parsed.body as { error?: string; expected_total_usd?: number; pricing_version?: string } | null;
+        if (parsed.status === 402 && body?.error === "cost_confirmation_required") {
+          // Server pricing drifted — refresh and re-open dialog.
+          try {
+            const { data: fresh } = await invokeFn<Pricing>("animated-pricing", { body: {} });
+            if (fresh) setPricing(fresh);
+          } catch { /* ignore */ }
+          throw new Error(`Pricing changed — please review the updated total ($${(body?.expected_total_usd ?? 0).toFixed(2)}) and confirm again.`);
+        }
+        throw new Error(body?.error || error.message);
+      }
       if (!data?.success) throw new Error(data?.error || "Failed to start animation");
       setConfirmOpen(false);
-      toast({ title: "Animation started", description: `Paid provider jobs submitted (~$${PAID_TOTAL.toFixed(2)}).` });
+      toast({ title: "Animation started", description: `Paid provider jobs submitted (~$${pricing.paid_total_usd.toFixed(2)}).` });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast({ title: "Animation start failed", description: msg, variant: "destructive" });
@@ -449,7 +477,7 @@ export default function Animated() {
               <div>
                 <p className="text-sm font-body text-foreground">Stills ready for review.</p>
                 <p className="text-xs text-muted-foreground font-body">
-                  Next step starts <span className="font-medium">paid provider jobs</span> (~${PAID_TOTAL.toFixed(2)}).
+                  Next step starts <span className="font-medium">paid provider jobs</span>{pricing ? ` (~$${pricing.paid_total_usd.toFixed(2)})` : ""}.
                 </p>
               </div>
               <Button onClick={() => setConfirmOpen(true)} size="sm">
@@ -639,34 +667,46 @@ export default function Animated() {
                 <p>
                   Confirming will submit paid third-party provider jobs. Once submitted, canceled clips may still incur charges.
                 </p>
-                <div className="rounded-md border border-border p-3 bg-muted/30 font-body">
-                  <div className="flex justify-between">
-                    <span>6 × 10s Kling v2.1 Pro clips</span>
-                    <span className="tabular-nums">${CLIPS_TOTAL.toFixed(2)}</span>
+                {pricing ? (
+                  <>
+                    <div className="rounded-md border border-border p-3 bg-muted/30 font-body">
+                      <div className="flex justify-between">
+                        <span>{pricing.clip_count} × {pricing.clip_seconds}s Kling v2.1 {pricing.mode} clips</span>
+                        <span className="tabular-nums">${pricing.clips.total_usd.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Stitch estimate</span>
+                        <span className="tabular-nums">${pricing.stitch.total_usd.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-medium border-t border-border/60 mt-1 pt-1">
+                        <span>Paid animation total</span>
+                        <span className="tabular-nums">${pricing.paid_total_usd.toFixed(2)}</span>
+                      </div>
+                      {stillsFresh && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Fresh stills already incurred separately: ~${pricing.stills.total_usd.toFixed(2)} ({pricing.stills.count ?? pricing.clip_count} × OpenAI gpt-image-2). Not part of this confirmation.
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Pricing version: {pricing.pricing_version}</p>
+                  </>
+                ) : (
+                  <div className="rounded-md border border-border p-3 bg-muted/30 font-body flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading current pricing…
                   </div>
-                  <div className="flex justify-between">
-                    <span>Stitch estimate</span>
-                    <span className="tabular-nums">${STITCH_USD.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-medium border-t border-border/60 mt-1 pt-1">
-                    <span>Paid animation total</span>
-                    <span className="tabular-nums">${PAID_TOTAL.toFixed(2)}</span>
-                  </div>
-                  {stillsFresh && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Fresh stills already incurred separately: ~${STILLS_TOTAL.toFixed(2)} (6 × OpenAI gpt-image-2). Not part of this confirmation.
-                    </p>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">Pricing version: {PRICING_VERSION}</p>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isConfirming}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmAndAnimate} disabled={isConfirming}>
+            <AlertDialogAction onClick={confirmAndAnimate} disabled={isConfirming || !pricing}>
               {isConfirming ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {isConfirming ? "Starting…" : `Confirm & start paid jobs ($${PAID_TOTAL.toFixed(2)})`}
+              {isConfirming
+                ? "Starting…"
+                : pricing
+                  ? `Confirm & start paid jobs ($${pricing.paid_total_usd.toFixed(2)})`
+                  : "Loading pricing…"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
