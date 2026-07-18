@@ -667,34 +667,46 @@ export default function Animated() {
                 <p>
                   Confirming will submit paid third-party provider jobs. Once submitted, canceled clips may still incur charges.
                 </p>
-                <div className="rounded-md border border-border p-3 bg-muted/30 font-body">
-                  <div className="flex justify-between">
-                    <span>6 × 10s Kling v2.1 Pro clips</span>
-                    <span className="tabular-nums">${CLIPS_TOTAL.toFixed(2)}</span>
+                {pricing ? (
+                  <>
+                    <div className="rounded-md border border-border p-3 bg-muted/30 font-body">
+                      <div className="flex justify-between">
+                        <span>{pricing.clip_count} × {pricing.clip_seconds}s Kling v2.1 {pricing.mode} clips</span>
+                        <span className="tabular-nums">${pricing.clips.total_usd.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Stitch estimate</span>
+                        <span className="tabular-nums">${pricing.stitch.total_usd.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-medium border-t border-border/60 mt-1 pt-1">
+                        <span>Paid animation total</span>
+                        <span className="tabular-nums">${pricing.paid_total_usd.toFixed(2)}</span>
+                      </div>
+                      {stillsFresh && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Fresh stills already incurred separately: ~${pricing.stills.total_usd.toFixed(2)} ({pricing.stills.count ?? pricing.clip_count} × OpenAI gpt-image-2). Not part of this confirmation.
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Pricing version: {pricing.pricing_version}</p>
+                  </>
+                ) : (
+                  <div className="rounded-md border border-border p-3 bg-muted/30 font-body flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading current pricing…
                   </div>
-                  <div className="flex justify-between">
-                    <span>Stitch estimate</span>
-                    <span className="tabular-nums">${STITCH_USD.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-medium border-t border-border/60 mt-1 pt-1">
-                    <span>Paid animation total</span>
-                    <span className="tabular-nums">${PAID_TOTAL.toFixed(2)}</span>
-                  </div>
-                  {stillsFresh && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Fresh stills already incurred separately: ~${STILLS_TOTAL.toFixed(2)} (6 × OpenAI gpt-image-2). Not part of this confirmation.
-                    </p>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">Pricing version: {PRICING_VERSION}</p>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isConfirming}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmAndAnimate} disabled={isConfirming}>
+            <AlertDialogAction onClick={confirmAndAnimate} disabled={isConfirming || !pricing}>
               {isConfirming ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {isConfirming ? "Starting…" : `Confirm & start paid jobs ($${PAID_TOTAL.toFixed(2)})`}
+              {isConfirming
+                ? "Starting…"
+                : pricing
+                  ? `Confirm & start paid jobs ($${pricing.paid_total_usd.toFixed(2)})`
+                  : "Loading pricing…"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
