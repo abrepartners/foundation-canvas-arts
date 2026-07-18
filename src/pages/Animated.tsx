@@ -258,23 +258,22 @@ export default function Animated() {
         body: sourceContentId ? { source_content_id: sourceContentId } : {},
       });
       if (error) {
-        // 409 conflict = active_run_exists. Focus that run.
-        // supabase functions.invoke bundles non-2xx into error.message.
-        throw new Error(error.message);
-      }
-      if (!data?.success) {
-        if (data?.error === "active_run_exists" && data?.active_run?.id) {
+        // Parse 409 conflict → focus the returned active run.
+        const parsed = await readFnError(error);
+        const body = parsed.body as { error?: string; active_run?: { id: string; plant_name?: string; queue_status?: string } } | null;
+        if (parsed.status === 409 && body?.error === "active_run_exists" && body?.active_run?.id) {
           const { data: full } = await supabase
-            .from("botanical_animated").select("*").eq("id", data.active_run.id).single();
+            .from("botanical_animated").select("*").eq("id", body.active_run.id).single();
           setRow(full as unknown as AnimatedRow);
           toast({
             title: "Another run is active",
-            description: `Focused the existing run (${data.active_run.plant_name ?? data.active_run.queue_status}). Stop it first to start a new one.`,
+            description: `Focused the existing run (${body.active_run.plant_name ?? body.active_run.queue_status}). Stop it first to start a new one.`,
           });
           return;
         }
-        throw new Error(data?.error || "Failed to start");
+        throw new Error(body?.error || error.message);
       }
+      if (!data?.success) throw new Error(data?.error || "Failed to start");
       const { data: full } = await supabase
         .from("botanical_animated")
         .select("*")
@@ -317,20 +316,32 @@ export default function Animated() {
   };
 
   const confirmAndAnimate = async () => {
-    if (!row?.id) return;
+    if (!row?.id || !pricing) return;
     setIsConfirming(true);
     try {
       const { data, error } = await invokeFn("animated-animate-all", {
         body: {
           row_id: row.id,
-          confirmed_estimate_usd: PAID_TOTAL,
-          pricing_version: PRICING_VERSION,
+          confirmed_estimate_usd: pricing.paid_total_usd,
+          pricing_version: pricing.pricing_version,
         },
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        const parsed = await readFnError(error);
+        const body = parsed.body as { error?: string; expected_total_usd?: number; pricing_version?: string } | null;
+        if (parsed.status === 402 && body?.error === "cost_confirmation_required") {
+          // Server pricing drifted — refresh and re-open dialog.
+          try {
+            const { data: fresh } = await invokeFn<Pricing>("animated-pricing", { body: {} });
+            if (fresh) setPricing(fresh);
+          } catch { /* ignore */ }
+          throw new Error(`Pricing changed — please review the updated total ($${(body?.expected_total_usd ?? 0).toFixed(2)}) and confirm again.`);
+        }
+        throw new Error(body?.error || error.message);
+      }
       if (!data?.success) throw new Error(data?.error || "Failed to start animation");
       setConfirmOpen(false);
-      toast({ title: "Animation started", description: `Paid provider jobs submitted (~$${PAID_TOTAL.toFixed(2)}).` });
+      toast({ title: "Animation started", description: `Paid provider jobs submitted (~$${pricing.paid_total_usd.toFixed(2)}).` });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast({ title: "Animation start failed", description: msg, variant: "destructive" });
