@@ -54,7 +54,7 @@ serve(async (req) => {
 
     const { data: animatedRow, error: rErr } = await supabase
       .from("botanical_animated")
-      .select("source_content_id, plant_name, queue_status, stop_requested_at, retry_counts")
+      .select("source_content_id, plant_name, queue_status, stop_requested_at")
       .eq("id", rowId)
       .single();
     if (rErr || !animatedRow?.source_content_id) {
@@ -64,25 +64,25 @@ serve(async (req) => {
       return json({ success: false, error: `row is ${animatedRow.queue_status}` }, 409);
     }
 
-    const counts = (animatedRow.retry_counts ?? {}) as Record<string, number>;
+    // Atomic retry-budget consumption via SQL RPC — race-free across callers.
     const bucket = manual ? "stills_manual" : "stills_auto";
-    const capped = (counts[bucket] ?? 0) >= (manual ? MAX_MANUAL_RESUMES : MAX_AUTO_RESUMES);
-    if (capped) {
+    const limitValue = manual ? MAX_MANUAL_RESUMES : MAX_AUTO_RESUMES;
+    const { data: rpcRows, error: rpcErr } = await supabase.rpc("consume_animation_retry", {
+      _row_id: rowId,
+      _bucket: bucket,
+      _limit_value: limitValue,
+    });
+    if (rpcErr) return json({ success: false, error: rpcErr.message }, 500);
+    const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (!rpcRow?.allowed) {
       return json({
         success: false,
-        error: `retry_budget_exhausted`,
+        error: "retry_budget_exhausted",
         bucket,
-        used: counts[bucket] ?? 0,
-        limit: manual ? MAX_MANUAL_RESUMES : MAX_AUTO_RESUMES,
+        used: rpcRow?.used ?? 0,
+        limit: rpcRow?.limit_value ?? limitValue,
       }, 429);
     }
-
-    // Atomically bump the retry count for this bucket before doing work.
-    const nextCounts = { ...counts, [bucket]: (counts[bucket] ?? 0) + 1 };
-    await supabase
-      .from("botanical_animated")
-      .update({ retry_counts: nextCounts })
-      .eq("id", rowId);
 
     const sourceId = animatedRow.source_content_id as string;
     const plantName = animatedRow.plant_name as string | null;
