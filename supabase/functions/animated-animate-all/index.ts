@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
 import { mergeCost } from "../_shared/cost.ts";
+import { guardedUpdateAnimated } from "../_shared/guardedUpdate.ts";
 import {
   ANIMATION_CLIP_COUNT,
   ANIMATION_CLIP_SECONDS,
@@ -12,7 +13,13 @@ import {
   paidAnimationEstimate,
   PRICING_VERSION,
 } from "../_shared/pricing.ts";
-import { claimJob, isStopped, updateJob } from "../_shared/providerJobs.ts";
+import {
+  claimJob,
+  DEFAULT_MAX_ATTEMPTS,
+  isStopped,
+  updateJob,
+  waitForActiveJob,
+} from "../_shared/providerJobs.ts";
 
 const ORDER = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;
 type Moment = (typeof ORDER)[number];
@@ -70,7 +77,6 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SERVICE);
 
-    // ------- Validate row + cost confirmation handshake --------
     const { data: row, error: fetchError } = await supabase
       .from("botanical_animated")
       .select("id, still_urls, progress, queue_status, stop_requested_at, cost_confirmed_estimate_usd, cost_confirmed_at, pricing_version")
@@ -82,7 +88,6 @@ serve(async (req) => {
       return json({ error: `Row is ${row.queue_status}` }, 409);
     }
     if (row.queue_status === "animating" || row.queue_status === "stitching") {
-      // Already running — idempotent success.
       return json({ success: true, resumed: true }, 200);
     }
     if (row.queue_status !== "stills_ready") {
@@ -124,7 +129,6 @@ serve(async (req) => {
         .eq("id", row_id);
     }
 
-    // Mark clips stage running.
     const STEPS = [
       { key: "script", label: "Picking plant + writing script", status: "done" as const, detail: row.progress?.steps?.find((s: { key: string; detail?: string }) => s.key === "script")?.detail },
       { key: "stills", label: "Preparing 6 hero stills", status: "done" as const, detail: "6 / 6" },
@@ -132,12 +136,13 @@ serve(async (req) => {
       { key: "stitch", label: "Stitching final 60s video", status: "pending" as const },
       { key: "save", label: "Saving to library", status: "pending" as const },
     ];
-    await supabase
-      .from("botanical_animated")
-      .update({ queue_status: "animating", clip_urls: new Array(ANIMATION_CLIP_COUNT).fill(""), progress: { stage: "clips", steps: STEPS } })
-      .eq("id", row_id);
+    const started = await guardedUpdateAnimated(supabase, row_id, {
+      queue_status: "animating",
+      clip_urls: new Array(ANIMATION_CLIP_COUNT).fill(""),
+      progress: { stage: "clips", steps: STEPS },
+    });
+    if (!started) return json({ error: "Row is not startable (stopped or terminal)" }, 409);
 
-    // -------- Background: idempotent per-clip jobs --------
     const bg = async () => {
       const GW = "https://connector-gateway.lovable.dev/replicate/v1";
       const clipUrls: string[] = new Array(ANIMATION_CLIP_COUNT).fill("");
@@ -150,20 +155,23 @@ serve(async (req) => {
         const prompt = MOTION_BY_MOMENT[moment];
         const jobKey = `clip:${idx}`;
 
-        const claim = await claimJob(supabase, row_id, jobKey, "replicate", KLING_MODEL);
+        const claim = await claimJob(supabase, row_id, jobKey, "replicate", KLING_MODEL, DEFAULT_MAX_ATTEMPTS);
         const job = claim.job;
 
-        // If a prior succeeded attempt already produced output_url, reuse it.
+        // Reuse a prior succeeded attempt without any provider call.
         if (job.status === "succeeded" && job.output_url) {
           clipUrls[idx] = job.output_url;
           doneCount++;
           return;
         }
+        if (claim.exhausted) {
+          throw new Error(`clip:${idx} attempt cap reached (last status ${job.status})`);
+        }
 
-        let predId = job.prediction_id ?? null;
+        let predId: string | null = job.prediction_id;
 
-        // Submit only if we claimed (fresh) and don't already have a prediction id.
-        if (claim.claimed || !predId) {
+        if (claim.claimed) {
+          // Only the atomic winner may POST to the provider.
           if (await isStopped(supabase, row_id)) throw new Error("stopped");
           await updateJob(supabase, job.id, { status: "submitting" });
           const klingInput = {
@@ -193,15 +201,28 @@ serve(async (req) => {
           predId = pred.id;
           await updateJob(supabase, job.id, { status: "running", prediction_id: predId });
         } else {
-          await updateJob(supabase, job.id, { status: "running" });
+          // Loser path: winner already owns this attempt. Wait for them —
+          // never POST. If the winner produced a succeeded output while we
+          // waited, reuse it. Otherwise poll the winner's prediction id.
+          const w = await waitForActiveJob(supabase, job.id, 60_000);
+          if (w.status === "succeeded" && w.output_url) {
+            clipUrls[idx] = w.output_url;
+            doneCount++;
+            return;
+          }
+          if (["failed", "canceled", "expired"].includes(w.status)) {
+            throw new Error(`clip:${idx} winner terminal (${w.status}); attempt cap prevents resubmit here`);
+          }
+          predId = w.prediction_id;
+          if (!predId) throw new Error(`clip:${idx} winner never produced prediction_id`);
         }
 
-        // Poll up to 8 min, checking stop each iteration.
+        // Poll (up to 8 min), checking stop each iteration.
         let outputUrl: string | null = null;
         for (let i = 0; i < 160; i++) {
           await new Promise((r) => setTimeout(r, 3000));
           if (await isStopped(supabase, row_id)) {
-            await updateJob(supabase, job.id, { status: "canceled", error: "stopped mid-poll" });
+            if (claim.claimed) await updateJob(supabase, job.id, { status: "canceled", error: "stopped mid-poll" });
             throw new Error("stopped");
           }
           const pollRes = await fetch(`${GW}/predictions/${predId}`, {
@@ -217,12 +238,12 @@ serve(async (req) => {
             break;
           }
           if (p.status === "failed" || p.status === "canceled") {
-            await updateJob(supabase, job.id, { status: p.status, error: p.error ?? null });
+            if (claim.claimed) await updateJob(supabase, job.id, { status: p.status, error: p.error ?? null });
             throw new Error(`Kling ${p.status}: ${p.error ?? ""}`);
           }
         }
         if (!outputUrl) {
-          await updateJob(supabase, job.id, { status: "expired", error: "poll timeout" });
+          if (claim.claimed) await updateJob(supabase, job.id, { status: "expired", error: "poll timeout" });
           throw new Error("Kling timed out");
         }
 
@@ -237,23 +258,21 @@ serve(async (req) => {
         const { data: pub } = supabase.storage.from("botanical-faceless-visuals").getPublicUrl(path);
         clipUrls[idx] = pub.publicUrl;
         doneCount++;
+        // Record durable success on the job row regardless of stop; audit-friendly.
         await updateJob(supabase, job.id, { status: "succeeded", output_url: pub.publicUrl });
 
-        if (await isStopped(supabase, row_id)) return; // don't advance a canceled run
-        await supabase
-          .from("botanical_animated")
-          .update({
-            clip_urls: clipUrls,
-            progress: {
-              stage: "clips",
-              steps: STEPS.map((s) =>
-                s.key === "clips"
-                  ? { ...s, status: doneCount === ANIMATION_CLIP_COUNT ? "done" : "running", detail: `${doneCount} / ${ANIMATION_CLIP_COUNT}` }
-                  : s,
-              ),
-            },
-          })
-          .eq("id", row_id);
+        // Guarded progress update — a stopped run must not advance.
+        await guardedUpdateAnimated(supabase, row_id, {
+          clip_urls: clipUrls,
+          progress: {
+            stage: "clips",
+            steps: STEPS.map((s) =>
+              s.key === "clips"
+                ? { ...s, status: doneCount === ANIMATION_CLIP_COUNT ? "done" : "running", detail: `${doneCount} / ${ANIMATION_CLIP_COUNT}` }
+                : s,
+            ),
+          },
+        });
       };
 
       try {
@@ -269,31 +288,28 @@ serve(async (req) => {
         await Promise.all(runners);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (msg === "stopped") return; // stop path already recorded
+        if (msg === "stopped") return;
         console.error("animate bg error:", msg);
-        await supabase
-          .from("botanical_animated")
-          .update({ queue_status: "error", error: msg })
-          .eq("id", row_id);
+        await guardedUpdateAnimated(supabase, row_id, { queue_status: "error", error: msg });
         return;
       }
 
       if (await isStopped(supabase, row_id)) return;
       await mergeCost(supabase, row_id, "clips", clipsCost(ANIMATION_CLIP_COUNT, ANIMATION_CLIP_SECONDS, ANIMATION_MODE));
-      await supabase
-        .from("botanical_animated")
-        .update({
-          queue_status: "stitching",
-          progress: {
-            stage: "stitch",
-            steps: STEPS.map((s) => {
-              if (s.key === "clips") return { ...s, status: "done" as const, detail: `${ANIMATION_CLIP_COUNT} / ${ANIMATION_CLIP_COUNT}` };
-              if (s.key === "stitch") return { ...s, status: "running" as const };
-              return s;
-            }),
-          },
-        })
-        .eq("id", row_id);
+
+      // Guarded stage handoff to stitch.
+      const advanced = await guardedUpdateAnimated(supabase, row_id, {
+        queue_status: "stitching",
+        progress: {
+          stage: "stitch",
+          steps: STEPS.map((s) => {
+            if (s.key === "clips") return { ...s, status: "done" as const, detail: `${ANIMATION_CLIP_COUNT} / ${ANIMATION_CLIP_COUNT}` };
+            if (s.key === "stitch") return { ...s, status: "running" as const };
+            return s;
+          }),
+        },
+      });
+      if (!advanced) return;
 
       supabase.functions
         .invoke("animated-stitch", { body: { row_id } })
