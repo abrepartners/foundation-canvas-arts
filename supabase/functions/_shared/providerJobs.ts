@@ -2,7 +2,6 @@
 // stitch). One active row per (row_id, job_key) is enforced by a partial
 // unique index in the database, so concurrent invocations cannot both POST.
 // deno-lint-ignore no-explicit-any
-// deno-lint-ignore no-explicit-any
 type SB = any;
 
 export type JobStatus =
