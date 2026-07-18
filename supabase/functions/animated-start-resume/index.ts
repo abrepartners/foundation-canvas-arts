@@ -169,7 +169,7 @@ serve(async (req) => {
           if (hasStuck && !resumeFired) {
             resumeFired = true;
             supabase.functions.invoke("generate-botanical-resume", {
-              body: { content_id: sourceId, image_provider: "openai" },
+              body: { content_id: sourceId, image_provider: "openai", animation_row_id: rowId },
             }).catch((e) => console.warn("resume invoke failed:", e));
           }
         }
