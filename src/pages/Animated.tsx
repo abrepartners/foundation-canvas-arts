@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw, StopCircle } from "lucide-react";
+import { AnimationPromptLab } from "@/components/AnimationPromptLab";
 
 // Fallback shown until the pricing endpoint responds. The server is the
 // source of truth; the confirm dialog is disabled until pricing is fetched.
@@ -616,6 +617,14 @@ export default function Animated() {
                 )}
               </div>
             </div>
+          )}
+
+          {row?.still_urls && row.still_urls.filter(Boolean).length === 6 && (
+            <AnimationPromptLab
+              animationRowId={row.id}
+              plantName={row.plant_name}
+              stillUrls={row.still_urls}
+            />
           )}
 
           {row?.clip_urls && row.clip_urls.some(Boolean) && (
