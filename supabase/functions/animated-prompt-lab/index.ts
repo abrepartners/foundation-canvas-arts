@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { requireAuthorized } from "../_shared/auth.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
 
-const GATEWAY = "https://connector-gateway.lovable.dev/replicate/v1";
+const GATEWAY = "https://api.replicate.com/v1";
 const PRICING_VERSION = "2026-07-19-a";
 const PROMPT_VERSION = "botanical-motion-v1";
 const DURATION_SECONDS = 5;
@@ -119,12 +119,11 @@ function publicJob(job: Record<string, unknown> | null) {
   };
 }
 
-async function cancelPrediction(predictionId: string, lovableKey: string, replicateKey: string) {
+async function cancelPrediction(predictionId: string, replicateKey: string) {
   const response = await fetch(`${GATEWAY}/predictions/${predictionId}/cancel`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": replicateKey,
+      Authorization: `Bearer ${replicateKey}`,
     },
   });
   return { ok: response.ok, status: response.status, body: await response.text().catch(() => "") };
@@ -145,7 +144,6 @@ serve(async (req) => {
   const action = typeof body?.action === "string" ? body.action : "options";
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
   const REPLICATE_KEY = Deno.env.get("REPLICATE_API_KEY") ?? "";
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
@@ -191,16 +189,17 @@ serve(async (req) => {
       updated_at: now,
       completed_at: now,
     }).eq("id", jobId);
+    await supabase.from("cost_events").update({ status: "canceled" }).eq("provider_job_id", jobId);
 
     const ids = [job.start_frame_prediction_id, job.video_prediction_id].filter(Boolean) as string[];
     const canceled: string[] = [];
     const failed: Array<{ prediction_id: string; reason: string }> = [];
     for (const predictionId of ids) {
-      if (!LOVABLE_KEY || !REPLICATE_KEY) {
+      if (!REPLICATE_KEY) {
         failed.push({ prediction_id: predictionId, reason: "provider credentials unavailable" });
         continue;
       }
-      const result = await cancelPrediction(predictionId, LOVABLE_KEY, REPLICATE_KEY).catch((error) => ({
+      const result = await cancelPrediction(predictionId, REPLICATE_KEY).catch((error) => ({
         ok: false,
         status: 0,
         body: error instanceof Error ? error.message : String(error),
@@ -213,7 +212,7 @@ serve(async (req) => {
   }
 
   if (action !== "start") return json({ error: "Unknown action" }, 400);
-  if (!LOVABLE_KEY || !REPLICATE_KEY) return json({ error: "Replicate connector credentials are not configured" }, 503);
+  if (!REPLICATE_KEY) return json({ error: "REPLICATE_API_KEY is not configured" }, 503);
 
   const animationRowId = typeof body?.animation_row_id === "string" ? body.animation_row_id : "";
   const stillIndex = Number(body?.still_index);
@@ -298,6 +297,15 @@ serve(async (req) => {
   }
 
   const jobId = inserted.id as string;
+  await supabase.from("cost_events").insert({
+    animated_id: animationRowId,
+    provider: "replicate",
+    model: model.model,
+    operation: `prompt_lab:${archetype}`,
+    estimated_cost_usd: expected.total_usd,
+    status: "confirmed",
+    provider_job_id: jobId,
+  });
   const update = async (patch: Record<string, unknown>) => {
     const { error } = await supabase
       .from("animation_prompt_lab_jobs")
@@ -313,8 +321,7 @@ serve(async (req) => {
     const response = await fetch(`${GATEWAY}/models/${providerModel}/predictions`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_KEY}`,
-        "X-Connection-Api-Key": REPLICATE_KEY,
+        Authorization: `Bearer ${REPLICATE_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ input }),
@@ -346,7 +353,7 @@ serve(async (req) => {
       .maybeSingle();
     if (!error && activeRow && current && !current.stop_requested_at && current.status !== "canceled") return;
     if (!current?.stop_requested_at && current?.status !== "canceled") {
-      await cancelPrediction(predictionId, LOVABLE_KEY, REPLICATE_KEY).catch(() => null);
+      await cancelPrediction(predictionId, REPLICATE_KEY).catch(() => null);
       throw new Error(`Prediction tracking failed: ${error?.message ?? "job is no longer active"}`);
     }
 
@@ -354,7 +361,7 @@ serve(async (req) => {
       .from("animation_prompt_lab_jobs")
       .update({ [field]: predictionId, updated_at: new Date().toISOString() })
       .eq("id", jobId);
-    await cancelPrediction(predictionId, LOVABLE_KEY, REPLICATE_KEY).catch(() => null);
+    await cancelPrediction(predictionId, REPLICATE_KEY).catch(() => null);
     throw new StoppedError("stopped immediately after provider submission");
   };
   const pollPrediction = async (predictionId: string) => {
@@ -362,10 +369,7 @@ serve(async (req) => {
       await new Promise((resolve) => setTimeout(resolve, 3_000));
       await checkStopped();
       const response = await fetch(`${GATEWAY}/predictions/${predictionId}`, {
-        headers: {
-          Authorization: `Bearer ${LOVABLE_KEY}`,
-          "X-Connection-Api-Key": REPLICATE_KEY,
-        },
+        headers: { Authorization: `Bearer ${REPLICATE_KEY}` },
       });
       if (!response.ok) continue;
       const prediction = await response.json();
@@ -392,6 +396,7 @@ serve(async (req) => {
 
   const run = async () => {
     try {
+      await supabase.from("cost_events").update({ status: "submitted" }).eq("provider_job_id", jobId);
       let firstFrame = stillUrl;
       if (archetype === "growth_reveal") {
         await checkStopped();
@@ -450,6 +455,7 @@ serve(async (req) => {
         error: null,
         completed_at: completedAt,
       });
+      await supabase.from("cost_events").update({ status: "succeeded" }).eq("provider_job_id", jobId);
     } catch (error) {
       const stopped = error instanceof StoppedError;
       const completedAt = new Date().toISOString();
@@ -458,6 +464,7 @@ serve(async (req) => {
         error: stopped ? "Stopped by user" : (error instanceof Error ? error.message : String(error)),
         completed_at: completedAt,
       });
+      await supabase.from("cost_events").update({ status: stopped ? "canceled" : "failed" }).eq("provider_job_id", jobId);
     }
   };
 

@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type ImageProvider = "lovable" | "replicate" | "openai";
+export type ImageProvider = "replicate" | "openai";
 
 interface GenerateButtonProps {
   onClick: () => void;
@@ -58,17 +58,11 @@ export function GenerateButton({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="lovable">Lovable AI (Nano Banana)</SelectItem>
               <SelectItem value="replicate">Replicate (FLUX 1.1 Pro)</SelectItem>
               <SelectItem value="openai">OpenAI (gpt-image-2 HQ)</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        {provider === "lovable" && (
-          <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
-            ~1.2 Lovable credits (~$0.24) per package. Counts against your workspace cap.
-          </p>
-        )}
         {provider === "replicate" && (
           <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
             ~$0.24 per package, billed to Replicate. Does NOT use Lovable credits.
@@ -76,7 +70,7 @@ export function GenerateButton({
         )}
         {provider === "openai" && (
           <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
-            ~$1.14 per package, billed to Replicate (runs gpt-image-2 via Replicate). Does NOT use Lovable credits. Output is 2:3 (1024×1536).
+            ~$0.77 per six-image package, billed to Replicate (runs gpt-image-2 high quality). Does not use Lovable credits. Output is 2:3 (1024×1536).
           </p>
         )}
       </div>

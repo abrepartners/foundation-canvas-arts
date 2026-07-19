@@ -18,9 +18,8 @@ interface Step {
 const INITIAL_STEPS: Step[] = [
   { key: "script", label: "Picking plant + writing script", status: "pending" },
   { key: "stills", label: "Preparing 6 hero stills", status: "pending" },
-  { key: "clips", label: "Animating 6 clips (Kling v2.1, 10s each)", status: "pending" },
-  { key: "stitch", label: "Stitching final 60s video", status: "pending" },
-  { key: "save", label: "Saving to library", status: "pending" },
+  { key: "clips", label: "Choose one hero still and motion prompt", status: "pending" },
+  { key: "save", label: "Save or send the approved clip", status: "pending" },
 ];
 
 const MOMENT_ORDER = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;

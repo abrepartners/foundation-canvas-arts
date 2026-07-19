@@ -83,14 +83,14 @@ export function useBotanicalContent() {
   const [autoResumeExhausted, setAutoResumeExhausted] = useState(false);
   const [isRetryingStuck, setIsRetryingStuck] = useState(false);
   const [activeContentId, setActiveContentId] = useState<string | null>(null);
-  const [activeProvider, setActiveProvider] = useState<"lovable" | "replicate" | "openai">("replicate");
+  const [activeProvider, setActiveProvider] = useState<"replicate" | "openai">("replicate");
   const { toast } = useToast();
 
   const MAX_AUTO_RESUMES = 2;
 
   const pollForImages = async (
     contentId: string,
-    imageProvider: "lovable" | "replicate" | "openai" = "replicate",
+    imageProvider: "replicate" | "openai" = "replicate",
   ) => {
     const INTERVAL_MS = 2000;
     const MAX_POLLS = 300; // ~10 min ceiling
@@ -169,7 +169,7 @@ export function useBotanicalContent() {
     }
   };
 
-  const generate = async (imageProvider: "lovable" | "replicate" | "openai" = "replicate") => {
+  const generate = async (imageProvider: "replicate" | "openai" = "replicate") => {
     setIsLoading(true);
     setError(null);
     setAutoResumeExhausted(false);
@@ -217,7 +217,7 @@ export function useBotanicalContent() {
 
   const regenerateVisual = async (
     moment: string,
-    imageProvider: "lovable" | "replicate" | "openai" = "replicate",
+    imageProvider: "replicate" | "openai" = "replicate",
     options: { silent?: boolean } = {}
   ) => {
     if (!content?.id) {
@@ -286,7 +286,7 @@ export function useBotanicalContent() {
     }
   };
 
-  const regenerateAllVisuals = async (imageProvider: "lovable" | "replicate" | "openai" = "replicate") => {
+  const regenerateAllVisuals = async (imageProvider: "replicate" | "openai" = "replicate") => {
     const moments = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
     for (const m of moments) {
       await regenerateVisual(m, imageProvider, { silent: true });

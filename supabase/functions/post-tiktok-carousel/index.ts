@@ -78,6 +78,8 @@ interface Body {
   title?: string;
   description?: string;
   photo_images: string[];
+  content_id?: string;
+  idempotency_key?: string;
 }
 
 interface TokenRow {
@@ -128,15 +130,65 @@ Deno.serve(async (req) => {
     }
     const title = (body.title ?? "").toString().slice(0, 90);
     const description = (body.description ?? "").toString().slice(0, 4000);
-    const contentId =
-      typeof (body as { content_id?: unknown }).content_id === "string"
-        ? ((body as { content_id: string }).content_id)
-        : null;
+    const contentId = typeof body.content_id === "string" ? body.content_id : null;
+    const idempotencyKey = typeof body.idempotency_key === "string" ? body.idempotency_key : null;
+    if (!contentId || !idempotencyKey) {
+      return json({ error: "content_id and idempotency_key are required" }, 400);
+    }
+
+    const { data: existingPublication } = await supabase
+      .from("content_publications")
+      .select("id, status")
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+    if (existingPublication) {
+      const { data: existingJob } = await supabase
+        .from("tiktok_send_jobs")
+        .select("id")
+        .eq("publication_id", existingPublication.id)
+        .maybeSingle();
+      return json({
+        ok: true,
+        duplicate: true,
+        publication_id: existingPublication.id,
+        job_id: existingJob?.id ?? null,
+      }, 200);
+    }
+
+    const { data: publication, error: publicationError } = await supabase
+      .from("content_publications")
+      .insert({
+        botanical_content_id: contentId,
+        platform: "tiktok",
+        delivery_mode: "draft",
+        status: "queued",
+        idempotency_key: idempotencyKey,
+        title,
+        caption: description,
+      })
+      .select("id")
+      .single();
+    if (publicationError || !publication) {
+      if (publicationError?.code === "23505") {
+        const { data: raced } = await supabase
+          .from("content_publications")
+          .select("id")
+          .eq("idempotency_key", idempotencyKey)
+          .single();
+        const { data: racedJob } = raced ? await supabase
+          .from("tiktok_send_jobs")
+          .select("id")
+          .eq("publication_id", raced.id)
+          .maybeSingle() : { data: null };
+        return json({ ok: true, duplicate: true, publication_id: raced?.id, job_id: racedJob?.id ?? null });
+      }
+      throw new Error(`Failed to create publication: ${publicationError?.message ?? "unknown"}`);
+    }
 
     // ----- Create a job row so the client can observe real progress -----
     const { data: jobRow, error: jobErr } = await supabase
       .from("tiktok_send_jobs")
-      .insert({ phase: "queued", content_id: contentId })
+      .insert({ phase: "queued", content_id: contentId, publication_id: publication.id })
       .select("id")
       .single();
     if (jobErr || !jobRow) {
@@ -150,11 +202,18 @@ Deno.serve(async (req) => {
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq("id", jobId);
     };
+    const updatePublication = async (patch: Record<string, unknown>) => {
+      await supabase
+        .from("content_publications")
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq("id", publication.id);
+    };
 
     // ----- Heavy work runs in the background so we never hit the 2s CPU cap -----
     const bg = async () => {
       try {
         await updateJob({ phase: "normalizing" });
+        await updatePublication({ status: "uploading" });
 
         // Most recently connected account
         const { data: tokenRow, error: tokenError } = await supabase
@@ -242,6 +301,7 @@ Deno.serve(async (req) => {
             fail_reason: failReason,
             raw: parsed,
           });
+          await updatePublication({ status: "failed", error: failReason });
           return;
         }
 
@@ -251,10 +311,12 @@ Deno.serve(async (req) => {
           publish_id: publishId,
           raw: parsed,
         });
+        await updatePublication({ remote_publish_id: publishId });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("post-tiktok-carousel bg error:", msg);
         await updateJob({ phase: "failed", fail_reason: msg }).catch(() => {});
+        await updatePublication({ status: "failed", error: msg }).catch(() => {});
       }
     };
 
@@ -266,7 +328,7 @@ Deno.serve(async (req) => {
       bg();
     }
 
-    return json({ ok: true, job_id: jobId }, 202);
+    return json({ ok: true, job_id: jobId, publication_id: publication.id }, 202);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     console.error("post-tiktok-carousel error:", msg);

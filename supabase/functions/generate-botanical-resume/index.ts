@@ -19,10 +19,9 @@ async function runReplicatePrediction(
   lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string> {
-  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const GW = "https://api.replicate.com/v1";
   const headers = {
-    Authorization: `Bearer ${lovableApiKey}`,
-    "X-Connection-Api-Key": replicateApiKey,
+    Authorization: `Bearer ${replicateApiKey}`,
     "Content-Type": "application/json",
   };
   let createRes: Response | null = null;
@@ -61,7 +60,7 @@ async function runReplicatePrediction(
 }
 
 async function generateImageBytes(
-  provider: "openai" | "lovable" | "replicate",
+  provider: "openai" | "replicate",
   prompt: string,
   lovableApiKey: string,
   replicateApiKey: string | undefined,
@@ -100,21 +99,7 @@ async function generateImageBytes(
       return { bytes: new Uint8Array(await imgRes.arrayBuffer()) };
     } finally { clearTimeout(t); }
   }
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash-image-preview",
-      messages: [{ role: "user", content: prompt }],
-      modalities: ["image", "text"],
-    }),
-  });
-  if (!r.ok) throw new Error(`Lovable image API ${r.status}`);
-  const d = await r.json();
-  const b64 = d?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-  if (!b64) throw new Error("No image data");
-  const data = String(b64).replace(/^data:image\/\w+;base64,/, "");
-  return { bytes: Uint8Array.from(atob(data), (c) => c.charCodeAt(0)) };
+  throw new Error("Unsupported image provider");
 }
 
 interface Visual {
@@ -135,13 +120,13 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE = Deno.env.get("LOVABLE_API_KEY")!;
+    const LOVABLE = "";
     const REPLICATE = Deno.env.get("REPLICATE_API_KEY") ?? undefined;
     const supabase = createClient(SUPABASE_URL, SERVICE);
 
     const body = await req.json().catch(() => ({}));
     const contentId: string | undefined = body?.content_id;
-    const provider: "openai" | "lovable" | "replicate" = body?.image_provider ?? "openai";
+    const provider: "openai" | "replicate" = body?.image_provider === "openai" ? "openai" : "replicate";
     // Optional: parent animation row id so future provider-job tracking for
     // stills can attribute retries/costs to the correct animation run.
     const animationRowId: string | null = typeof body?.animation_row_id === "string"

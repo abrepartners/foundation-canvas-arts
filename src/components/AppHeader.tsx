@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Leaf, TrendingUp, Film, ListChecks, LogOut } from "lucide-react";
-import { lock } from "@/lib/auth";
+import { Leaf, TrendingUp, Film, ListChecks, LogOut, BarChart3 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 
 const TABS = [
@@ -9,6 +9,7 @@ const TABS = [
   { to: "/trends", label: "Trends", icon: TrendingUp },
   { to: "/animated", label: "Animated", icon: Film },
   { to: "/queue", label: "Queue", icon: ListChecks },
+  { to: "/insights", label: "Insights", icon: BarChart3 },
 ];
 
 interface AppHeaderProps {
@@ -22,8 +23,8 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isActive = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
-  const handleSignOut = () => {
-    lock();
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
     navigate("/login", { replace: true });
   };
 
@@ -85,7 +86,7 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
         className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur border-t border-border"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <ul className="grid grid-cols-4">
+        <ul className="grid grid-cols-5">
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = isActive(t.to);

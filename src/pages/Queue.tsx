@@ -145,7 +145,7 @@ export default function Queue() {
     <div className="min-h-screen bg-background">
       <AppHeader
         title="Approval Queue"
-        subtitle="Score, swap hooks, approve — then auto-post."
+        subtitle="Score, swap hooks, approve — then send to drafts when you are ready."
         contained
       />
 

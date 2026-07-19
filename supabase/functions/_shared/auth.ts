@@ -1,11 +1,11 @@
-// Shared passcode guard for protected edge functions.
-// Accepts either the app passcode via the "x-app-passcode" header, or the
-// project service role key via the Authorization bearer (used for internal
-// edge-to-edge invocations).
+// Shared owner guard for protected Edge Functions.
+// Accepts an explicit app member's Supabase JWT, or the service-role key for
+// internal edge-to-edge invocations.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "./cors.ts";
 
 export type AuthResult =
-  | { ok: true; internal: boolean }
+  | { ok: true; internal: boolean; userId: string | null }
   | { ok: false; response: Response };
 
 export async function requireAuthorized(req: Request): Promise<AuthResult> {
@@ -16,22 +16,35 @@ export async function requireAuthorized(req: Request): Promise<AuthResult> {
       headers: { ...cors, "Content-Type": "application/json" },
     });
 
-  // Internal service-role bypass (edge-to-edge calls).
   const authHeader = req.headers.get("Authorization") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+
   if (serviceKey && authHeader.startsWith("Bearer ")) {
     const token = authHeader.slice("Bearer ".length).trim();
     if (token && token === serviceKey) {
-      return { ok: true, internal: true };
+      return { ok: true, internal: true, userId: null };
     }
   }
 
-  const expected = Deno.env.get("APP_PASSCODE");
-  if (!expected) return { ok: false, response: unauthorized("Passcode not configured") };
-
-  const provided = req.headers.get("x-app-passcode")?.trim() ?? "";
-  if (!provided || provided !== expected) {
+  if (!serviceKey || !supabaseUrl || !authHeader.startsWith("Bearer ")) {
     return { ok: false, response: unauthorized() };
   }
-  return { ok: true, internal: false };
+
+  const token = authHeader.slice("Bearer ".length).trim();
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: userData, error: userError } = await admin.auth.getUser(token);
+  if (userError || !userData.user) return { ok: false, response: unauthorized() };
+
+  const { data: member } = await admin
+    .from("app_members")
+    .select("user_id")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+  if (!member) {
+    return { ok: false, response: unauthorized("Account is not approved for this app") };
+  }
+  return { ok: true, internal: false, userId: userData.user.id };
 }

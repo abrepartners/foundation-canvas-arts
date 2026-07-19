@@ -633,6 +633,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
   const { toast } = useToast();
   const [sendPhase, setSendPhase] = useState<SendPhase>("idle");
   const [sendDetail, setSendDetail] = useState<string | undefined>(undefined);
+  const sendKeyRef = useRef<string | null>(null);
 
   const imageUrls = (content.faceless_visuals ?? [])
     .map((v) => v.image_url)
@@ -718,6 +719,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
 
   const handleSendTikTok = async () => {
     if (!canSendTikTok) return;
+    if (!sendKeyRef.current) sendKeyRef.current = crypto.randomUUID();
     setSendPhase("initializing");
     setSendDetail(undefined);
     try {
@@ -729,6 +731,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
             description: stripCaptionTitle(content.caption),
             photo_images: imageUrls,
             content_id: content.id,
+            idempotency_key: sendKeyRef.current,
           },
         },
       );
@@ -776,7 +779,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
             ) : (
               <Send className="mr-2 h-4 w-4" />
             )}
-            Send to TikTok ({imageUrls.length})
+            Send to TikTok drafts ({imageUrls.length})
           </Button>
           <Button variant="outline" onClick={onReset} className="font-body flex-1 sm:flex-none">
             <RotateCcw className="mr-2 h-4 w-4" />

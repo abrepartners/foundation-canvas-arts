@@ -25,6 +25,7 @@ interface JobRow {
   fail_reason: string | null;
   raw: unknown;
   updated_at: string;
+  publication_id: string | null;
 }
 
 const TERMINAL_STATUSES = new Set([
@@ -70,7 +71,7 @@ Deno.serve(async (req) => {
 
     const { data: job, error: jobErr } = await supabase
       .from("tiktok_send_jobs")
-      .select("id, phase, publish_id, tiktok_status, fail_reason, raw, updated_at")
+      .select("id, phase, publish_id, tiktok_status, fail_reason, raw, updated_at, publication_id")
       .eq("id", jobId)
       .maybeSingle<JobRow>();
     if (jobErr) throw new Error(`Job lookup failed: ${jobErr.message}`);
@@ -97,6 +98,11 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           })
           .eq("id", job.id);
+        if (job.publication_id) {
+          await supabase.from("content_publications").update({
+            status: "failed", error: failReason, updated_at: new Date().toISOString(),
+          }).eq("id", job.publication_id);
+        }
         return json({
           phase: "failed",
           status: "FAILED",
@@ -208,6 +214,11 @@ Deno.serve(async (req) => {
           updated_at: new Date().toISOString(),
         })
         .eq("id", job.id);
+      if (job.publication_id) {
+        await supabase.from("content_publications").update({
+          status: "failed", error: failReason, updated_at: new Date().toISOString(),
+        }).eq("id", job.publication_id);
+      }
       return json({
         phase: "failed",
         status: "FAILED",
@@ -238,6 +249,14 @@ Deno.serve(async (req) => {
           updated_at: new Date().toISOString(),
         })
         .eq("id", job.id);
+      if (job.publication_id && (nextPhase === "in_drafts" || nextPhase === "failed")) {
+        await supabase.from("content_publications").update({
+          status: nextPhase === "in_drafts" ? "delivered" : "failed",
+          error: nextPhase === "failed" ? failReason : null,
+          delivered_at: nextPhase === "in_drafts" ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        }).eq("id", job.publication_id);
+      }
     }
 
     return json({

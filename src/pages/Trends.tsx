@@ -259,7 +259,6 @@ const Trends = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="lovable">Lovable AI (Nano Banana)</SelectItem>
                           <SelectItem value="replicate">Replicate (FLUX 1.1 Pro)</SelectItem>
                           <SelectItem value="openai">OpenAI (gpt-image-2 HQ)</SelectItem>
                         </SelectContent>

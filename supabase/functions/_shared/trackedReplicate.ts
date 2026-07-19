@@ -10,7 +10,7 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SB = any;
 
-const GATEWAY = "https://connector-gateway.lovable.dev/replicate/v1";
+const GATEWAY = "https://api.replicate.com/v1";
 
 interface TrackedImageOptions {
   supabase: SB;
@@ -104,8 +104,7 @@ export async function generateTrackedReplicateImage(
     const response = await fetch(`${GATEWAY}/models/${model}/predictions`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": replicateApiKey,
+        Authorization: `Bearer ${replicateApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ input }),
@@ -158,10 +157,7 @@ export async function generateTrackedReplicateImage(
     }
 
     const response = await fetch(`${GATEWAY}/predictions/${predictionId}`, {
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": replicateApiKey,
-      },
+      headers: { Authorization: `Bearer ${replicateApiKey}` },
     });
     if (!response.ok) continue;
 
@@ -234,8 +230,7 @@ export async function generateTrackedReplicateText(
     const response = await fetch(`${GATEWAY}/models/${model}/predictions`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": replicateApiKey,
+        Authorization: `Bearer ${replicateApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ input }),
@@ -283,10 +278,7 @@ export async function generateTrackedReplicateText(
     await new Promise((resolve) => setTimeout(resolve, index < 5 ? 1_000 : 2_500));
     if (await isStopped(supabase, rowId)) throw new Error("stopped");
     const response = await fetch(`${GATEWAY}/predictions/${predictionId}`, {
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": replicateApiKey,
-      },
+      headers: { Authorization: `Bearer ${replicateApiKey}` },
     });
     if (!response.ok) continue;
     const prediction = await response.json();

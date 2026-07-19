@@ -4,34 +4,8 @@ import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { CheckCircle2, Circle, Loader2, Play, Download, Sparkles, RotateCw, StopCircle } from "lucide-react";
 import { AnimationPromptLab } from "@/components/AnimationPromptLab";
-
-// Fallback shown until the pricing endpoint responds. The server is the
-// source of truth; the confirm dialog is disabled until pricing is fetched.
-const CLIP_COUNT = 6;
-interface Pricing {
-  pricing_version: string;
-  clip_count: number;
-  clip_seconds: number;
-  mode: string;
-  stills: { total_usd: number; count?: number };
-  clips: { total_usd: number; total_seconds?: number; mode?: string };
-  stitch: { total_usd: number };
-  paid_total_usd: number;
-  max_attempts: number;
-  retry_ceiling_usd: number;
-}
 
 interface Step {
   key: string;
@@ -161,29 +135,12 @@ interface SourceOption {
 export default function Animated() {
   const [row, setRow] = useState<AnimatedRow | null>(null);
   const [isStarting, setIsStarting] = useState(false);
-  const [isConfirming, setIsConfirming] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [now, setNow] = useState<number>(Date.now());
   const { toast } = useToast();
   const [sources, setSources] = useState<SourceOption[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pricing, setPricing] = useState<Pricing | null>(null);
-
-  // Fetch canonical pricing from the server on mount. The confirm dialog
-  // stays disabled until this resolves so the client never guesses.
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data, error } = await invokeFn<Pricing>("animated-pricing", { body: {} });
-        if (error) throw new Error(error.message);
-        if (data) setPricing(data);
-      } catch (err) {
-        console.warn("pricing fetch failed:", err);
-      }
-    })();
-  }, []);
 
   // Load most recent row (any status) so the UI can show its state.
   useEffect(() => {
@@ -318,41 +275,6 @@ export default function Animated() {
     }
   };
 
-  const confirmAndAnimate = async () => {
-    if (!row?.id || !pricing) return;
-    setIsConfirming(true);
-    try {
-      const { data, error } = await invokeFn("animated-animate-all", {
-        body: {
-          row_id: row.id,
-          confirmed_estimate_usd: pricing.paid_total_usd,
-          pricing_version: pricing.pricing_version,
-        },
-      });
-      if (error) {
-        const parsed = await readFnError(error);
-        const body = parsed.body as { error?: string; expected_total_usd?: number; pricing_version?: string } | null;
-        if (parsed.status === 402 && body?.error === "cost_confirmation_required") {
-          // Server pricing drifted — refresh and re-open dialog.
-          try {
-            const { data: fresh } = await invokeFn<Pricing>("animated-pricing", { body: {} });
-            if (fresh) setPricing(fresh);
-          } catch { /* ignore */ }
-          throw new Error(`Pricing changed — please review the updated total ($${(body?.expected_total_usd ?? 0).toFixed(2)}) and confirm again.`);
-        }
-        throw new Error(body?.error || error.message);
-      }
-      if (!data?.success) throw new Error(data?.error || "Failed to start animation");
-      setConfirmOpen(false);
-      toast({ title: "Animation started", description: `Paid provider jobs submitted (~$${pricing.paid_total_usd.toFixed(2)}).` });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast({ title: "Animation start failed", description: msg, variant: "destructive" });
-    } finally {
-      setIsConfirming(false);
-    }
-  };
-
   const retryStitch = async () => {
     if (!row?.id) return;
     const { data, error } = await invokeFn("animated-stitch", { body: { row_id: row.id } });
@@ -388,9 +310,8 @@ export default function Animated() {
       row?.progress?.steps ?? [
         { key: "script", label: "Picking plant + writing script", status: "pending" },
         { key: "stills", label: "Preparing 6 hero stills", status: "pending" },
-        { key: "clips", label: "Animating 6 clips (Kling v2.1, 10s each)", status: "pending" },
-        { key: "stitch", label: "Stitching final 60s video", status: "pending" },
-        { key: "save", label: "Saving to library", status: "pending" },
+        { key: "clips", label: "Choose one hero still and motion prompt", status: "pending" },
+        { key: "save", label: "Save or send the approved clip", status: "pending" },
       ]
     );
   }, [row]);
@@ -400,9 +321,6 @@ export default function Animated() {
     row?.queue_status === "stills_ready" ||
     row?.queue_status === "animating" ||
     row?.queue_status === "stitching";
-
-  const awaitingConfirmation =
-    row?.queue_status === "stills_ready" && !row?.stop_requested_at && !row?.cost_confirmed_at;
 
   const stillsStep = steps.find((s) => s.key === "stills");
   const stillsCount = (() => {
@@ -421,13 +339,11 @@ export default function Animated() {
     row?.updated_at &&
     now - new Date(row.updated_at).getTime() > 5 * 60 * 1000;
 
-  const stillsFresh = !!row && stillsStep?.detail !== "6 / 6 (reused)";
-
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
         title="Animated Video"
-        subtitle="60-second silent vertical MP4 · paid animation requires review"
+        subtitle="Prepare six stills, then animate one reviewed hero clip"
         contained
       />
 
@@ -473,20 +389,6 @@ export default function Animated() {
               Stopping marks this run canceled on the server and attempts to cancel every non-terminal provider prediction.
               Clips that already succeeded remain billable.
             </p>
-          )}
-
-          {awaitingConfirmation && (
-            <div className="rounded-md border border-primary/40 bg-primary/5 p-3 mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-body text-foreground">Stills ready for review.</p>
-                <p className="text-xs text-muted-foreground font-body">
-                  Next step starts <span className="font-medium">paid provider jobs</span>{pricing ? ` (~$${pricing.paid_total_usd.toFixed(2)})` : ""}.
-                </p>
-              </div>
-              <Button onClick={() => setConfirmOpen(true)} size="sm">
-                Review cost and start animation
-              </Button>
-            </div>
           )}
 
           {pickerOpen && (
@@ -665,67 +567,10 @@ export default function Animated() {
         </div>
 
         <p className="text-xs text-muted-foreground font-body text-center">
-          Stills are prepared before any paid animation. You must review the cost and click confirm to start Kling clips and stitching.
+          Stills are prepared before paid animation. Prompt Lab submits one reviewed clip and never starts the legacy six-clip pipeline.
         </p>
       </main>
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Start paid animation?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3 text-sm">
-                <p>
-                  Confirming will submit paid third-party provider jobs. Once submitted, canceled clips may still incur charges.
-                </p>
-                {pricing ? (
-                  <>
-                    <div className="rounded-md border border-border p-3 bg-muted/30 font-body">
-                      <div className="flex justify-between">
-                        <span>{pricing.clip_count} × {pricing.clip_seconds}s Kling v2.1 {pricing.mode} clips</span>
-                        <span className="tabular-nums">${pricing.clips.total_usd.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Stitch estimate</span>
-                        <span className="tabular-nums">${pricing.stitch.total_usd.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between font-medium border-t border-border/60 mt-1 pt-1">
-                        <span>Paid animation total</span>
-                        <span className="tabular-nums">${pricing.paid_total_usd.toFixed(2)}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Each provider job is capped at {pricing.max_attempts} attempts. If every attempt is billable,
-                        the configured retry ceiling is ${pricing.retry_ceiling_usd.toFixed(2)}.
-                      </p>
-                      {stillsFresh && (
-                        <p className="text-xs text-muted-foreground mt-2">
-                          Fresh stills already incurred separately: ~${pricing.stills.total_usd.toFixed(2)} ({pricing.stills.count ?? pricing.clip_count} × OpenAI gpt-image-2), with a configured retry ceiling of ${(pricing.stills.total_usd * pricing.max_attempts).toFixed(2)}. Not part of this confirmation.
-                        </p>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">Pricing version: {pricing.pricing_version}</p>
-                  </>
-                ) : (
-                  <div className="rounded-md border border-border p-3 bg-muted/30 font-body flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Loading current pricing…
-                  </div>
-                )}
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isConfirming}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmAndAnimate} disabled={isConfirming || !pricing}>
-              {isConfirming ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {isConfirming
-                ? "Starting…"
-                : pricing
-                  ? `Confirm & start paid jobs ($${pricing.paid_total_usd.toFixed(2)})`
-                  : "Loading pricing…"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

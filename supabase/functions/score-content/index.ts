@@ -27,6 +27,26 @@ Return ONLY valid JSON, no markdown, no prose:
   "variants": ["rewrite 1", "rewrite 2"]
 }`;
 
+async function scoreWithReplicate(apiKey: string, prompt: string): Promise<string> {
+  const base = "https://api.replicate.com/v1";
+  const create = await fetch(`${base}/models/google/gemini-2.5-flash/predictions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ input: { system_instruction: SYSTEM, prompt, temperature: 0.4, max_output_tokens: 1000, thinking_budget: 0 } }),
+  });
+  if (!create.ok) throw new Error(`Replicate scoring failed: ${create.status}`);
+  const prediction = await create.json();
+  for (let index = 0; index < 90; index++) {
+    await new Promise((resolve) => setTimeout(resolve, index < 5 ? 1000 : 2500));
+    const poll = await fetch(`${base}/predictions/${prediction.id}`, { headers: { Authorization: `Bearer ${apiKey}` } });
+    if (!poll.ok) continue;
+    const current = await poll.json();
+    if (current.status === "succeeded") return Array.isArray(current.output) ? current.output.join("") : String(current.output ?? "");
+    if (current.status === "failed" || current.status === "canceled") throw new Error(`Replicate scoring ${current.status}`);
+  }
+  throw new Error("Replicate scoring timed out");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeadersFor(req) });
 
@@ -81,42 +101,9 @@ Verified fact: ${row.verified_fact ?? ""}
 Caption title: ${captionFirstLine}
 Plant: ${row.plant_name ?? ""}`;
 
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableKey) throw new Error("LOVABLE_API_KEY missing");
-
-    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${lovableKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-      }),
-    });
-
-    if (!aiRes.ok) {
-      const txt = await aiRes.text();
-      if (aiRes.status === 429) {
-        return new Response(JSON.stringify({ error: "RATE_LIMIT" }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (aiRes.status === 402) {
-        return new Response(JSON.stringify({ error: "CREDIT_LIMIT" }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      throw new Error(`AI gateway error ${aiRes.status}: ${txt}`);
-    }
-
-    const json = await aiRes.json();
-    const raw = json?.choices?.[0]?.message?.content ?? "{}";
+    const replicateKey = Deno.env.get("REPLICATE_API_KEY");
+    if (!replicateKey) throw new Error("REPLICATE_API_KEY missing");
+    const raw = await scoreWithReplicate(replicateKey, userPrompt);
     let parsed: Record<string, unknown>;
     try {
       const value: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;

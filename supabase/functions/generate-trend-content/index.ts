@@ -11,10 +11,9 @@ async function runReplicatePrediction(
   lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string> {
-  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const GW = "https://api.replicate.com/v1";
   const authHeaders = {
-    Authorization: `Bearer ${lovableApiKey}`,
-    "X-Connection-Api-Key": replicateApiKey,
+    Authorization: `Bearer ${replicateApiKey}`,
     "Content-Type": "application/json",
   };
 
@@ -48,8 +47,7 @@ async function runReplicatePrediction(
     await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
     const pollRes = await fetch(`${GW}/predictions/${predId}`, {
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": replicateApiKey,
+        Authorization: `Bearer ${replicateApiKey}`,
       },
     });
     if (!pollRes.ok) continue;
@@ -71,13 +69,12 @@ async function runReplicateTextCompletion(
   lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string> {
-  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const GW = "https://api.replicate.com/v1";
   const model = "google/gemini-2.5-flash";
   const createRes = await fetch(`${GW}/models/${model}/predictions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${lovableApiKey}`,
-      "X-Connection-Api-Key": replicateApiKey,
+      Authorization: `Bearer ${replicateApiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ input }),
@@ -94,8 +91,7 @@ async function runReplicateTextCompletion(
     await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2500));
     const pollRes = await fetch(`${GW}/predictions/${predId}`, {
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": replicateApiKey,
+        Authorization: `Bearer ${replicateApiKey}`,
       },
     });
     if (!pollRes.ok) continue;
@@ -114,15 +110,14 @@ async function runReplicateTextCompletion(
   throw new Error("Replicate text timed out");
 }
 
-// Generate an image and return raw bytes. Supports three providers.
+// Generate an image through the owner's Replicate account.
 async function generateImageBytes(
-  provider: "lovable" | "replicate" | "openai",
+  provider: "replicate" | "openai",
   prompt: string,
   lovableApiKey: string,
   replicateApiKey: string | undefined,
 ): Promise<Uint8Array> {
-  if (provider === "openai" || provider === "replicate") {
-    if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
+  if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
     const model =
       provider === "openai"
         ? "openai/gpt-image-2"
@@ -152,34 +147,6 @@ async function generateImageBytes(
     if (!imgRes.ok)
       throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
     return new Uint8Array(await imgRes.arrayBuffer());
-  }
-
-  const imageResponse = await fetch(
-    "https://ai.gateway.lovable.dev/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages: [{ role: "user", content: prompt }],
-        modalities: ["image", "text"],
-      }),
-    },
-  );
-  if (!imageResponse.ok) {
-    throw new Error(`Lovable image API error: ${imageResponse.status}`);
-  }
-  const imageData = await imageResponse.json();
-  const base64Image =
-    imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-  if (!base64Image || typeof base64Image !== "string") {
-    throw new Error("No image data from Lovable AI");
-  }
-  const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
-  return Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
 }
 
 const EXCLUDE_COUNT = 5;
@@ -385,12 +352,11 @@ serve(async (req) => {
     if (!__auth.ok) return __auth.response;
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const LOVABLE_API_KEY = "";
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error("Supabase credentials not configured");
     }
@@ -416,9 +382,8 @@ serve(async (req) => {
       );
     }
 
-    let imageProvider: "lovable" | "replicate" | "openai" = "replicate";
-    if (body.image_provider === "lovable") imageProvider = "lovable";
-    else if (body.image_provider === "openai") imageProvider = "openai";
+    let imageProvider: "replicate" | "openai" = "replicate";
+    if (body.image_provider === "openai") imageProvider = "openai";
     if (!REPLICATE_API_KEY) {
       throw new Error("REPLICATE_API_KEY not configured — required for Replicate-hosted generation");
     }
@@ -589,7 +554,7 @@ Rules:
           LOVABLE_API_KEY,
           REPLICATE_API_KEY,
         );
-        const ext = imageProvider === "lovable" ? "png" : "jpg";
+        const ext = "jpg";
         const filePath = `trends/${contentId}/${visual.moment}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from("botanical-faceless-visuals")

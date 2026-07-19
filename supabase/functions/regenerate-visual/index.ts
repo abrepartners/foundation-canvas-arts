@@ -214,21 +214,14 @@ serve(async (req) => {
 
     // === REGENERATE ACTION (default) ===
     // Default to Replicate Flux 1.1 Pro for photoreal output.
-    // Accept "lovable" (Gemini) or "openai" (gpt-image-2 HQ) overrides.
-    const imageProvider: "lovable" | "replicate" | "openai" =
-      image_provider === "lovable"
-        ? "lovable"
-        : image_provider === "openai"
+    // Direct Replicate billing: FLUX by default, with gpt-image-2 optional.
+    const imageProvider: "replicate" | "openai" =
+      image_provider === "openai"
           ? "openai"
           : "replicate";
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
-    if (
-      (imageProvider === "replicate" || imageProvider === "openai") &&
-      !REPLICATE_API_KEY
-    ) {
+    if (!REPLICATE_API_KEY) {
       throw new Error(
         "REPLICATE_API_KEY not configured — required for Replicate-hosted image models",
       );
@@ -260,9 +253,9 @@ serve(async (req) => {
     }
 
     let imageBuffer: Uint8Array;
-    let outputExt: "jpg" | "png" = "png";
-    if (imageProvider === "replicate" || imageProvider === "openai") {
-      const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+    let outputExt: "jpg" | "png" = "jpg";
+    {
+      const GW = "https://api.replicate.com/v1";
       const model =
         imageProvider === "openai"
           ? "openai/gpt-image-2"
@@ -282,34 +275,17 @@ serve(async (req) => {
               safety_tolerance: 2,
             };
 
-      let createRes: Response | null = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        createRes = await fetch(`${GW}/models/${model}/predictions`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "X-Connection-Api-Key": REPLICATE_API_KEY!,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ input }),
-        });
-        if (createRes.status !== 429) break;
-        let waitSec = 12;
-        try {
-          const b = await createRes.clone().json();
-          if (typeof b?.retry_after === "number")
-            waitSec = Math.max(b.retry_after + 2, 8);
-        } catch {
-          /* ignore */
-        }
-        console.log(
-          `Replicate 429; retrying in ${waitSec}s (attempt ${attempt + 1}/3)`,
-        );
-        await new Promise((r) => setTimeout(r, waitSec * 1000));
-      }
-      if (!createRes || !createRes.ok) {
-        const txt = createRes ? await createRes.text() : "no response";
-        throw new Error(`Replicate create failed: ${createRes?.status} ${txt}`);
+      const createRes = await fetch(`${GW}/models/${model}/predictions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${REPLICATE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ input }),
+      });
+      if (!createRes.ok) {
+        const txt = await createRes.text();
+        throw new Error(`Replicate create failed: ${createRes.status} ${txt}`);
       }
       const pred = await createRes.json();
       const predId = pred.id;
@@ -317,10 +293,7 @@ serve(async (req) => {
       for (let i = 0; i < 90; i++) {
         await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
         const pollRes = await fetch(`${GW}/predictions/${predId}`, {
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "X-Connection-Api-Key": REPLICATE_API_KEY!,
-          },
+          headers: { Authorization: `Bearer ${REPLICATE_API_KEY}` },
         });
         if (!pollRes.ok) continue;
         const p = await pollRes.json();
@@ -338,43 +311,6 @@ serve(async (req) => {
         throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
       imageBuffer = new Uint8Array(await imgRes.arrayBuffer());
       outputExt = "jpg";
-    } else {
-      const imageResponse = await fetch(
-        "https://ai.gateway.lovable.dev/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash-image-preview",
-            messages: [{ role: "user", content: finalPrompt }],
-            modalities: ["image", "text"],
-          }),
-        },
-      );
-      if (!imageResponse.ok) {
-        const txt = await imageResponse.text();
-        if (
-          (imageResponse.status === 402 || imageResponse.status === 403) &&
-          /credit_limit|credit limit|insufficient.*credit/i.test(txt)
-        ) {
-          throw new Error(
-            "CREDIT_LIMIT: Workspace credit limit reached. The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits.",
-          );
-        }
-        throw new Error(`Image generation failed: ${imageResponse.status}`);
-      }
-      const imageData = await imageResponse.json();
-      const base64Image =
-        imageData?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-      if (!base64Image || typeof base64Image !== "string") {
-        throw new Error("No image data received from AI");
-      }
-      const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
-      imageBuffer = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
-      outputExt = "png";
     }
 
 
