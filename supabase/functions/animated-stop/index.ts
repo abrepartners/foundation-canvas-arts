@@ -27,7 +27,7 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE = Deno.env.get("LOVABLE_API_KEY");
+    const LOVABLE = "";
     const REPLICATE = Deno.env.get("REPLICATE_API_KEY");
     const supabase = createClient(SUPABASE_URL, SERVICE);
 
@@ -89,7 +89,7 @@ serve(async (req) => {
         canceled.push({ job_key: j.job_key, prediction_id: null });
         continue;
       }
-      if (!LOVABLE || !REPLICATE) {
+      if (!REPLICATE) {
         const reason = "provider creds unavailable";
         await updateJob(supabase, j.id, { error: `cancel failed: ${reason}` });
         failed.push({ job_key: j.job_key, reason });

@@ -18,12 +18,13 @@ function isAllowedOrigin(origin: string): boolean {
 
 export function corsHeadersFor(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
-  const allow = isAllowedOrigin(origin) ? origin : DEFAULT_ORIGIN;
+  const configuredOrigin = Deno.env.get("APP_ORIGIN") ?? DEFAULT_ORIGIN;
+  const allow = origin === configuredOrigin || isAllowedOrigin(origin) ? origin : configuredOrigin;
   return {
     "Access-Control-Allow-Origin": allow,
     "Vary": "Origin",
     "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type, x-app-passcode",
+      "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
   };
 }

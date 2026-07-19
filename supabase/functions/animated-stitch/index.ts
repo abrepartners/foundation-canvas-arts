@@ -43,9 +43,9 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
+    const LOVABLE_API_KEY = "";
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY")!;
-    if (!LOVABLE_API_KEY || !REPLICATE_API_KEY) throw new Error("Replicate connector not configured");
+    if (!REPLICATE_API_KEY) throw new Error("REPLICATE_API_KEY not configured");
 
     const supabase = createClient(SUPABASE_URL, SERVICE);
 
@@ -75,7 +75,7 @@ serve(async (req) => {
     const bg = async () => {
       try {
         if (await isStopped(supabase, row_id)) return;
-        const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+        const GW = "https://api.replicate.com/v1";
         const claim = await claimJob(supabase, row_id, "stitch", "replicate", CONCAT_MODEL, DEFAULT_MAX_ATTEMPTS);
         const job = claim.job;
 
@@ -107,8 +107,7 @@ serve(async (req) => {
           const createRes = await fetch(`${GW}/models/${CONCAT_MODEL}/predictions`, {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${LOVABLE_API_KEY}`,
-              "X-Connection-Api-Key": REPLICATE_API_KEY,
+              Authorization: `Bearer ${REPLICATE_API_KEY}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ input: { videos: clips } }),
@@ -160,10 +159,7 @@ serve(async (req) => {
               return;
             }
             const pollRes = await fetch(`${GW}/predictions/${predId}`, {
-              headers: {
-                Authorization: `Bearer ${LOVABLE_API_KEY}`,
-                "X-Connection-Api-Key": REPLICATE_API_KEY,
-              },
+              headers: { Authorization: `Bearer ${REPLICATE_API_KEY}` },
             });
             if (!pollRes.ok) continue;
             const p = await pollRes.json();

@@ -60,7 +60,7 @@ export function useTrendContent() {
 
   const generate = async (
     subject: string,
-    imageProvider: "lovable" | "replicate" | "openai" = "replicate",
+    imageProvider: "replicate" | "openai" = "replicate",
   ) => {
     setIsLoading(true);
     setError(null);
@@ -99,7 +99,7 @@ export function useTrendContent() {
 
   const regenerateVisual = async (
     moment: string,
-    imageProvider: "lovable" | "replicate" | "openai" = "replicate",
+    imageProvider: "replicate" | "openai" = "replicate",
     options: { silent?: boolean } = {},
   ) => {
     if (!content?.id) return null;
@@ -177,7 +177,7 @@ export function useTrendContent() {
   };
 
   const regenerateAllVisuals = async (
-    imageProvider: "lovable" | "replicate" | "openai" = "replicate",
+    imageProvider: "replicate" | "openai" = "replicate",
   ) => {
     const moments = [
       "hook",

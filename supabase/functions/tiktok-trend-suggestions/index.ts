@@ -8,14 +8,13 @@ async function fallbackViaGemini(
   replicateApiKey: string,
 ): Promise<string[]> {
   const sys = `You return ONLY a JSON array of 8 short trending TikTok-style topic keywords (2-5 words each) related to the user subject. No markdown, no commentary, no object — just the array.`;
-  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const GW = "https://api.replicate.com/v1";
   const createRes = await fetch(
     `${GW}/models/google/gemini-2.5-flash/predictions`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": replicateApiKey,
+        Authorization: `Bearer ${replicateApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -38,10 +37,7 @@ async function fallbackViaGemini(
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2500));
     const pollRes = await fetch(`${GW}/predictions/${pred.id}`, {
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": replicateApiKey,
-      },
+      headers: { Authorization: `Bearer ${replicateApiKey}` },
     });
     if (!pollRes.ok) continue;
     const p = await pollRes.json();
@@ -71,44 +67,6 @@ async function fallbackViaGemini(
   return [];
 }
 
-async function tiktokInsights(
-  subject: string,
-  lovableApiKey: string,
-  tiktokApiKey: string,
-): Promise<string[] | null> {
-  try {
-    const url = `https://connector-gateway.lovable.dev/tiktok/research/topic/keywords/?keyword=${encodeURIComponent(subject || "trending")}`;
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": tiktokApiKey,
-      },
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const list =
-      json?.data?.keywords ??
-      json?.data?.list ??
-      json?.keywords ??
-      json?.list ??
-      [];
-    if (!Array.isArray(list) || list.length === 0) return null;
-    return list
-      .map((item: unknown) =>
-        typeof item === "string"
-          ? item
-          : String((item as { keyword?: string; name?: string })?.keyword ??
-              (item as { name?: string })?.name ??
-              ""),
-      )
-      .filter((s: string) => s.trim().length > 0)
-      .slice(0, 10);
-  } catch {
-    return null;
-  }
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
 
@@ -117,10 +75,8 @@ serve(async (req) => {
     if (!__auth.ok) return __auth.response;
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    const TIKTOK_API_KEY = Deno.env.get("TIKTOK_API_KEY");
+    const LOVABLE_API_KEY = "";
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     if (!REPLICATE_API_KEY) throw new Error("REPLICATE_API_KEY not configured");
 
     let subject = "";
@@ -132,15 +88,7 @@ serve(async (req) => {
     }
 
     let topics: string[] | null = null;
-    let source = "gemini";
-
-    if (TIKTOK_API_KEY) {
-      const t = await tiktokInsights(subject, LOVABLE_API_KEY, TIKTOK_API_KEY);
-      if (t && t.length > 0) {
-        topics = t;
-        source = "tiktok";
-      }
-    }
+    const source = "gemini";
 
     if (!topics || topics.length === 0) {
       topics = await fallbackViaGemini(subject, LOVABLE_API_KEY, REPLICATE_API_KEY);

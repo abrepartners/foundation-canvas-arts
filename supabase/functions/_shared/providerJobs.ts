@@ -152,12 +152,11 @@ export async function cancelReplicatePrediction(
   lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<{ ok: boolean; status: number; body: string }> {
-  const url = `https://connector-gateway.lovable.dev/replicate/v1/predictions/${predictionId}/cancel`;
+  const url = `https://api.replicate.com/v1/predictions/${predictionId}/cancel`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${lovableApiKey}`,
-      "X-Connection-Api-Key": replicateApiKey,
+      Authorization: `Bearer ${replicateApiKey}`,
     },
   });
   const body = await res.text().catch(() => "");

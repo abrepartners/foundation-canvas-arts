@@ -1,25 +1,34 @@
-project_id = "pswlaczoevrclemhjjpw"
+project_id = "pscwdryzcwgtwvliszpc"
 
 [functions.generate-botanical-content]
-verify_jwt = false
+verify_jwt = true
 
 [functions.regenerate-visual]
-verify_jwt = false
+verify_jwt = true
 
 [functions.post-tiktok-carousel]
-verify_jwt = false
+verify_jwt = true
 
 [functions.tiktok-send-status]
-verify_jwt = false
+verify_jwt = true
 
 [functions.tiktok-publish-status]
-verify_jwt = false
+verify_jwt = true
 
 [functions.tiktok-oauth]
 verify_jwt = false
 
 [functions.animated-stop]
-verify_jwt = false
+verify_jwt = true
 
 [functions.animated-prompt-lab]
+verify_jwt = true
+
+[functions.youtube-oauth]
 verify_jwt = false
+
+[functions.youtube-upload]
+verify_jwt = true
+
+[functions.platform-insights]
+verify_jwt = true

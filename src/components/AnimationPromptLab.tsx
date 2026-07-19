@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, FlaskConical, Loader2, Play, Sparkles, StopCircle } from "lucide-react";
+import { Download, FlaskConical, Loader2, Play, Sparkles, StopCircle, Youtube } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -92,7 +92,9 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isUploadingYoutube, setIsUploadingYoutube] = useState(false);
   const requestKey = useRef<string | null>(null);
+  const youtubeKey = useRef<string | null>(null);
   const { toast } = useToast();
 
   const loadOptions = async () => {
@@ -235,6 +237,31 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
     }
   };
 
+  const sendToYouTube = async () => {
+    if (!job?.output_url) return;
+    if (!youtubeKey.current) youtubeKey.current = crypto.randomUUID();
+    setIsUploadingYoutube(true);
+    try {
+      const { data, error } = await invokeFn<{ publication?: { remote_url?: string } }>("youtube-upload", {
+        body: {
+          prompt_lab_job_id: job.id,
+          idempotency_key: youtubeKey.current,
+          title: `${plantName ?? "Botanical discovery"} #Shorts`,
+        },
+      });
+      if (error) throw new Error(error.message);
+      toast({
+        title: "Sent to YouTube privately",
+        description: "Review it in YouTube Studio, add final details, then publish it yourself.",
+      });
+      if (data?.publication?.remote_url) window.open(data.publication.remote_url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      toast({ title: "YouTube upload failed", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setIsUploadingYoutube(false);
+    }
+  };
+
   return (
     <div className="mt-6 rounded-lg border border-primary/25 bg-primary/[0.035] p-4 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -372,6 +399,10 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
                 <a href={job.output_url} target="_blank" rel="noreferrer">
                   <Button size="sm" variant="outline"><Play className="h-4 w-4 mr-2" />Open</Button>
                 </a>
+                <Button size="sm" variant="outline" onClick={sendToYouTube} disabled={isUploadingYoutube}>
+                  {isUploadingYoutube ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Youtube className="h-4 w-4 mr-2" />}
+                  Send private to YouTube
+                </Button>
               </div>
             </div>
           )}

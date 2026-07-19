@@ -1,5 +1,5 @@
 // Regenerate the long-form SEO caption for a saved botanical or trend row.
-// Uses Lovable AI Gateway and writes back via service role (clients are
+// Uses Replicate directly and writes back via service role (clients are
 // blocked from UPDATE by RLS by design).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -49,12 +49,11 @@ async function runReplicateCaption(
   lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string> {
-  const GW = "https://connector-gateway.lovable.dev/replicate/v1";
+  const GW = "https://api.replicate.com/v1";
   const createRes = await fetch(`${GW}/models/google/gemini-2.5-flash/predictions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${lovableApiKey}`,
-      "X-Connection-Api-Key": replicateApiKey,
+      Authorization: `Bearer ${replicateApiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -73,10 +72,7 @@ async function runReplicateCaption(
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2500));
     const pollRes = await fetch(`${GW}/predictions/${pred.id}`, {
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": replicateApiKey,
-      },
+      headers: { Authorization: `Bearer ${replicateApiKey}` },
     });
     if (!pollRes.ok) continue;
     const p = await pollRes.json();
@@ -107,11 +103,10 @@ serve(async (req) => {
   if (!__auth.ok) return __auth.response;
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const LOVABLE_API_KEY = "";
     const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
     if (!REPLICATE_API_KEY) throw new Error("REPLICATE_API_KEY not configured");
     if (!SUPABASE_URL || !SERVICE_KEY)
       throw new Error("Supabase credentials not configured");
