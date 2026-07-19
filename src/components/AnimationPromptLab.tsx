@@ -84,6 +84,7 @@ function statusLabel(job: LabJob): string {
 
 export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Props) {
   const [options, setOptions] = useState<LabOptions | null>(null);
+  const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
   const [selectedStill, setSelectedStill] = useState(0);
   const [archetype, setArchetype] = useState<ArchetypeKey>("growth_reveal");
   const [modelKey, setModelKey] = useState<ModelKey>("seedance_1_5_pro");
@@ -97,7 +98,10 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
   const loadOptions = async () => {
     const { data, error } = await invokeFn<LabOptions>("animated-prompt-lab", { body: { action: "options" } });
     if (error) throw new Error(error.message);
-    if (data) setOptions(data);
+    if (data) {
+      setOptions(data);
+      setBackendAvailable(true);
+    }
   };
 
   const loadLatest = async () => {
@@ -110,8 +114,12 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
   useEffect(() => {
     setSelectedStill(0);
     setJob(null);
+    setBackendAvailable(null);
     requestKey.current = null;
-    loadOptions().catch((error) => console.warn("Prompt Lab options failed", error));
+    loadOptions().catch((error) => {
+      setBackendAvailable(false);
+      console.warn("Prompt Lab backend unavailable", error);
+    });
     loadLatest().catch((error) => console.warn("Prompt Lab status failed", error));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animationRowId]);
@@ -142,6 +150,11 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
   }, [archetype, model, options]);
 
   const active = !!job && ACTIVE.has(job.status);
+
+  // New Edge Functions can arrive after the frontend in Lovable deployments.
+  // Keep the lab fully hidden until its protected options contract responds,
+  // so production never exposes a dead or partially wired paid control.
+  if (backendAvailable !== true || !options) return null;
 
   const openConfirmation = () => {
     requestKey.current = crypto.randomUUID();
