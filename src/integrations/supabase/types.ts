@@ -14,6 +14,101 @@ export type Database = {
   }
   public: {
     Tables: {
+      animation_prompt_lab_jobs: {
+        Row: {
+          animation_row_id: string
+          archetype: string
+          completed_at: string | null
+          cost_confirmed_at: string
+          created_at: string
+          duration_seconds: number
+          error: string | null
+          estimated_cost_usd: number
+          id: string
+          idempotency_key: string
+          model: string
+          model_key: string
+          output_url: string | null
+          pricing_version: string
+          prompt: string
+          prompt_version: string
+          provider_status: string | null
+          resolution: string
+          start_frame_prediction_id: string | null
+          start_frame_url: string | null
+          status: string
+          still_index: number
+          still_url: string
+          stop_requested_at: string | null
+          updated_at: string
+          video_prediction_id: string | null
+        }
+        Insert: {
+          animation_row_id: string
+          archetype: string
+          completed_at?: string | null
+          cost_confirmed_at: string
+          created_at?: string
+          duration_seconds: number
+          error?: string | null
+          estimated_cost_usd: number
+          id?: string
+          idempotency_key: string
+          model: string
+          model_key: string
+          output_url?: string | null
+          pricing_version: string
+          prompt: string
+          prompt_version: string
+          provider_status?: string | null
+          resolution: string
+          start_frame_prediction_id?: string | null
+          start_frame_url?: string | null
+          status?: string
+          still_index: number
+          still_url: string
+          stop_requested_at?: string | null
+          updated_at?: string
+          video_prediction_id?: string | null
+        }
+        Update: {
+          animation_row_id?: string
+          archetype?: string
+          completed_at?: string | null
+          cost_confirmed_at?: string
+          created_at?: string
+          duration_seconds?: number
+          error?: string | null
+          estimated_cost_usd?: number
+          id?: string
+          idempotency_key?: string
+          model?: string
+          model_key?: string
+          output_url?: string | null
+          pricing_version?: string
+          prompt?: string
+          prompt_version?: string
+          provider_status?: string | null
+          resolution?: string
+          start_frame_prediction_id?: string | null
+          start_frame_url?: string | null
+          status?: string
+          still_index?: number
+          still_url?: string
+          stop_requested_at?: string | null
+          updated_at?: string
+          video_prediction_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "animation_prompt_lab_jobs_animation_row_id_fkey"
+            columns: ["animation_row_id"]
+            isOneToOne: false
+            referencedRelation: "botanical_animated"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       animation_provider_jobs: {
         Row: {
           attempt: number
