@@ -4,7 +4,7 @@
 import { corsHeadersFor } from "./cors.ts";
 
 export type AuthResult =
-  | { ok: true; internal: boolean }
+  | { ok: true; internal: boolean; userId: string | null }
   | { ok: false; response: Response };
 
 export async function requireAuthorized(req: Request): Promise<AuthResult> {
@@ -21,7 +21,7 @@ export async function requireAuthorized(req: Request): Promise<AuthResult> {
   if (serviceKey && authHeader.startsWith("Bearer ")) {
     const token = authHeader.slice("Bearer ".length).trim();
     if (token && token === serviceKey) {
-      return { ok: true, internal: true };
+      return { ok: true, internal: true, userId: null };
     }
   }
 
@@ -34,5 +34,8 @@ export async function requireAuthorized(req: Request): Promise<AuthResult> {
     return { ok: false, response: unauthorized() };
   }
 
-  return { ok: true, internal: false };
+  // Passcode auth is single-owner; interactive user id is not available here.
+  // Platform connect flows that need a real auth.users id should set OWNER_USER_ID.
+  const ownerId = Deno.env.get("OWNER_USER_ID");
+  return { ok: true, internal: false, userId: ownerId ?? null };
 }
