@@ -54,6 +54,7 @@ export interface FacelessVisual {
   error?: string | null;
   history?: VisualHistoryEntry[];
   status?: VisualStatus;
+  started_at?: string | null;
 }
 
 
@@ -96,6 +97,7 @@ export function useBotanicalContent() {
     const MAX_POLLS = 300; // ~10 min ceiling
     const RESUME_AFTER_POLLS = 20; // ~40s before first auto-resume
     const RESUME_COOLDOWN_MS = 90_000;
+    const STALL_MS = 120_000; // only kick stuck slots (>2 min)
     let lastResumeAt = 0;
     let autoResumeCount = 0;
 
@@ -134,11 +136,18 @@ export function useBotanicalContent() {
       if (allSettled) return;
 
       const now = Date.now();
+      const hasStuckSlot = visuals.some((v) => {
+        if (v.status === "error" || v.error) return true;
+        if (v.status !== "generating" || v.image_url) return false;
+        const startedAt = v.started_at ? Date.parse(v.started_at) : 0;
+        return startedAt > 0 && now - startedAt > STALL_MS;
+      });
+
       if (
         autoResumeCount < MAX_AUTO_RESUMES &&
         i >= RESUME_AFTER_POLLS &&
         now - lastResumeAt > RESUME_COOLDOWN_MS &&
-        visuals.some((v) => v.status !== "done" && !v.image_url)
+        hasStuckSlot
       ) {
         lastResumeAt = now;
         autoResumeCount++;

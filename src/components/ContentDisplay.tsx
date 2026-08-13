@@ -261,8 +261,14 @@ function FacelessVisualsSection({
   useEffect(() => {
     for (const v of visuals) {
       const pending = !v.image_url && v.status !== "error";
-      if (pending && !startedAtRef.current[v.moment]) {
-        startedAtRef.current[v.moment] = Date.now();
+      if (pending) {
+        const backendStarted = v.started_at ? Date.parse(v.started_at) : 0;
+        const localStarted = startedAtRef.current[v.moment];
+        if (backendStarted > 0) {
+          startedAtRef.current[v.moment] = backendStarted;
+        } else if (!localStarted) {
+          startedAtRef.current[v.moment] = Date.now();
+        }
       }
       if (v.image_url || v.status === "error") {
         delete startedAtRef.current[v.moment];
@@ -346,6 +352,11 @@ function FacelessVisualsSection({
   const generatingCount = sortedVisuals.filter(
     (v) => !v.image_url && (v.status === "queued" || v.status === "generating" || regenerating.has(v.moment)) && v.status !== "error",
   ).length;
+  const stalledCount = sortedVisuals.filter((v) => {
+    if (v.image_url || v.status === "error" || v.status === "done") return false;
+    const startedAt = v.started_at ? Date.parse(v.started_at) : startedAtRef.current[v.moment];
+    return startedAt > 0 && now - startedAt > 120_000;
+  }).length;
   const anyInFlight = generatingCount > 0;
 
   // Overall elapsed since the oldest pending slot started.
@@ -398,10 +409,13 @@ function FacelessVisualsSection({
         {failedCount > 0 && (
           <span className="text-destructive">{failedCount} failed</span>
         )}
+        {stalledCount > 0 && (
+          <span className="text-amber-600">{stalledCount} stalled &gt;2m</span>
+        )}
         {anyInFlight && overallElapsedMs > 0 && (
           <span className="text-muted-foreground tabular-nums">· elapsed {fmtElapsed(overallElapsedMs)}</span>
         )}
-        {onRetryStuck && (failedCount > 0 || (autoResumeExhausted && generatingCount > 0)) && (
+        {onRetryStuck && autoResumeExhausted && (failedCount > 0 || stalledCount > 0) && (
           <Button
             variant="outline"
             size="sm"
