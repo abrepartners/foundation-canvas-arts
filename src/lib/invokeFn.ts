@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { APP_PASSCODE } from "@/lib/auth";
+import { APP_PASSCODE } from "@/lib/passcode";
 
 type InvokeOptions = Parameters<typeof supabase.functions.invoke>[1];
 

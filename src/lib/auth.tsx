@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
+import { APP_PASSCODE } from "./passcode";
 
-export const APP_PASSCODE = "0801";
 const AUTH_KEY = "botanical:passcode_auth";
 
 interface AuthState {
