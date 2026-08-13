@@ -1,8 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Leaf, TrendingUp, Film, ListChecks, LogOut, BarChart3 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-
+import { useAuth } from "@/lib/auth";
 
 const TABS = [
   { to: "/", label: "Plants", icon: Leaf },
@@ -22,12 +21,12 @@ interface AppHeaderProps {
 export function AppHeader({ title, subtitle, leading, contained = false }: AppHeaderProps) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const isActive = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = () => {
+    signOut();
     navigate("/login", { replace: true });
   };
-
 
   const headerInner = (
     <div className="flex items-center gap-3 py-4">
@@ -69,7 +68,6 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
       </nav>
     </div>
   );
-
 
   return (
     <>

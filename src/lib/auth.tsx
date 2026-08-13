@@ -1,37 +1,51 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+
+export const APP_PASSCODE = "0801";
+const AUTH_KEY = "botanical:passcode_auth";
 
 interface AuthState {
-  session: Session | null;
+  authenticated: boolean;
   loading: boolean;
+  signInWithPasscode: (pin: string) => boolean;
+  signOut: () => void;
 }
 
-const AuthContext = createContext<AuthState>({ session: null, loading: true });
+const AuthContext = createContext<AuthState>({
+  authenticated: false,
+  loading: true,
+  signInWithPasscode: () => false,
+  signOut: () => {},
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session);
-      setLoading(false);
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
-      setSession(next);
-      setLoading(false);
-    });
-    return () => {
-      mounted = false;
-      listener.subscription.unsubscribe();
-    };
+    const stored = sessionStorage.getItem(AUTH_KEY);
+    setAuthenticated(stored === "1");
+    setLoading(false);
   }, []);
 
-  const value = useMemo(() => ({ session, loading }), [session, loading]);
+  const value = useMemo(
+    () => ({
+      authenticated,
+      loading,
+      signInWithPasscode: (pin: string) => {
+        if (pin.trim() !== APP_PASSCODE) return false;
+        sessionStorage.setItem(AUTH_KEY, "1");
+        setAuthenticated(true);
+        return true;
+      },
+      signOut: () => {
+        sessionStorage.removeItem(AUTH_KEY);
+        setAuthenticated(false);
+      },
+    }),
+    [authenticated, loading],
+  );
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
@@ -41,11 +55,11 @@ export function useAuth() {
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const { session, loading } = useAuth();
+  const { authenticated, loading } = useAuth();
   if (loading) {
     return <main className="min-h-screen grid place-items-center text-sm text-muted-foreground">Checking session…</main>;
   }
-  if (!session) {
+  if (!authenticated) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   return <>{children}</>;
