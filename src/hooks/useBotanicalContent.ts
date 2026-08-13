@@ -54,6 +54,7 @@ export interface FacelessVisual {
   error?: string | null;
   history?: VisualHistoryEntry[];
   status?: VisualStatus;
+  started_at?: string | null;
 }
 
 
