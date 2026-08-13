@@ -261,8 +261,14 @@ function FacelessVisualsSection({
   useEffect(() => {
     for (const v of visuals) {
       const pending = !v.image_url && v.status !== "error";
-      if (pending && !startedAtRef.current[v.moment]) {
-        startedAtRef.current[v.moment] = Date.now();
+      if (pending) {
+        const backendStarted = v.started_at ? Date.parse(v.started_at) : 0;
+        const localStarted = startedAtRef.current[v.moment];
+        if (backendStarted > 0) {
+          startedAtRef.current[v.moment] = backendStarted;
+        } else if (!localStarted) {
+          startedAtRef.current[v.moment] = Date.now();
+        }
       }
       if (v.image_url || v.status === "error") {
         delete startedAtRef.current[v.moment];
