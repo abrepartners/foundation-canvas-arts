@@ -57,7 +57,6 @@ export default function Settings() {
     setSaving(true);
     setError(null);
     const submittedToken = token.trim();
-    setToken("");
     const { data, error: fnError } = await invokeFn<ReplicateStatus>("configure-replicate", {
       body: { action: "connect", token: submittedToken },
     });
@@ -67,6 +66,7 @@ export default function Settings() {
       setError(errorMessage(detail.body, "Replicate could not be connected."));
       return;
     }
+    setToken("");
     setStatus(data ?? { connected: true });
     toast({
       title: "Replicate connected",

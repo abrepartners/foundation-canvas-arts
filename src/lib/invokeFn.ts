@@ -18,20 +18,39 @@ class ProxyFunctionsError extends Error {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function invokeFn<T = any>(name: string, options: InvokeOptions = {}) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const headers = new Headers(options.headers as HeadersInit | undefined);
-  headers.set("Content-Type", "application/json");
-  headers.set("apikey", import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
-  if (sessionData.session?.access_token) {
-    headers.set("Authorization", `Bearer ${sessionData.session.access_token}`);
-  }
-
   try {
-    const response = await fetch(`/api/functions/${encodeURIComponent(name)}`, {
-      method: "POST",
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const endpoint = `${supabaseUrl}/functions/v1/${encodeURIComponent(name)}`;
+
+    const request = async (accessToken?: string | null) => {
+      const headers = new Headers(options.headers as HeadersInit | undefined);
+      headers.set("Content-Type", "application/json");
+      headers.set("apikey", publishableKey);
+      headers.set("Authorization", `Bearer ${accessToken || publishableKey}`);
+      return fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      });
+    };
+
+    let { data: sessionData } = await supabase.auth.getSession();
+    const expiresSoon = sessionData.session?.expires_at
+      ? sessionData.session.expires_at * 1000 <= Date.now() + 60_000
+      : false;
+    if (expiresSoon) {
+      const refreshed = await supabase.auth.refreshSession();
+      if (!refreshed.error) sessionData = refreshed.data;
+    }
+
+    let response = await request(sessionData.session?.access_token);
+    if (response.status === 401 && sessionData.session?.refresh_token) {
+      const refreshed = await supabase.auth.refreshSession();
+      if (!refreshed.error && refreshed.data.session?.access_token) {
+        response = await request(refreshed.data.session.access_token);
+      }
+    }
     const text = await response.text();
     let data: T | null = null;
     if (text) {

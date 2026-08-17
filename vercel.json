@@ -3,10 +3,6 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/functions/:name",
-      "destination": "https://thxkzaazwkdtacfvdiyn.supabase.co/functions/v1/:name"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
