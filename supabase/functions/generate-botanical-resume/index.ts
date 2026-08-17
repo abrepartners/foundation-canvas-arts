@@ -12,12 +12,43 @@ import { getReplicateApiKey } from "../_shared/secrets.ts";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = any;
 
-const STALE_GENERATING_MS = 60_000;
+const STALE_GENERATING_MS = 10 * 60_000;
+
+async function pollReplicatePrediction(
+  predictionId: string,
+  replicateApiKey: string,
+): Promise<string> {
+  const headers = {
+    Authorization: `Bearer ${replicateApiKey}`,
+    "Content-Type": "application/json",
+  };
+  for (let i = 0; i < 45; i++) {
+    await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 3000));
+    const pollRes = await fetch(
+      `https://api.replicate.com/v1/predictions/${predictionId}`,
+      { headers },
+    );
+    if (!pollRes.ok) continue;
+    const prediction = await pollRes.json();
+    if (prediction.status === "succeeded") {
+      const url = Array.isArray(prediction.output)
+        ? prediction.output[0]
+        : prediction.output;
+      if (typeof url !== "string") throw new Error("Replicate: invalid output");
+      return url;
+    }
+    if (prediction.status === "failed" || prediction.status === "canceled") {
+      throw new Error(`Replicate prediction ${prediction.status}: ${prediction.error ?? ""}`);
+    }
+  }
+  throw new Error("Replicate timed out (resume)");
+}
 
 async function runReplicatePrediction(
   model: string,
   input: Record<string, unknown>,
   replicateApiKey: string,
+  onPredictionId?: (predictionId: string) => Promise<void>,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
   const headers = {
@@ -41,22 +72,8 @@ async function runReplicatePrediction(
   const pred = await createRes.json();
   const predId = pred.id;
   if (!predId) throw new Error("Replicate: no prediction id");
-
-  for (let i = 0; i < 45; i++) {
-    await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 3000));
-    const pollRes = await fetch(`${GW}/predictions/${predId}`, { headers });
-    if (!pollRes.ok) continue;
-    const p = await pollRes.json();
-    if (p.status === "succeeded") {
-      const url = Array.isArray(p.output) ? p.output[0] : p.output;
-      if (typeof url !== "string") throw new Error("Replicate: invalid output");
-      return url;
-    }
-    if (p.status === "failed" || p.status === "canceled") {
-      throw new Error(`Replicate prediction ${p.status}: ${p.error ?? ""}`);
-    }
-  }
-  throw new Error("Replicate timed out (resume)");
+  await onPredictionId?.(predId);
+  return pollReplicatePrediction(predId, replicateApiKey);
 }
 
 async function generateImageBytes(
@@ -68,6 +85,8 @@ async function generateImageBytes(
     animationRowId: string;
     jobKey: string;
   },
+  onPredictionId?: (predictionId: string) => Promise<void>,
+  existingPredictionId?: string,
 ): Promise<{ bytes: Uint8Array; jobId?: string }> {
   if (provider === "openai" || provider === "replicate") {
     if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
@@ -88,7 +107,9 @@ async function generateImageBytes(
       return result;
     }
 
-    const url = await runReplicatePrediction(model, input, replicateApiKey);
+    const url = existingPredictionId
+      ? await pollReplicatePrediction(existingPredictionId, replicateApiKey)
+      : await runReplicatePrediction(model, input, replicateApiKey, onPredictionId);
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 30_000);
     try {
@@ -106,6 +127,9 @@ interface Visual {
   image_url?: string | null;
   status?: string;
   started_at?: string | null;
+  completed_at?: string | null;
+  prediction_id?: string | null;
+  provider?: "replicate" | "openai" | null;
   error?: string | null;
 }
 
@@ -171,19 +195,12 @@ serve(async (req) => {
     console.log(`resume ${contentId}: retrying ${stuck.length} — ${stuck.map((v) => v.moment).join(", ")}`);
 
     const mergeVisual = async (moment: string, patch: Partial<Visual>) => {
-      const { data: cur } = await supabase
-        .from("botanical_content").select("script_visuals").eq("id", contentId).single();
-      let arr: Visual[] = visuals;
-      if (cur?.script_visuals) {
-        try {
-          arr = typeof cur.script_visuals === "string"
-            ? JSON.parse(cur.script_visuals as string)
-            : (cur.script_visuals as Visual[]);
-        } catch { /* keep */ }
-      }
-      const next = arr.map((v) => v.moment === moment ? { ...v, ...patch } : v);
-      await supabase.from("botanical_content")
-        .update({ script_visuals: JSON.stringify(next) }).eq("id", contentId);
+      const { error: patchError } = await supabase.rpc("patch_botanical_visual", {
+        _content_id: contentId,
+        _moment: moment,
+        _patch: patch,
+      });
+      if (patchError) throw new Error(`visual status update failed: ${patchError.message}`);
     };
 
     const bg = async () => {
@@ -206,6 +223,13 @@ serve(async (req) => {
                   jobKey: `still:${v.moment}`,
                 }
               : undefined,
+            async (predictionId) => {
+              await mergeVisual(v.moment, {
+                prediction_id: predictionId,
+                provider,
+              });
+            },
+            v.prediction_id ?? undefined,
           );
           const ext = "jpg";
           const path = `${contentId}/${v.moment}.${ext}`;
@@ -225,13 +249,21 @@ serve(async (req) => {
               error: null,
             });
           }
-          await mergeVisual(v.moment, { image_url: u.publicUrl, status: "done", error: null });
+          await mergeVisual(v.moment, {
+            image_url: u.publicUrl,
+            status: "done",
+            error: null,
+            completed_at: new Date().toISOString(),
+          });
           console.log(`resume: done ${v.moment}`);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.error(`resume: error ${v.moment}:`, msg);
           await mergeVisual(v.moment, {
-            image_url: null, status: "error", error: msg.slice(0, 240),
+            image_url: null,
+            status: "error",
+            error: msg.slice(0, 240),
+            completed_at: new Date().toISOString(),
           });
         }
       }

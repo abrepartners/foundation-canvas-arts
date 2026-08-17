@@ -14,11 +14,38 @@ import { getReplicateApiKey } from "../_shared/secrets.ts";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = any;
 
+async function pollReplicatePrediction(
+  predictionId: string,
+  replicateApiKey: string,
+): Promise<string> {
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
+    const pollRes = await fetch(
+      `https://api.replicate.com/v1/predictions/${predictionId}`,
+      { headers: { Authorization: `Bearer ${replicateApiKey}` } },
+    );
+    if (!pollRes.ok) continue;
+    const prediction = await pollRes.json();
+    if (prediction.status === "succeeded") {
+      const url = Array.isArray(prediction.output)
+        ? prediction.output[0]
+        : prediction.output;
+      if (typeof url !== "string") throw new Error("Replicate: invalid output");
+      return url;
+    }
+    if (prediction.status === "failed" || prediction.status === "canceled") {
+      throw new Error(`Replicate prediction ${prediction.status}: ${prediction.error ?? ""}`);
+    }
+  }
+  throw new Error("Replicate timed out");
+}
+
 // Run a Replicate prediction for any official model, return output URL.
 async function runReplicatePrediction(
   model: string, // e.g. "black-forest-labs/flux-1.1-pro" or "openai/gpt-image-2"
   input: Record<string, unknown>,
   replicateApiKey: string,
+  onPredictionId?: (predictionId: string) => Promise<void>,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
   const authHeaders = {
@@ -54,26 +81,8 @@ async function runReplicatePrediction(
   const pred = await createRes.json();
   const predId = pred.id;
   if (!predId) throw new Error("Replicate: no prediction id");
-
-  for (let i = 0; i < 90; i++) {
-    await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
-    const pollRes = await fetch(`${GW}/predictions/${predId}`, {
-      headers: {
-        Authorization: `Bearer ${replicateApiKey}`,
-      },
-    });
-    if (!pollRes.ok) continue;
-    const p = await pollRes.json();
-    if (p.status === "succeeded") {
-      const url = Array.isArray(p.output) ? p.output[0] : p.output;
-      if (typeof url !== "string") throw new Error("Replicate: invalid output");
-      return url;
-    }
-    if (p.status === "failed" || p.status === "canceled") {
-      throw new Error(`Replicate prediction ${p.status}: ${p.error ?? ""}`);
-    }
-  }
-  throw new Error("Replicate timed out");
+  await onPredictionId?.(predId);
+  return pollReplicatePrediction(predId, replicateApiKey);
 }
 
 async function runReplicateTextCompletion(
@@ -145,6 +154,8 @@ async function generateImageBytes(
     animationRowId: string;
     jobKey: string;
   },
+  onPredictionId?: (predictionId: string) => Promise<void>,
+  existingPredictionId?: string,
 ): Promise<{ bytes: Uint8Array; jobId?: string }> {
   if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
     const model =
@@ -178,7 +189,14 @@ async function generateImageBytes(
       return result;
     }
 
-    const url = await runReplicatePrediction(model, input, replicateApiKey);
+    const url = existingPredictionId
+      ? await pollReplicatePrediction(existingPredictionId, replicateApiKey)
+      : await runReplicatePrediction(
+          model,
+          input,
+          replicateApiKey,
+          onPredictionId,
+        );
     const imgRes = await fetch(url);
     if (!imgRes.ok)
       throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
@@ -660,41 +678,32 @@ Repetition is NOT allowed.
         error?: string | null;
         status?: "queued" | "generating" | "done" | "error";
         started_at?: string | null;
+        completed_at?: string | null;
+        prediction_id?: string | null;
+        provider?: "replicate" | "openai" | null;
       },
     ) => {
-      const { data: currentRow } = await supabase
-        .from("botanical_content")
-        .select("script_visuals")
-        .eq("id", contentId)
-        .single();
-      let arr = visualsInitial as Array<Record<string, unknown>>;
-      if (currentRow?.script_visuals) {
-        try {
-          arr =
-            typeof currentRow.script_visuals === "string"
-              ? JSON.parse(currentRow.script_visuals)
-              : currentRow.script_visuals;
-        } catch {
-          /* fallback */
-        }
-      }
       // Auto-stamp started_at whenever we transition to "generating"
       const fullPatch =
         patch.status === "generating" && patch.started_at === undefined
           ? { ...patch, started_at: new Date().toISOString() }
           : patch;
-      const next = arr.map((v) =>
-        v.moment === moment ? { ...v, ...fullPatch } : v,
-      );
-      await supabase
-        .from("botanical_content")
-        .update({ script_visuals: JSON.stringify(next) })
-        .eq("id", contentId);
+      const { error: patchError } = await supabase.rpc("patch_botanical_visual", {
+        _content_id: contentId,
+        _moment: moment,
+        _patch: fullPatch,
+      });
+      if (patchError) throw new Error(`visual status update failed: ${patchError.message}`);
     };
 
     const generateOneAttempt = async (
       visual: (typeof visualsInitial)[number],
-    ): Promise<{ ok: true } | { ok: false; msg: string }> => {
+      existingPredictionId?: string,
+    ): Promise<
+      | { ok: true }
+      | { ok: false; msg: string; predictionId?: string }
+    > => {
+      let submittedPredictionId = existingPredictionId;
       try {
         if (animationRowId && await isStopped(supabase, animationRowId)) {
           return { ok: false, msg: "stopped" };
@@ -710,6 +719,14 @@ Repetition is NOT allowed.
                 jobKey: `still:${visual.moment}`,
               }
             : undefined,
+          async (predictionId) => {
+            submittedPredictionId = predictionId;
+            await mergeVisual(visual.moment, {
+              prediction_id: predictionId,
+              provider: imageProvider,
+            });
+          },
+          existingPredictionId,
         );
         const ext = "jpg";
         const filePath = `${contentId}/${visual.moment}.${ext}`;
@@ -720,7 +737,13 @@ Repetition is NOT allowed.
             contentType: ext === "jpg" ? "image/jpeg" : "image/png",
             upsert: true,
           });
-        if (uploadError) return { ok: false, msg: `upload: ${uploadError.message}` };
+        if (uploadError) {
+          return {
+            ok: false,
+            msg: `upload: ${uploadError.message}`,
+            predictionId: submittedPredictionId,
+          };
+        }
 
         const { data: urlData } = supabase.storage
           .from("botanical-faceless-visuals")
@@ -739,10 +762,15 @@ Repetition is NOT allowed.
           image_url: urlData.publicUrl,
           error: null,
           status: "done",
+          completed_at: new Date().toISOString(),
         });
         return { ok: true };
       } catch (err) {
-        return { ok: false, msg: err instanceof Error ? err.message : String(err) };
+        return {
+          ok: false,
+          msg: err instanceof Error ? err.message : String(err),
+          predictionId: submittedPredictionId,
+        };
       }
     };
 
@@ -753,13 +781,14 @@ Repetition is NOT allowed.
       if (first.msg === "stopped") return;
       console.warn(`Retrying ${visual.moment} after error:`, first.msg);
       await new Promise((r) => setTimeout(r, 4000));
-      const second = await generateOneAttempt(visual);
+      const second = await generateOneAttempt(visual, first.predictionId);
       if (second.ok) return;
       console.error(`Image error for ${visual.moment} after retry:`, second.msg);
       await mergeVisual(visual.moment, {
         image_url: null,
         error: second.msg.slice(0, 240),
         status: "error",
+        completed_at: new Date().toISOString(),
       });
     };
 

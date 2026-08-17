@@ -93,6 +93,10 @@ interface Visual {
   error?: string | null;
   history?: HistoryEntry[];
   status?: "queued" | "generating" | "done" | "error";
+  started_at?: string | null;
+  completed_at?: string | null;
+  prediction_id?: string | null;
+  provider?: "replicate" | "openai" | null;
 }
 
 const HISTORY_CAP = 5;
@@ -162,6 +166,40 @@ serve(async (req) => {
 
     const currentVisual = visuals.find((v) => v.moment === moment);
 
+    const patchVisual = async (patch: Partial<Visual>) => {
+      if (table === "botanical_content") {
+        const { error: patchError } = await supabase.rpc("patch_botanical_visual", {
+          _content_id: content_id,
+          _moment: moment,
+          _patch: patch,
+        });
+        if (patchError) throw new Error(`visual status update failed: ${patchError.message}`);
+        return;
+      }
+
+      const { data: latest } = await supabase
+        .from(table)
+        .select("script_visuals")
+        .eq("id", content_id)
+        .single();
+      let current: Visual[] = visuals;
+      try {
+        current = typeof latest?.script_visuals === "string"
+          ? JSON.parse(latest.script_visuals)
+          : latest?.script_visuals ?? visuals;
+      } catch {
+        current = visuals;
+      }
+      const next = current.map((visual) =>
+        visual.moment === moment ? { ...visual, ...patch } : visual
+      );
+      const { error: updateError } = await supabase
+        .from(table)
+        .update({ script_visuals: JSON.stringify(next) })
+        .eq("id", content_id);
+      if (updateError) throw new Error(`visual status update failed: ${updateError.message}`);
+    };
+
     // === RESTORE ACTION: swap current with a history entry ===
     if (action === "restore") {
       if (!restoreUrl || !restorePrompt) {
@@ -184,22 +222,14 @@ serve(async (req) => {
         if (newHistory.length >= HISTORY_CAP) break;
       }
 
-      const updatedVisuals = visuals.map((v) =>
-        v.moment === moment
-          ? {
-              ...v,
-              image_url: restoreUrl,
-              prompt: restorePrompt,
-              error: null,
-              history: newHistory,
-            }
-          : v,
-      );
-
-      await supabase
-        .from(table)
-        .update({ script_visuals: JSON.stringify(updatedVisuals) })
-        .eq("id", content_id);
+      await patchVisual({
+        image_url: restoreUrl,
+        prompt: restorePrompt,
+        error: null,
+        history: newHistory,
+        status: "done",
+        completed_at: new Date().toISOString(),
+      });
 
       return new Response(
         JSON.stringify({
@@ -221,6 +251,28 @@ serve(async (req) => {
           ? "openai"
           : "replicate";
 
+    const startedAt = currentVisual?.started_at
+      ? Date.parse(currentVisual.started_at)
+      : 0;
+    const isRecentlyGenerating =
+      currentVisual?.status === "generating" &&
+      startedAt > 0 &&
+      Date.now() - startedAt < 10 * 60_000;
+    if (isRecentlyGenerating) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "This image is already generating. Wait for it to finish before retrying.",
+        }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const resumePredictionId =
+      currentVisual?.status === "generating" && currentVisual.prediction_id
+        ? currentVisual.prediction_id
+        : null;
+
     const REPLICATE_API_KEY = await getReplicateApiKey();
     if (!REPLICATE_API_KEY) {
       throw new Error(
@@ -241,17 +293,14 @@ serve(async (req) => {
     // Mark this slot as generating BEFORE calling the provider so the UI
     // (which polls script_visuals) shows the in-flight state and disables
     // the regenerate button — preventing duplicate credit spend.
-    {
-      const generatingVisuals = visuals.map((v) =>
-        v.moment === moment
-          ? { ...v, status: "generating" as const, error: null }
-          : v,
-      );
-      await supabase
-        .from(table)
-        .update({ script_visuals: JSON.stringify(generatingVisuals) })
-        .eq("id", content_id);
-    }
+    await patchVisual({
+      status: "generating",
+      error: null,
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      prediction_id: resumePredictionId,
+      provider: imageProvider,
+    });
 
     let imageBuffer: Uint8Array;
     let outputExt: "jpg" | "png" = "jpg";
@@ -276,20 +325,27 @@ serve(async (req) => {
               safety_tolerance: 2,
             };
 
-      const createRes = await fetch(`${GW}/models/${model}/predictions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${REPLICATE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ input }),
-      });
-      if (!createRes.ok) {
-        const txt = await createRes.text();
-        throw new Error(`Replicate create failed: ${createRes.status} ${txt}`);
+      let predId = resumePredictionId;
+      if (!predId) {
+        const createRes = await fetch(`${GW}/models/${model}/predictions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${REPLICATE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ input }),
+        });
+        if (!createRes.ok) {
+          const txt = await createRes.text();
+          throw new Error(`Replicate create failed: ${createRes.status} ${txt}`);
+        }
+        const pred = await createRes.json();
+        predId = pred.id;
+        if (!predId) throw new Error("Replicate: no prediction id");
+        await patchVisual({ prediction_id: predId, provider: imageProvider });
+      } else {
+        console.log(`Resuming Replicate prediction ${predId} for ${moment}`);
       }
-      const pred = await createRes.json();
-      const predId = pred.id;
       let outputUrl: string | null = null;
       for (let i = 0; i < 90; i++) {
         await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 4000));
@@ -353,27 +409,14 @@ serve(async (req) => {
       ].slice(0, HISTORY_CAP);
     }
 
-    const updatedVisuals = visuals.map((v) =>
-      v.moment === moment
-        ? {
-            ...v,
-            image_url: publicUrl,
-            prompt: finalPrompt,
-            error: null,
-            history: newHistory,
-            status: "done" as const,
-          }
-        : v,
-    );
-
-    const { error: updateError } = await supabase
-      .from(table)
-      .update({ script_visuals: JSON.stringify(updatedVisuals) })
-      .eq("id", content_id);
-
-    if (updateError) {
-      console.error("DB update failed:", updateError);
-    }
+    await patchVisual({
+      image_url: publicUrl,
+      prompt: finalPrompt,
+      error: null,
+      history: newHistory,
+      status: "done",
+      completed_at: new Date().toISOString(),
+    });
 
     return new Response(
       JSON.stringify({
@@ -402,27 +445,44 @@ serve(async (req) => {
         );
         if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
           const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-          const { data: row } = await sb
-            .from(errTable)
-            .select("script_visuals")
-            .eq("id", errContentId)
-            .single();
-          if (row?.script_visuals) {
-            let arr: Visual[] = [];
-            try {
-              arr = JSON.parse(row.script_visuals);
-            } catch {
-              /* ignore */
-            }
-            const next = arr.map((v) =>
-              v.moment === errMoment
-                ? { ...v, status: "error" as const, error: message.slice(0, 240) }
-                : v,
-            );
-            await sb
+          if (errTable === "botanical_content") {
+            await sb.rpc("patch_botanical_visual", {
+              _content_id: errContentId,
+              _moment: errMoment,
+              _patch: {
+                status: "error",
+                error: message.slice(0, 240),
+                completed_at: new Date().toISOString(),
+              },
+            });
+          } else {
+            const { data: row } = await sb
               .from(errTable)
-              .update({ script_visuals: JSON.stringify(next) })
-              .eq("id", errContentId);
+              .select("script_visuals")
+              .eq("id", errContentId)
+              .single();
+            if (row?.script_visuals) {
+              let arr: Visual[] = [];
+              try {
+                arr = JSON.parse(row.script_visuals);
+              } catch {
+                /* ignore */
+              }
+              const next = arr.map((v) =>
+                v.moment === errMoment
+                  ? {
+                      ...v,
+                      status: "error" as const,
+                      error: message.slice(0, 240),
+                      completed_at: new Date().toISOString(),
+                    }
+                  : v,
+              );
+              await sb
+                .from(errTable)
+                .update({ script_visuals: JSON.stringify(next) })
+                .eq("id", errContentId);
+            }
           }
         }
       }

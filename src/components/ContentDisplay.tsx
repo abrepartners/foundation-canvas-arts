@@ -5,7 +5,13 @@ import { RotateCcw, Copy, Check, RefreshCw, Loader2, History, Sparkles, Send, X 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import type { ContentWithId, FacelessVisual, VisualHistoryEntry } from "@/hooks/useBotanicalContent";
+import {
+  INTERRUPTED_VISUAL_MESSAGE,
+  VISUAL_STALE_MS,
+  type ContentWithId,
+  type FacelessVisual,
+  type VisualHistoryEntry,
+} from "@/hooks/useBotanicalContent";
 import { getDisplayTitle, stripCaptionTitle } from "@/lib/captionTitle";
 
 type SendPhase =
@@ -230,6 +236,12 @@ const momentLabels: Record<string, string> = {
 
 const momentOrder = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
 
+function isStaleVisual(visual: FacelessVisual, now: number) {
+  if (visual.image_url || visual.status !== "generating" || !visual.started_at) return false;
+  const startedAt = Date.parse(visual.started_at);
+  return startedAt > 0 && now - startedAt >= VISUAL_STALE_MS;
+}
+
 function FacelessVisualsSection({
   visuals,
   onRegenerate,
@@ -256,11 +268,13 @@ function FacelessVisualsSection({
   // Track when each moment first entered a "generating/queued" state locally,
   // so we can show elapsed time even when the backend hasn't stamped started_at.
   const startedAtRef = useRef<Record<string, number>>({});
-  const anyPending = visuals.some((v) => !v.image_url && v.status !== "error");
+  const anyPending = visuals.some(
+    (v) => !v.image_url && v.status !== "error" && !isStaleVisual(v, now),
+  );
 
   useEffect(() => {
     for (const v of visuals) {
-      const pending = !v.image_url && v.status !== "error";
+      const pending = !v.image_url && v.status !== "error" && !isStaleVisual(v, Date.now());
       if (pending) {
         const backendStarted = v.started_at ? Date.parse(v.started_at) : 0;
         const localStarted = startedAtRef.current[v.moment];
@@ -347,16 +361,18 @@ function FacelessVisualsSection({
 
   const readyCount = sortedVisuals.filter((v) => v.image_url).length;
   const failedCount = sortedVisuals.filter(
-    (v) => !v.image_url && (v.status === "error" || !!v.error),
+    (v) => !v.image_url && (v.status === "error" || !!v.error || isStaleVisual(v, now)),
   ).length;
   const generatingCount = sortedVisuals.filter(
-    (v) => !v.image_url && (v.status === "queued" || v.status === "generating" || regenerating.has(v.moment)) && v.status !== "error",
+    (v) =>
+      !v.image_url &&
+      (v.status === "queued" || v.status === "generating" || regenerating.has(v.moment)) &&
+      v.status !== "error" &&
+      !isStaleVisual(v, now),
   ).length;
-  const stalledCount = sortedVisuals.filter((v) => {
-    if (v.image_url || v.status === "error" || v.status === "done") return false;
-    const startedAt = v.started_at ? Date.parse(v.started_at) : startedAtRef.current[v.moment];
-    return startedAt > 0 && now - startedAt > 120_000;
-  }).length;
+  const interruptedCount = sortedVisuals.filter(
+    (v) => isStaleVisual(v, now) || v.error === INTERRUPTED_VISUAL_MESSAGE,
+  ).length;
   const anyInFlight = generatingCount > 0;
 
   // Overall elapsed since the oldest pending slot started.
@@ -373,7 +389,7 @@ function FacelessVisualsSection({
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h3 className="font-serif text-lg text-foreground">Faceless Visuals</h3>
+        <h3 className="font-serif text-lg text-foreground">Image Set</h3>
         <div className="flex items-center gap-2">
           {onRegenerateAll && (
             <Button
@@ -388,7 +404,7 @@ function FacelessVisualsSection({
               ) : (
                 <Sparkles className="h-3 w-3 mr-1" />
               )}
-              Regenerate all with new style
+              Regenerate all 6
             </Button>
           )}
           <CopyButton text={allPrompts} />
@@ -409,13 +425,13 @@ function FacelessVisualsSection({
         {failedCount > 0 && (
           <span className="text-destructive">{failedCount} failed</span>
         )}
-        {stalledCount > 0 && (
-          <span className="text-amber-600">{stalledCount} stalled &gt;2m</span>
+        {interruptedCount > 0 && (
+          <span className="text-amber-700">{interruptedCount} interrupted</span>
         )}
         {anyInFlight && overallElapsedMs > 0 && (
           <span className="text-muted-foreground tabular-nums">· elapsed {fmtElapsed(overallElapsedMs)}</span>
         )}
-        {onRetryStuck && autoResumeExhausted && (failedCount > 0 || stalledCount > 0) && (
+        {onRetryStuck && autoResumeExhausted && (failedCount > 0 || interruptedCount > 0) && (
           <Button
             variant="outline"
             size="sm"
@@ -444,7 +460,9 @@ function FacelessVisualsSection({
         {sortedVisuals.map((visual, idx) => {
           const isRegenerating = regenerating.has(visual.moment);
           const hasImage = !!visual.image_url;
-          const hasError = !hasImage && (!!visual.error || visual.status === "error");
+          const wasInterrupted =
+            isStaleVisual(visual, now) || visual.error === INTERRUPTED_VISUAL_MESSAGE;
+          const hasError = !hasImage && (!!visual.error || visual.status === "error" || wasInterrupted);
           const history = visual.history ?? [];
           const historyOpen = expandedHistory.has(visual.moment);
 
@@ -473,7 +491,7 @@ function FacelessVisualsSection({
             }
             if (state === "failed") {
               return {
-                text: "Failed",
+                text: wasInterrupted ? "Interrupted" : "Failed",
                 tone: "bg-destructive/15 text-destructive border-destructive/30",
                 icon: null,
               };
@@ -521,9 +539,9 @@ function FacelessVisualsSection({
                   </>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-3 text-center">
-                    {state === "failed" && visual.error ? (
+                    {state === "failed" ? (
                       <p className="text-[10px] text-destructive font-body leading-tight line-clamp-4">
-                        {visual.error}
+                        {visual.error || INTERRUPTED_VISUAL_MESSAGE}
                       </p>
                     ) : state === "generating" ? (
                       <>
@@ -652,7 +670,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
   const imageUrls = (content.faceless_visuals ?? [])
     .map((v) => v.image_url)
     .filter((u): u is string => !!u);
-  const canSendTikTok = imageUrls.length >= 2;
+  const canSendTikTok = imageUrls.length === momentOrder.length;
   const sending =
     sendPhase === "initializing" ||
     sendPhase === "uploading" ||
@@ -793,11 +811,11 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
             ) : (
               <Send className="mr-2 h-4 w-4" />
             )}
-            Send to TikTok drafts ({imageUrls.length})
+            Send to TikTok drafts ({imageUrls.length}/{momentOrder.length})
           </Button>
           <Button variant="outline" onClick={onReset} className="font-body flex-1 sm:flex-none">
             <RotateCcw className="mr-2 h-4 w-4" />
-            Generate New
+            New Package
           </Button>
         </div>
       </div>
@@ -813,8 +831,6 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
 
 
       <div className="space-y-4">
-        <ScriptSection script={content.script} />
-
         {content.faceless_visuals?.length > 0 && (
           <FacelessVisualsSection 
             visuals={content.faceless_visuals} 
@@ -826,15 +842,6 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
             isRetryingStuck={isRetryingStuck}
           />
         )}
-
-        <ContentCard 
-          title={`Thumbnail Prompt (${content.thumbnail_prompt.mode})`} 
-          copyText={content.thumbnail_prompt.prompt}
-        >
-          <p className="text-sm text-foreground/90 font-body whitespace-pre-wrap">
-            {content.thumbnail_prompt.prompt}
-          </p>
-        </ContentCard>
 
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center justify-between mb-2 gap-2">
@@ -865,11 +872,24 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
           </p>
         </div>
 
-        <ContentCard title="Part 2 Hook" copyText={content.part2_hook}>
-          <p className="text-sm text-foreground/90 font-body whitespace-pre-wrap">
-            {content.part2_hook}
-          </p>
-        </ContentCard>
+        <ScriptSection script={content.script} />
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <ContentCard
+            title={`Thumbnail Prompt (${content.thumbnail_prompt.mode})`}
+            copyText={content.thumbnail_prompt.prompt}
+          >
+            <p className="text-sm text-foreground/90 font-body whitespace-pre-wrap">
+              {content.thumbnail_prompt.prompt}
+            </p>
+          </ContentCard>
+
+          <ContentCard title="Part 2 Hook" copyText={content.part2_hook}>
+            <p className="text-sm text-foreground/90 font-body whitespace-pre-wrap">
+              {content.part2_hook}
+            </p>
+          </ContentCard>
+        </div>
       </div>
     </div>
   );

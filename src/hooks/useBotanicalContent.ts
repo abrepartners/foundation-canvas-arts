@@ -66,6 +66,10 @@ export interface VisualHistoryEntry {
 
 export type VisualStatus = "queued" | "generating" | "done" | "error";
 
+export const VISUAL_STALE_MS = 10 * 60 * 1000;
+export const INTERRUPTED_VISUAL_MESSAGE =
+  "Generation was interrupted before an image was saved. Retry this image.";
+
 export interface FacelessVisual {
   moment: "hook" | "dangle_1" | "rehook" | "dangle_2" | "verified_truth" | "close";
   prompt: string;
@@ -74,6 +78,32 @@ export interface FacelessVisual {
   history?: VisualHistoryEntry[];
   status?: VisualStatus;
   started_at?: string | null;
+  completed_at?: string | null;
+  prediction_id?: string | null;
+  provider?: "replicate" | "openai" | null;
+}
+
+export function normalizeVisual(visual: FacelessVisual, now = Date.now()): FacelessVisual {
+  if (visual.image_url) {
+    return { ...visual, status: "done", error: null };
+  }
+
+  if (visual.status === "generating") {
+    const startedAt = visual.started_at ? Date.parse(visual.started_at) : 0;
+    if (startedAt > 0 && now - startedAt >= VISUAL_STALE_MS) {
+      return {
+        ...visual,
+        status: "error",
+        error: visual.error || INTERRUPTED_VISUAL_MESSAGE,
+      };
+    }
+  }
+
+  return visual;
+}
+
+export function normalizeVisuals(visuals: FacelessVisual[], now = Date.now()) {
+  return visuals.map((visual) => normalizeVisual(visual, now));
 }
 
 
@@ -106,17 +136,17 @@ export function useBotanicalContent() {
   const [activeProvider, setActiveProvider] = useState<"replicate" | "openai">("replicate");
   const { toast } = useToast();
 
-  const MAX_AUTO_RESUMES = 2;
+  const MAX_AUTO_RESUMES = 1;
 
   const pollForImages = async (
     contentId: string,
     imageProvider: "replicate" | "openai" = "replicate",
   ) => {
     const INTERVAL_MS = 2000;
-    const MAX_POLLS = 300; // ~10 min ceiling
-    const RESUME_AFTER_POLLS = 20; // ~40s before first auto-resume
+    const MAX_POLLS = 450; // ~15 min ceiling
+    const RESUME_AFTER_POLLS = 300; // wait ~10 min before one recovery attempt
     const RESUME_COOLDOWN_MS = 90_000;
-    const STALL_MS = 120_000; // only kick stuck slots (>2 min)
+    const STALL_MS = VISUAL_STALE_MS;
     let lastResumeAt = 0;
     let autoResumeCount = 0;
 
@@ -141,6 +171,7 @@ export function useBotanicalContent() {
         visuals = typeof data.script_visuals === "string"
           ? JSON.parse(data.script_visuals)
           : data.script_visuals;
+        visuals = normalizeVisuals(visuals);
       } catch {
         continue;
       }
@@ -189,6 +220,7 @@ export function useBotanicalContent() {
       });
       if (fnError) throw new Error(await invokeErrorMessage(fnError));
       toast({ title: "Retrying stuck images", description: "Kicked off a fresh attempt for pending slots." });
+      void pollForImages(activeContentId, activeProvider);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       toast({ title: "Retry failed", description: msg, variant: "destructive" });
@@ -257,7 +289,9 @@ export function useBotanicalContent() {
       return {
         ...prev,
         faceless_visuals: prev.faceless_visuals.map((v) =>
-          v.moment === moment ? { ...v, status: "generating", error: null } : v,
+          v.moment === moment
+            ? { ...v, status: "generating", error: null, started_at: new Date().toISOString() }
+            : v,
         ),
       };
     });
@@ -369,6 +403,7 @@ export function useBotanicalContent() {
   };
 
   const loadFromHistory = (saved: SavedContent) => {
+    const normalizedVisuals = normalizeVisuals(saved.faceless_visuals);
     setContent({
       id: saved.id,
       plant_name: saved.plant_name,
@@ -377,10 +412,13 @@ export function useBotanicalContent() {
       thumbnail_prompt: saved.thumbnail_prompt,
       caption: saved.caption,
       part2_hook: saved.part2_hook,
-      faceless_visuals: saved.faceless_visuals,
+      faceless_visuals: normalizedVisuals,
     });
     setActiveContentId(saved.id);
     setAutoResumeExhausted(false);
+    if (normalizedVisuals.some((visual) => !visual.image_url && visual.status !== "error")) {
+      void pollForImages(saved.id, activeProvider);
+    }
   };
 
   const [isRegeneratingCaption, setIsRegeneratingCaption] = useState(false);
@@ -476,6 +514,7 @@ export function useContentHistory() {
               faceless_visuals = typeof item.script_visuals === 'string' 
                 ? JSON.parse(item.script_visuals) 
                 : item.script_visuals;
+              faceless_visuals = normalizeVisuals(faceless_visuals);
             }
           } catch {
             faceless_visuals = [];
