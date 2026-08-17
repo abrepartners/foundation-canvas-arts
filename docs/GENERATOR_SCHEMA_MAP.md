@@ -25,7 +25,7 @@ flowchart TD
 |---|---|---|
 | `botanical_content` | One complete content package | Primary key `id`; owns script, caption, thumbnail prompt, Part 2 hook, and six visual slots |
 | `still_generation_runs` | One cost-confirmed six-image package attempt | `idempotency_key` prevents duplicate packages; `botanical_content_id` links the completed package; one active row per owner |
-| `cost_events` | Provider submission and cost ledger | `generation_run_id` and `operation` uniquely identify text and each of the six still jobs |
+| `cost_events` | Provider submission and cost ledger | `generation_run_id` identifies package jobs; regeneration operations include an idempotency key |
 | `app_members` | Authorizes the private owner session | `user_id` links to `auth.users.id` |
 | `app_auth_settings` | Stores the hashed PIN | Singleton row; never stores the readable PIN |
 | `app_secrets` | Stores encrypted private API credentials | `REPLICATE_API_KEY` is encrypted with AES-GCM |
@@ -83,7 +83,7 @@ Each object inside `script_visuals` uses these fields:
 | `seed` | Reproducibility seed when supported; otherwise `null` |
 | `image_url` | Permanent Supabase Storage URL |
 | `error` | Retryable failure reason |
-| `history` | Up to five prior image versions with prompt and timestamp |
+| `history` | Up to five prior image versions with prompt, provider, model, settings, version, seed, and timestamp |
 
 ## Reliability rules
 
@@ -107,6 +107,10 @@ stateDiagram-v2
 - The current hard ceilings are $1 per package and $5 per Central Time calendar day.
 - Daily accounting is conservative: an unknown provider outcome reserves its estimate instead of assuming a zero charge.
 - Every package records the model, returned model version, prompt version, pricing version, and seven cost events: one text request plus six image slots.
+- Standard regeneration reuses the slot's exact saved prompt, recorded model, and recorded settings. Browser state cannot change them.
+- `Refresh prompt` is the explicit opt-in path for rebuilding a slot with the latest locked prompt contract.
+- Regeneration requires its own server quote and confirmation, appears in the cost ledger, and preserves the replaced image plus all generation metadata in history.
+- Stuck-image recovery also resolves the model and settings from each saved slot before resuming or retrying it.
 
 ## Future TikTok link
 

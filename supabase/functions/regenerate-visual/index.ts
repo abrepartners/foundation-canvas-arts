@@ -4,6 +4,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
 import { getReplicateApiKey } from "../_shared/secrets.ts";
+import {
+  STILL_DAILY_LIMIT_USD,
+  STILL_PER_RUN_LIMIT_USD,
+  STILL_PROMPT_VERSION,
+  stillImageQuote,
+  type StillImageModel,
+  type StillImageProvider,
+} from "../_shared/pricing.ts";
 
 // Architectural Botanical Study Plate — locked style. Same style across all six plates;
 // only the per-moment composition / storytelling purpose changes.
@@ -84,6 +92,12 @@ interface HistoryEntry {
   image_url: string;
   prompt: string;
   created_at: string;
+  provider?: StillImageProvider | null;
+  model?: StillImageModel | null;
+  model_version?: string | null;
+  prompt_version?: string | null;
+  settings?: Record<string, unknown> | null;
+  seed?: number | null;
 }
 
 interface Visual {
@@ -96,10 +110,127 @@ interface Visual {
   started_at?: string | null;
   completed_at?: string | null;
   prediction_id?: string | null;
-  provider?: "replicate" | "openai" | null;
+  provider?: StillImageProvider | null;
+  model?: StillImageModel | null;
+  model_version?: string | null;
+  prompt_version?: string | null;
+  settings?: Record<string, unknown> | null;
+  seed?: number | null;
+}
+
+interface RegenerateRequestBody {
+  content_id?: string;
+  moment?: Moment | string;
+  image_provider?: StillImageProvider;
+  action?: "quote" | "restore" | string;
+  prompt_mode?: "saved" | "refresh";
+  cost_confirmation?: {
+    idempotency_key?: string;
+    pricing_version?: string;
+    estimated_cost_usd?: number;
+    prompt_fingerprint?: string;
+  };
+  image_url?: string;
+  prompt?: string;
+  table?: "botanical_content" | "trend_content";
+  storage_prefix?: string;
 }
 
 const HISTORY_CAP = 5;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isStillImageModel(value: unknown): value is StillImageModel {
+  return value === "black-forest-labs/flux-1.1-pro" || value === "openai/gpt-image-2";
+}
+
+function resolveModel(visual: Visual): StillImageModel {
+  if (isStillImageModel(visual.model)) return visual.model;
+  return visual.provider === "openai"
+    ? "openai/gpt-image-2"
+    : "black-forest-labs/flux-1.1-pro";
+}
+
+function defaultSettings(model: StillImageModel): Record<string, unknown> {
+  return model === "openai/gpt-image-2"
+    ? {
+        quality: "high",
+        aspect_ratio: "9:16",
+        output_format: "jpeg",
+      }
+    : {
+        aspect_ratio: "9:16",
+        output_format: "jpeg",
+        safety_tolerance: 2,
+        prompt_upsampling: false,
+      };
+}
+
+function resolveSettings(visual: Visual, model: StillImageModel): Record<string, unknown> {
+  const saved = visual.settings;
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
+    return defaultSettings(model);
+  }
+
+  const allowed = model === "openai/gpt-image-2"
+    ? ["quality", "aspect_ratio", "output_format"]
+    : ["aspect_ratio", "output_format", "safety_tolerance", "prompt_upsampling", "seed"];
+  const resolved = defaultSettings(model);
+  for (const key of allowed) {
+    if (saved[key] !== undefined) resolved[key] = saved[key];
+  }
+  return resolved;
+}
+
+function historyEntry(visual: Visual): HistoryEntry | null {
+  if (!visual.image_url) return null;
+  return {
+    image_url: visual.image_url,
+    prompt: visual.prompt,
+    created_at: new Date().toISOString(),
+    provider: visual.provider ?? null,
+    model: isStillImageModel(visual.model) ? visual.model : resolveModel(visual),
+    model_version: visual.model_version ?? null,
+    prompt_version: visual.prompt_version ?? null,
+    settings: visual.settings ?? null,
+    seed: visual.seed ?? null,
+  };
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) =>
+      `${JSON.stringify(key)}:${stableStringify(record[key])}`
+    ).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+async function regenerationFingerprint(input: {
+  contentId: string;
+  moment: Moment;
+  model: StillImageModel;
+  prompt: string;
+  promptVersion: string;
+  settings: Record<string, unknown>;
+}): Promise<string> {
+  const encoded = new TextEncoder().encode(stableStringify(input));
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function centralDate(value: string | Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
@@ -108,13 +239,19 @@ serve(async (req) => {
     const __auth = await requireAuthorized(req);
     if (!__auth.ok) return __auth.response;
 
+  let requestBody: RegenerateRequestBody = {};
+  let generationStarted = false;
+  let costContext: { contentId: string; operation: string } | null = null;
   try {
-    const body = await req.json();
+    requestBody = await req.json() as RegenerateRequestBody;
+    const body = requestBody;
     const {
       content_id,
       moment,
       image_provider,
       action,
+      prompt_mode: promptModeInput,
+      cost_confirmation: costConfirmation,
       image_url: restoreUrl,
       prompt: restorePrompt,
       table: tableInput,
@@ -165,6 +302,7 @@ serve(async (req) => {
     }
 
     const currentVisual = visuals.find((v) => v.moment === moment);
+    if (!currentVisual) throw new Error("Visual slot not found");
 
     const patchVisual = async (patch: Partial<Visual>) => {
       if (table === "botanical_content") {
@@ -205,17 +343,15 @@ serve(async (req) => {
       if (!restoreUrl || !restorePrompt) {
         throw new Error("restore action requires image_url and prompt");
       }
-      if (!currentVisual) throw new Error("Visual slot not found");
+      const restoredEntry = (currentVisual.history ?? []).find(
+        (entry) => entry.image_url === restoreUrl && entry.prompt === restorePrompt,
+      );
+      if (!restoredEntry) throw new Error("The selected history version no longer exists");
 
       const newHistory: HistoryEntry[] = [];
       // Push currently active into history (if any)
-      if (currentVisual.image_url) {
-        newHistory.push({
-          image_url: currentVisual.image_url,
-          prompt: currentVisual.prompt,
-          created_at: new Date().toISOString(),
-        });
-      }
+      const activeEntry = historyEntry(currentVisual);
+      if (activeEntry) newHistory.push(activeEntry);
       // Add the remaining history minus the entry we're restoring
       for (const h of currentVisual.history ?? []) {
         if (h.image_url !== restoreUrl) newHistory.push(h);
@@ -229,6 +365,13 @@ serve(async (req) => {
         history: newHistory,
         status: "done",
         completed_at: new Date().toISOString(),
+        prediction_id: null,
+        provider: restoredEntry.provider ?? currentVisual.provider ?? null,
+        model: restoredEntry.model ?? currentVisual.model ?? null,
+        model_version: restoredEntry.model_version ?? null,
+        prompt_version: restoredEntry.prompt_version ?? currentVisual.prompt_version ?? null,
+        settings: restoredEntry.settings ?? currentVisual.settings ?? null,
+        seed: restoredEntry.seed ?? null,
       });
 
       return new Response(
@@ -238,24 +381,59 @@ serve(async (req) => {
           prompt: restorePrompt,
           moment,
           history: newHistory,
+          provider: restoredEntry.provider ?? currentVisual.provider ?? null,
+          model: restoredEntry.model ?? currentVisual.model ?? null,
+          model_version: restoredEntry.model_version ?? null,
+          prompt_version: restoredEntry.prompt_version ?? currentVisual.prompt_version ?? null,
+          settings: restoredEntry.settings ?? currentVisual.settings ?? null,
+          seed: restoredEntry.seed ?? null,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // === REGENERATE ACTION (default) ===
-    // Default to Replicate Flux 1.1 Pro for photoreal output.
-    // Direct Replicate billing: FLUX by default, with gpt-image-2 optional.
-    const imageProvider: "replicate" | "openai" =
-      image_provider === "openai"
-          ? "openai"
-          : "replicate";
+    // The saved image record is authoritative. The request cannot silently
+    // switch an existing slot to another provider, model, prompt, or settings.
+    // image_provider remains a legacy fallback only for old trend rows that do
+    // not contain provider metadata.
+    const legacyVisual: Visual = currentVisual.provider || currentVisual.model
+      ? currentVisual
+      : { ...currentVisual, provider: image_provider === "openai" ? "openai" : "replicate" };
+    const model = resolveModel(legacyVisual);
+    const resumePredictionId =
+      currentVisual.status === "generating" && currentVisual.prediction_id
+        ? currentVisual.prediction_id
+        : null;
+    const baseQuote = stillImageQuote(model);
+    const quote = resumePredictionId
+      ? { ...baseQuote, image_unit_usd: 0, estimated_cost_usd: 0, resumes_existing_job: true }
+      : { ...baseQuote, resumes_existing_job: false };
+    const imageProvider = quote.image_provider;
+    const promptMode = promptModeInput === "refresh" ? "refresh" : "saved";
+    const subject = (typeof subjectValue === "string" ? subjectValue : "").trim();
+    const storedPrompt = typeof currentVisual.prompt === "string"
+      ? currentVisual.prompt.trim()
+      : "";
+    const finalPrompt = promptMode === "refresh" || !storedPrompt
+      ? buildPlatePrompt(subject, moment)
+      : currentVisual.prompt;
+    const promptVersion = promptMode === "refresh"
+      ? STILL_PROMPT_VERSION
+      : currentVisual.prompt_version ?? "legacy-saved-prompt";
+    const settings = resolveSettings(currentVisual, model);
+    const input = { ...settings, prompt: finalPrompt };
+    const fingerprint = await regenerationFingerprint({
+      contentId: content_id,
+      moment,
+      model,
+      prompt: finalPrompt,
+      promptVersion,
+      settings,
+    });
 
-    const startedAt = currentVisual?.started_at
-      ? Date.parse(currentVisual.started_at)
-      : 0;
+    const startedAt = currentVisual.started_at ? Date.parse(currentVisual.started_at) : 0;
     const isRecentlyGenerating =
-      currentVisual?.status === "generating" &&
+      currentVisual.status === "generating" &&
       startedAt > 0 &&
       Date.now() - startedAt < 10 * 60_000;
     if (isRecentlyGenerating) {
@@ -268,10 +446,122 @@ serve(async (req) => {
       );
     }
 
-    const resumePredictionId =
-      currentVisual?.status === "generating" && currentVisual.prediction_id
-        ? currentVisual.prediction_id
-        : null;
+    const { data: recentCosts, error: costsError } = table === "botanical_content"
+      ? await supabase
+        .from("cost_events")
+        .select("estimated_cost_usd,actual_cost_usd,status,created_at")
+        .gte("created_at", new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString())
+      : { data: [], error: null };
+    if (costsError) throw costsError;
+    const today = centralDate(new Date());
+    const dailyReserved = (recentCosts ?? [])
+      .filter((entry) =>
+        centralDate(entry.created_at) === today &&
+        ["confirmed", "submitted", "succeeded"].includes(entry.status)
+      )
+      .reduce(
+        (sum, entry) => sum + Number(entry.actual_cost_usd ?? entry.estimated_cost_usd ?? 0),
+        0,
+      );
+
+    if (action === "quote") {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          quote: {
+            ...quote,
+            moment,
+            prompt_mode: promptMode,
+            prompt_version: promptVersion,
+            prompt_fingerprint: fingerprint,
+            settings,
+            idempotency_key: crypto.randomUUID(),
+            daily_reserved_usd: +dailyReserved.toFixed(4),
+            daily_remaining_usd: +Math.max(0, STILL_DAILY_LIMIT_USD - dailyReserved).toFixed(4),
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    let regenerationOperation: string | null = null;
+    if (table === "botanical_content") {
+      const idempotencyKey = typeof costConfirmation?.idempotency_key === "string"
+        ? costConfirmation.idempotency_key
+        : "";
+      const pricingVersion = typeof costConfirmation?.pricing_version === "string"
+        ? costConfirmation.pricing_version
+        : "";
+      const confirmedEstimate = Number(costConfirmation?.estimated_cost_usd);
+      const confirmedFingerprint = typeof costConfirmation?.prompt_fingerprint === "string"
+        ? costConfirmation.prompt_fingerprint
+        : "";
+      if (
+        !UUID_PATTERN.test(idempotencyKey) ||
+        pricingVersion !== quote.pricing_version ||
+        !Number.isFinite(confirmedEstimate) ||
+        Math.abs(confirmedEstimate - quote.estimated_cost_usd) > 0.0001 ||
+        confirmedFingerprint !== fingerprint
+      ) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error_code: "COST_CONFIRMATION_REQUIRED",
+            error: "Review and confirm the current image regeneration cost before starting.",
+          }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      if (quote.estimated_cost_usd > STILL_PER_RUN_LIMIT_USD) {
+        throw new Error("This regeneration exceeds the $1 per-run limit");
+      }
+      if (dailyReserved + quote.estimated_cost_usd > STILL_DAILY_LIMIT_USD) {
+        throw new Error("The $5 daily generation limit has been reached");
+      }
+
+      const operation = `regenerate:${moment}:${idempotencyKey}`;
+      regenerationOperation = operation;
+      costContext = { contentId: content_id, operation };
+      const { data: existingCost } = await supabase
+        .from("cost_events")
+        .select("id,status")
+        .eq("botanical_content_id", content_id)
+        .eq("operation", operation)
+        .maybeSingle();
+      if (existingCost) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error_code: "DUPLICATE_REQUEST",
+            error: "This regeneration request was already accepted.",
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const { error: costInsertError } = await supabase.from("cost_events").insert({
+        botanical_content_id: content_id,
+        provider: "replicate",
+        model,
+        operation,
+        estimated_cost_usd: quote.estimated_cost_usd,
+        status: "confirmed",
+      });
+      if (costInsertError) {
+        if (costInsertError.code === "23505") {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error_code: "DUPLICATE_REQUEST",
+              error: "This regeneration request was already accepted.",
+            }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        throw costInsertError;
+      }
+    }
+
+    // === REGENERATE ACTION (default) ===
 
     const REPLICATE_API_KEY = await getReplicateApiKey();
     if (!REPLICATE_API_KEY) {
@@ -280,14 +570,8 @@ serve(async (req) => {
       );
     }
 
-    // Always build a fresh prompt from the current locked style + stored subject.
-    const subject = (
-      typeof subjectValue === "string" ? subjectValue : ""
-    ).trim();
-    const finalPrompt = buildPlatePrompt(subject, moment);
-
     console.log(
-      `Regenerating ${moment} for ${content_id} (provider: ${imageProvider})`,
+      `Regenerating ${moment} for ${content_id} with saved ${model} settings and ${promptMode} prompt`,
     );
 
     // Mark this slot as generating BEFORE calling the provider so the UI
@@ -300,31 +584,17 @@ serve(async (req) => {
       completed_at: null,
       prediction_id: resumePredictionId,
       provider: imageProvider,
+      model,
+      prompt_version: promptVersion,
+      settings,
     });
+    generationStarted = true;
 
     let imageBuffer: Uint8Array;
     let outputExt: "jpg" | "png" = "jpg";
+    let modelVersion: string | null = currentVisual.model_version ?? null;
     {
       const GW = "https://api.replicate.com/v1";
-      const model =
-        imageProvider === "openai"
-          ? "openai/gpt-image-2"
-          : "black-forest-labs/flux-1.1-pro";
-      const input: Record<string, unknown> =
-        imageProvider === "openai"
-          ? {
-              prompt: finalPrompt,
-              quality: "high",
-              aspect_ratio: "9:16",
-              output_format: "jpeg",
-            }
-          : {
-              prompt: finalPrompt,
-              aspect_ratio: "9:16",
-              output_format: "jpeg",
-              safety_tolerance: 2,
-            };
-
       let predId = resumePredictionId;
       if (!predId) {
         const createRes = await fetch(`${GW}/models/${model}/predictions`, {
@@ -342,7 +612,22 @@ serve(async (req) => {
         const pred = await createRes.json();
         predId = pred.id;
         if (!predId) throw new Error("Replicate: no prediction id");
-        await patchVisual({ prediction_id: predId, provider: imageProvider });
+        modelVersion = typeof pred.version === "string" ? pred.version : null;
+        await patchVisual({
+          prediction_id: predId,
+          provider: imageProvider,
+          model,
+          model_version: modelVersion,
+          prompt_version: promptVersion,
+          settings,
+        });
+        if (regenerationOperation) {
+          await supabase.from("cost_events").update({
+            status: "submitted",
+            provider_job_id: predId,
+          }).eq("botanical_content_id", content_id)
+            .eq("operation", regenerationOperation);
+        }
       } else {
         console.log(`Resuming Replicate prediction ${predId} for ${moment}`);
       }
@@ -397,16 +682,10 @@ serve(async (req) => {
     const publicUrl = urlData.publicUrl;
 
     // Push currently active render onto history (newest first, cap 5)
-    let newHistory: HistoryEntry[] = currentVisual?.history ?? [];
-    if (currentVisual?.image_url) {
-      newHistory = [
-        {
-          image_url: currentVisual.image_url,
-          prompt: currentVisual.prompt,
-          created_at: new Date().toISOString(),
-        },
-        ...newHistory,
-      ].slice(0, HISTORY_CAP);
+    let newHistory: HistoryEntry[] = currentVisual.history ?? [];
+    const previousEntry = historyEntry(currentVisual);
+    if (previousEntry) {
+      newHistory = [previousEntry, ...newHistory].slice(0, HISTORY_CAP);
     }
 
     await patchVisual({
@@ -416,7 +695,22 @@ serve(async (req) => {
       history: newHistory,
       status: "done",
       completed_at: new Date().toISOString(),
+      prediction_id: null,
+      provider: imageProvider,
+      model,
+      model_version: modelVersion,
+      prompt_version: promptVersion,
+      settings,
+      seed: typeof settings.seed === "number" ? settings.seed : currentVisual.seed ?? null,
     });
+
+    if (regenerationOperation) {
+      await supabase.from("cost_events").update({
+        status: "succeeded",
+        actual_cost_usd: quote.estimated_cost_usd,
+      }).eq("botanical_content_id", content_id)
+        .eq("operation", regenerationOperation);
+    }
 
     return new Response(
       JSON.stringify({
@@ -425,6 +719,12 @@ serve(async (req) => {
         moment,
         prompt: finalPrompt,
         history: newHistory,
+        provider: imageProvider,
+        model,
+        model_version: modelVersion,
+        prompt_version: promptVersion,
+        settings,
+        seed: typeof settings.seed === "number" ? settings.seed : currentVisual.seed ?? null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
@@ -433,12 +733,12 @@ serve(async (req) => {
     console.error("Error in regenerate-visual:", message);
     // Best-effort: clear the "generating" flag so the UI re-enables the button.
     try {
-      const body = await req.clone().json().catch(() => ({}));
+      const body = requestBody;
       const errMoment = body?.moment;
       const errContentId = body?.content_id;
       const errTable =
         body?.table === "trend_content" ? "trend_content" : "botanical_content";
-      if (errMoment && errContentId) {
+      if (generationStarted && errMoment && errContentId) {
         const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(
           "SUPABASE_SERVICE_ROLE_KEY",
@@ -484,6 +784,16 @@ serve(async (req) => {
                 .eq("id", errContentId);
             }
           }
+        }
+      }
+      if (costContext) {
+        const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+          const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+          await sb.from("cost_events").update({ status: "failed" })
+            .eq("botanical_content_id", costContext.contentId)
+            .eq("operation", costContext.operation);
         }
       }
     } catch {

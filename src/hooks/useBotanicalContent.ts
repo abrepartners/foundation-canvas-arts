@@ -62,6 +62,12 @@ export interface VisualHistoryEntry {
   image_url: string;
   prompt: string;
   created_at: string;
+  provider?: "replicate" | "openai" | null;
+  model?: string | null;
+  model_version?: string | null;
+  prompt_version?: string | null;
+  settings?: Record<string, unknown> | null;
+  seed?: number | null;
 }
 
 export type VisualStatus = "queued" | "generating" | "done" | "error";
@@ -155,6 +161,25 @@ export interface StillGenerationQuote {
   } | null;
 }
 
+export interface RegenerationQuote {
+  image_provider: "replicate" | "openai";
+  model: string;
+  image_count: 1;
+  image_unit_usd: number;
+  estimated_cost_usd: number;
+  pricing_version: string;
+  per_run_limit_usd: number;
+  daily_limit_usd: number;
+  prompt_mode: "saved" | "refresh";
+  prompt_version: string;
+  prompt_fingerprint: string;
+  settings: Record<string, unknown>;
+  idempotency_key: string;
+  daily_reserved_usd: number;
+  daily_remaining_usd: number;
+  resumes_existing_job: boolean;
+}
+
 export function useBotanicalContent() {
   const [content, setContent] = useState<ContentWithId | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -162,9 +187,10 @@ export function useBotanicalContent() {
   const [autoResumeExhausted, setAutoResumeExhausted] = useState(false);
   const [isRetryingStuck, setIsRetryingStuck] = useState(false);
   const [isQuoting, setIsQuoting] = useState(false);
+  const [isQuotingRegeneration, setIsQuotingRegeneration] = useState(false);
   const [isPackageActive, setIsPackageActive] = useState(false);
   const [activeContentId, setActiveContentId] = useState<string | null>(null);
-  const [activeProvider, setActiveProvider] = useState<"replicate" | "openai">("replicate");
+  const [activeProvider, setActiveProvider] = useState<"replicate" | "openai">("openai");
   const { toast } = useToast();
 
   const MAX_AUTO_RESUMES = 1;
@@ -362,10 +388,41 @@ export function useBotanicalContent() {
     }
   };
 
+  const getRegenerationQuote = async (
+    moment: string,
+    promptMode: "saved" | "refresh" = "saved",
+  ): Promise<RegenerationQuote | null> => {
+    if (!content?.id) return null;
+    setIsQuotingRegeneration(true);
+    try {
+      const { data, error: fnError } = await invokeFn<{
+        success: boolean;
+        quote: RegenerationQuote;
+      }>("regenerate-visual", {
+        body: {
+          content_id: content.id,
+          moment,
+          action: "quote",
+          prompt_mode: promptMode,
+        },
+      });
+      if (fnError) throw new Error(await invokeErrorMessage(fnError));
+      if (!data?.success || !data.quote) throw new Error("Could not load the regeneration cost.");
+      return data.quote;
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "Unknown error";
+      const { title, message } = formatGatewayError(raw, "Could not review regeneration cost");
+      toast({ title, description: message, variant: "destructive" });
+      return null;
+    } finally {
+      setIsQuotingRegeneration(false);
+    }
+  };
+
   const regenerateVisual = async (
     moment: string,
-    imageProvider: "replicate" | "openai" = "replicate",
-    options: { silent?: boolean } = {}
+    quote: RegenerationQuote,
+    options: { silent?: boolean } = {},
   ) => {
     if (!content?.id) {
       toast({ title: "Cannot regenerate", description: "No content ID available", variant: "destructive" });
@@ -393,7 +450,13 @@ export function useBotanicalContent() {
           body: {
             content_id: content.id,
             moment,
-            image_provider: imageProvider,
+            prompt_mode: quote.prompt_mode,
+            cost_confirmation: {
+              idempotency_key: quote.idempotency_key,
+              pricing_version: quote.pricing_version,
+              estimated_cost_usd: quote.estimated_cost_usd,
+              prompt_fingerprint: quote.prompt_fingerprint,
+            },
           },
         }
       );
@@ -407,7 +470,21 @@ export function useBotanicalContent() {
           ...prev,
           faceless_visuals: prev.faceless_visuals.map((v) =>
             v.moment === moment
-              ? { ...v, image_url: data.image_url, prompt: data.prompt ?? v.prompt, error: null, status: "done", history: data.history ?? v.history }
+              ? {
+                  ...v,
+                  image_url: data.image_url,
+                  prompt: data.prompt ?? v.prompt,
+                  error: null,
+                  status: "done",
+                  history: data.history ?? v.history,
+                  provider: data.provider ?? v.provider,
+                  model: data.model ?? v.model,
+                  model_version: data.model_version ?? v.model_version,
+                  prompt_version: data.prompt_version ?? v.prompt_version,
+                  settings: data.settings ?? v.settings,
+                  seed: data.seed ?? v.seed,
+                  prediction_id: null,
+                }
               : v
           ),
         };
@@ -435,12 +512,13 @@ export function useBotanicalContent() {
     }
   };
 
-  const regenerateAllVisuals = async (imageProvider: "replicate" | "openai" = "replicate") => {
-    const moments = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"];
-    for (const m of moments) {
-      await regenerateVisual(m, imageProvider, { silent: true });
+  const regenerateAllVisuals = async (
+    requests: Array<{ moment: string; quote: RegenerationQuote }>,
+  ) => {
+    for (const request of requests) {
+      await regenerateVisual(request.moment, request.quote, { silent: true });
     }
-    toast({ title: "All visuals regenerated", description: "Refreshed with the latest plate style." });
+    toast({ title: "All visuals regenerated", description: "Each image reused its recorded model, prompt, and settings." });
   };
 
   const restoreVisualVersion = async (
@@ -470,7 +548,21 @@ export function useBotanicalContent() {
           ...prev,
           faceless_visuals: prev.faceless_visuals.map((v) =>
             v.moment === moment
-              ? { ...v, image_url: data.image_url, prompt: data.prompt, error: null, history: data.history ?? [] }
+              ? {
+                  ...v,
+                  image_url: data.image_url,
+                  prompt: data.prompt,
+                  error: null,
+                  status: "done",
+                  history: data.history ?? [],
+                  provider: data.provider ?? v.provider,
+                  model: data.model ?? v.model,
+                  model_version: data.model_version ?? null,
+                  prompt_version: data.prompt_version ?? v.prompt_version,
+                  settings: data.settings ?? v.settings,
+                  seed: data.seed ?? null,
+                  prediction_id: null,
+                }
               : v
           ),
         };
@@ -494,6 +586,10 @@ export function useBotanicalContent() {
 
   const loadFromHistory = (saved: SavedContent) => {
     const normalizedVisuals = normalizeVisuals(saved.faceless_visuals);
+    const recordedProvider = normalizedVisuals.find((visual) => visual.provider)?.provider ??
+      (normalizedVisuals.find((visual) => visual.model === "openai/gpt-image-2")
+        ? "openai"
+        : "replicate");
     setContent({
       id: saved.id,
       plant_name: saved.plant_name,
@@ -505,9 +601,10 @@ export function useBotanicalContent() {
       faceless_visuals: normalizedVisuals,
     });
     setActiveContentId(saved.id);
+    setActiveProvider(recordedProvider);
     setAutoResumeExhausted(false);
     if (normalizedVisuals.some((visual) => !visual.image_url && visual.status !== "error")) {
-      void pollForImages(saved.id, activeProvider);
+      void pollForImages(saved.id, recordedProvider);
     }
   };
 
@@ -551,6 +648,8 @@ export function useBotanicalContent() {
     loadFromHistory,
     regenerateVisual,
     regenerateAllVisuals,
+    getRegenerationQuote,
+    isQuotingRegeneration,
     restoreVisualVersion,
     regenerateCaption,
     isRegeneratingCaption,

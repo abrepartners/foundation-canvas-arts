@@ -138,7 +138,9 @@ interface ContentDisplayProps {
   content: ContentWithId;
   onReset: () => void;
   onRegenerateVisual?: (moment: string) => Promise<string | null>;
+  onRefreshVisualPrompt?: (moment: string) => Promise<string | null>;
   onRegenerateAll?: () => Promise<void>;
+  isQuotingRegeneration?: boolean;
   onRestoreVersion?: (moment: string, entry: VisualHistoryEntry) => Promise<string | null>;
   onRegenerateCaption?: () => Promise<string | null>;
   isRegeneratingCaption?: boolean;
@@ -245,7 +247,9 @@ function isStaleVisual(visual: FacelessVisual, now: number) {
 function FacelessVisualsSection({
   visuals,
   onRegenerate,
+  onRefreshPrompt,
   onRegenerateAll,
+  isQuotingRegeneration,
   onRestoreVersion,
   autoResumeExhausted,
   onRetryStuck,
@@ -253,7 +257,9 @@ function FacelessVisualsSection({
 }: {
   visuals: FacelessVisual[];
   onRegenerate?: (moment: string) => Promise<string | null>;
+  onRefreshPrompt?: (moment: string) => Promise<string | null>;
   onRegenerateAll?: () => Promise<void>;
+  isQuotingRegeneration?: boolean;
   onRestoreVersion?: (moment: string, entry: VisualHistoryEntry) => Promise<string | null>;
   autoResumeExhausted?: boolean;
   onRetryStuck?: () => Promise<void>;
@@ -336,13 +342,17 @@ function FacelessVisualsSection({
 
   const handleRegenAll = async () => {
     if (!onRegenerateAll) return;
-    if (!window.confirm("Regenerate all 6 visuals using the current locked style? This will move the existing renders into history.")) return;
     setRegenAllRunning(true);
     try {
       await onRegenerateAll();
     } finally {
       setRegenAllRunning(false);
     }
+  };
+
+  const handleRefreshPrompt = async (moment: string) => {
+    if (!onRefreshPrompt) return;
+    await onRefreshPrompt(moment);
   };
 
   const handleRestore = async (moment: string, entry: VisualHistoryEntry) => {
@@ -396,7 +406,7 @@ function FacelessVisualsSection({
               variant="outline"
               size="sm"
               onClick={handleRegenAll}
-              disabled={regenAllRunning || anyInFlight}
+              disabled={regenAllRunning || anyInFlight || isQuotingRegeneration}
               className="text-xs"
             >
               {regenAllRunning ? (
@@ -603,6 +613,18 @@ function FacelessVisualsSection({
                   >
                     {expandedPrompts.has(idx) ? "Hide" : "Prompt"}
                   </Button>
+                  {onRefreshPrompt && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRefreshPrompt(visual.moment)}
+                      disabled={busy || isQuotingRegeneration}
+                      className="h-8 px-2 text-xs"
+                      title="Regenerate using the latest locked prompt instead of this saved prompt"
+                    >
+                      Refresh prompt
+                    </Button>
+                  )}
                   <CopyButton text={visual.prompt} />
                 </div>
               </div>
@@ -661,7 +683,7 @@ function ContentCard({ title, children, copyText }: { title: string; children: R
   );
 }
 
-export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegenerateAll, onRestoreVersion, onRegenerateCaption, isRegeneratingCaption, autoResumeExhausted, onRetryStuck, isRetryingStuck }: ContentDisplayProps) {
+export function ContentDisplay({ content, onReset, onRegenerateVisual, onRefreshVisualPrompt, onRegenerateAll, isQuotingRegeneration, onRestoreVersion, onRegenerateCaption, isRegeneratingCaption, autoResumeExhausted, onRetryStuck, isRetryingStuck }: ContentDisplayProps) {
   const { toast } = useToast();
   const [sendPhase, setSendPhase] = useState<SendPhase>("idle");
   const [sendDetail, setSendDetail] = useState<string | undefined>(undefined);
@@ -835,7 +857,9 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
           <FacelessVisualsSection 
             visuals={content.faceless_visuals} 
             onRegenerate={onRegenerateVisual}
+            onRefreshPrompt={onRefreshVisualPrompt}
             onRegenerateAll={onRegenerateAll}
+            isQuotingRegeneration={isQuotingRegeneration}
             onRestoreVersion={onRestoreVersion}
             autoResumeExhausted={autoResumeExhausted}
             onRetryStuck={onRetryStuck}

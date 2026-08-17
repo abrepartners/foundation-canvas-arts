@@ -19,6 +19,26 @@ export const STILL_DAILY_LIMIT_USD = 5;
 
 export type StillImageProvider = "replicate" | "openai";
 
+export type StillImageModel =
+  | "black-forest-labs/flux-1.1-pro"
+  | "openai/gpt-image-2";
+
+export function stillImageQuote(model: StillImageModel) {
+  const provider: StillImageProvider = model === "openai/gpt-image-2"
+    ? "openai"
+    : "replicate";
+  return {
+    image_provider: provider,
+    model,
+    image_count: 1 as const,
+    image_unit_usd: PRICING[model].unit_usd,
+    estimated_cost_usd: PRICING[model].unit_usd,
+    pricing_version: STILL_PRICING_VERSION,
+    per_run_limit_usd: STILL_PER_RUN_LIMIT_USD,
+    daily_limit_usd: STILL_DAILY_LIMIT_USD,
+  };
+}
+
 export function stillPackageQuote(provider: StillImageProvider) {
   const model = provider === "openai"
     ? "openai/gpt-image-2"

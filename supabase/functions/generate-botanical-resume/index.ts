@@ -48,7 +48,7 @@ async function runReplicatePrediction(
   model: string,
   input: Record<string, unknown>,
   replicateApiKey: string,
-  onPredictionId?: (predictionId: string) => Promise<void>,
+  onPredictionId?: (predictionId: string, modelVersion: string | null) => Promise<void>,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
   const headers = {
@@ -72,28 +72,29 @@ async function runReplicatePrediction(
   const pred = await createRes.json();
   const predId = pred.id;
   if (!predId) throw new Error("Replicate: no prediction id");
-  await onPredictionId?.(predId);
+  await onPredictionId?.(
+    predId,
+    typeof pred.version === "string" ? pred.version : null,
+  );
   return pollReplicatePrediction(predId, replicateApiKey);
 }
 
 async function generateImageBytes(
-  provider: "openai" | "replicate",
+  model: "openai/gpt-image-2" | "black-forest-labs/flux-1.1-pro",
   prompt: string,
+  settings: Record<string, unknown>,
   replicateApiKey: string | undefined,
   tracking?: {
     supabase: SupabaseClient;
     animationRowId: string;
     jobKey: string;
   },
-  onPredictionId?: (predictionId: string) => Promise<void>,
+  onPredictionId?: (predictionId: string, modelVersion: string | null) => Promise<void>,
   existingPredictionId?: string,
 ): Promise<{ bytes: Uint8Array; jobId?: string }> {
-  if (provider === "openai" || provider === "replicate") {
+  if (model === "openai/gpt-image-2" || model === "black-forest-labs/flux-1.1-pro") {
     if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
-    const model = provider === "openai" ? "openai/gpt-image-2" : "black-forest-labs/flux-1.1-pro";
-    const input = provider === "openai"
-      ? { prompt, quality: "high", aspect_ratio: "9:16", output_format: "jpeg" }
-      : { prompt, aspect_ratio: "9:16", output_format: "jpeg", safety_tolerance: 2 };
+    const input = { ...settings, prompt };
     if (tracking) {
       const result: TrackedImageResult = await generateTrackedReplicateImage({
         supabase: tracking.supabase,
@@ -130,7 +131,47 @@ interface Visual {
   completed_at?: string | null;
   prediction_id?: string | null;
   provider?: "replicate" | "openai" | null;
+  model?: "openai/gpt-image-2" | "black-forest-labs/flux-1.1-pro" | null;
+  model_version?: string | null;
+  prompt_version?: string | null;
+  settings?: Record<string, unknown> | null;
+  seed?: number | null;
   error?: string | null;
+}
+
+function resolveModel(
+  visual: Visual,
+  legacyProvider: "openai" | "replicate",
+): "openai/gpt-image-2" | "black-forest-labs/flux-1.1-pro" {
+  if (visual.model === "openai/gpt-image-2" || visual.model === "black-forest-labs/flux-1.1-pro") {
+    return visual.model;
+  }
+  const provider = visual.provider ?? legacyProvider;
+  return provider === "openai" ? "openai/gpt-image-2" : "black-forest-labs/flux-1.1-pro";
+}
+
+function resolveSettings(
+  visual: Visual,
+  model: "openai/gpt-image-2" | "black-forest-labs/flux-1.1-pro",
+): Record<string, unknown> {
+  const defaults = model === "openai/gpt-image-2"
+    ? { quality: "high", aspect_ratio: "9:16", output_format: "jpeg" }
+    : {
+        aspect_ratio: "9:16",
+        output_format: "jpeg",
+        safety_tolerance: 2,
+        prompt_upsampling: false,
+      };
+  const saved = visual.settings;
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) return defaults;
+  const allowed = model === "openai/gpt-image-2"
+    ? ["quality", "aspect_ratio", "output_format"]
+    : ["aspect_ratio", "output_format", "safety_tolerance", "prompt_upsampling", "seed"];
+  const settings: Record<string, unknown> = { ...defaults };
+  for (const key of allowed) {
+    if (saved[key] !== undefined) settings[key] = saved[key];
+  }
+  return settings;
 }
 
 serve(async (req) => {
@@ -147,7 +188,7 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const contentId: string | undefined = body?.content_id;
-    const provider: "openai" | "replicate" = body?.image_provider === "openai" ? "openai" : "replicate";
+    const legacyProvider: "openai" | "replicate" = body?.image_provider === "openai" ? "openai" : "replicate";
     // Optional: parent animation row id so future provider-job tracking for
     // stills can attribute retries/costs to the correct animation run.
     const animationRowId: string | null = typeof body?.animation_row_id === "string"
@@ -212,9 +253,13 @@ serve(async (req) => {
           started_at: new Date().toISOString(),
         });
         try {
+          const model = resolveModel(v, legacyProvider);
+          const provider = model === "openai/gpt-image-2" ? "openai" : "replicate";
+          const settings = resolveSettings(v, model);
           const imageResult = await generateImageBytes(
-            provider,
+            model,
             v.prompt,
+            settings,
             REPLICATE,
             animationRowId
               ? {
@@ -223,10 +268,14 @@ serve(async (req) => {
                   jobKey: `still:${v.moment}`,
                 }
               : undefined,
-            async (predictionId) => {
+            async (predictionId, modelVersion) => {
               await mergeVisual(v.moment, {
                 prediction_id: predictionId,
                 provider,
+                model,
+                model_version: modelVersion,
+                prompt_version: v.prompt_version ?? "legacy-saved-prompt",
+                settings,
               });
             },
             v.prediction_id ?? undefined,
@@ -254,6 +303,10 @@ serve(async (req) => {
             status: "done",
             error: null,
             completed_at: new Date().toISOString(),
+            provider,
+            model,
+            prompt_version: v.prompt_version ?? "legacy-saved-prompt",
+            settings,
           });
           console.log(`resume: done ${v.moment}`);
         } catch (err) {

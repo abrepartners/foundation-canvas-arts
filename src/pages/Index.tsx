@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   useBotanicalContent,
   useContentHistory,
+  type RegenerationQuote,
   type StillGenerationQuote,
 } from "@/hooks/useBotanicalContent";
 import { GenerateButton, type ImageProvider } from "@/components/GenerateButton";
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const Index = () => {
-  const { content, isLoading, isQuoting, isPackageActive, getGenerationQuote, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion, regenerateCaption, isRegeneratingCaption, autoResumeExhausted, retryStuck, isRetryingStuck } =
+  const { content, isLoading, isQuoting, isQuotingRegeneration, isPackageActive, getGenerationQuote, getRegenerationQuote, generate, reset, loadFromHistory, regenerateVisual, regenerateAllVisuals, restoreVisualVersion, regenerateCaption, isRegeneratingCaption, autoResumeExhausted, retryStuck, isRetryingStuck } =
     useBotanicalContent();
   const {
     history,
@@ -36,8 +37,11 @@ const Index = () => {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [imageProvider, setImageProvider] = useState<ImageProvider>("replicate");
+  const [imageProvider, setImageProvider] = useState<ImageProvider>("openai");
   const [pendingQuote, setPendingQuote] = useState<StillGenerationQuote | null>(null);
+  const [pendingRegeneration, setPendingRegeneration] = useState<{
+    items: Array<{ moment: string; quote: RegenerationQuote }>;
+  } | null>(null);
 
   const handleSelect = (item: (typeof history)[0]) => {
     setSelectedId(item.id);
@@ -68,6 +72,41 @@ const Index = () => {
     setPendingQuote(null);
     setSelectedId(undefined);
     await generate(imageProvider, quote);
+    refetch();
+  };
+
+  const requestRegeneration = async (
+    moment: string,
+    promptMode: "saved" | "refresh" = "saved",
+  ) => {
+    const quote = await getRegenerationQuote(moment, promptMode);
+    if (!quote) return null;
+    setPendingRegeneration({ items: [{ moment, quote }] });
+    return null;
+  };
+
+  const requestRegenerateAll = async () => {
+    if (!content) return;
+    const items: Array<{ moment: string; quote: RegenerationQuote }> = [];
+    for (const visual of content.faceless_visuals) {
+      const quote = await getRegenerationQuote(visual.moment, "saved");
+      if (!quote) return;
+      items.push({ moment: visual.moment, quote });
+    }
+    setPendingRegeneration({ items });
+  };
+
+  const handleConfirmRegeneration = async () => {
+    const pending = pendingRegeneration;
+    if (!pending) return;
+    setPendingRegeneration(null);
+    if (pending.items.length === 1) {
+      const item = pending.items[0];
+      await regenerateVisual(item.moment, item.quote);
+      refetch();
+      return;
+    }
+    await regenerateAllVisuals(pending.items);
     refetch();
   };
 
@@ -194,8 +233,10 @@ const Index = () => {
               <ContentDisplay 
                 content={content} 
                 onReset={handleReset} 
-                onRegenerateVisual={(moment) => regenerateVisual(moment, imageProvider)}
-                onRegenerateAll={() => regenerateAllVisuals(imageProvider)}
+                onRegenerateVisual={(moment) => requestRegeneration(moment, "saved")}
+                onRefreshVisualPrompt={(moment) => requestRegeneration(moment, "refresh")}
+                onRegenerateAll={requestRegenerateAll}
+                isQuotingRegeneration={isQuotingRegeneration}
                 onRestoreVersion={restoreVisualVersion}
                 onRegenerateCaption={regenerateCaption}
                 isRegeneratingCaption={isRegeneratingCaption}
@@ -246,6 +287,59 @@ const Index = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmGenerate}>
               Confirm and generate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={Boolean(pendingRegeneration)}
+        onOpenChange={(open) => {
+          if (!open) setPendingRegeneration(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Confirm {pendingRegeneration?.items.length === 1 ? "image" : "six-image"} regeneration
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p>
+                  {pendingRegeneration?.items.some((item) => item.quote.prompt_mode === "refresh")
+                    ? "This uses the latest locked botanical prompt for the selected image."
+                    : "This reuses each image's exact saved prompt, recorded model, and recorded settings."}
+                </p>
+                <div className="rounded-md border bg-muted/30 p-3 space-y-1 text-foreground">
+                  <div className="flex justify-between gap-4">
+                    <span>Recorded model</span>
+                    <span className="font-medium text-right">
+                      {Array.from(new Set(pendingRegeneration?.items.map((item) => item.quote.model) ?? [])).join(", ")}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span>Maximum estimate</span>
+                    <span className="font-medium">
+                      ${(pendingRegeneration?.items.reduce((sum, item) => sum + item.quote.estimated_cost_usd, 0) ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span>Remaining daily allowance</span>
+                    <span className="font-medium">
+                      ${Math.min(...(pendingRegeneration?.items.map((item) => item.quote.daily_remaining_usd) ?? [0])).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+                <p>
+                  The current image and its full generation metadata will remain available in version history.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmRegeneration}>
+              Confirm and regenerate
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
