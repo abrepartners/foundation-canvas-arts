@@ -21,6 +21,7 @@ export async function invokeFn<T = any>(name: string, options: InvokeOptions = {
   const { data: sessionData } = await supabase.auth.getSession();
   const headers = new Headers(options.headers as HeadersInit | undefined);
   headers.set("Content-Type", "application/json");
+  headers.set("apikey", import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
   if (sessionData.session?.access_token) {
     headers.set("Authorization", `Bearer ${sessionData.session.access_token}`);
   }
