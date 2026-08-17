@@ -1,17 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
-import { APP_PASSCODE } from "@/lib/passcode";
 
 type InvokeOptions = Parameters<typeof supabase.functions.invoke>[1];
 
+// Authorization is carried by the Supabase session JWT that supabase-js
+// attaches automatically. No client-side shared secret is sent.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function invokeFn<T = any>(name: string, options: InvokeOptions = {}) {
-  return supabase.functions.invoke<T>(name, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      "x-app-passcode": APP_PASSCODE,
-    },
-  });
+  return supabase.functions.invoke<T>(name, options);
 }
 
 // supabase-js hides the response body on non-2xx status in its `error` object.

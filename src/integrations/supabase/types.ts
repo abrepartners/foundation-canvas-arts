@@ -165,6 +165,24 @@ export type Database = {
           },
         ]
       }
+      app_members: {
+        Row: {
+          created_at: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       botanical_animated: {
         Row: {
           caption: string | null
@@ -446,6 +464,7 @@ export type Database = {
         Args: { _patch: Json; _row_id: string }
         Returns: boolean
       }
+      is_app_member: { Args: never; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

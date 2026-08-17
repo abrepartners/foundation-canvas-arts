@@ -1,6 +1,7 @@
 // Shared owner guard for protected Edge Functions.
-// Accepts the app passcode header from the client, or the service-role key for
-// internal edge-to-edge invocations.
+// Accepts a real Supabase Auth session JWT belonging to an app_members row,
+// or the service-role key for internal edge-to-edge invocations.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "./cors.ts";
 
 export type AuthResult =
@@ -16,26 +17,34 @@ export async function requireAuthorized(req: Request): Promise<AuthResult> {
     });
 
   const authHeader = req.headers.get("Authorization") ?? "";
+  if (!authHeader.startsWith("Bearer ")) return { ok: false, response: unauthorized() };
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) return { ok: false, response: unauthorized() };
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-  if (serviceKey && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.slice("Bearer ".length).trim();
-    if (token && token === serviceKey) {
-      return { ok: true, internal: true, userId: null };
-    }
+  if (!supabaseUrl || !serviceKey) {
+    return { ok: false, response: unauthorized("Auth not configured") };
   }
 
-  const passcode = req.headers.get("x-app-passcode");
-  const expected = Deno.env.get("APP_PASSCODE");
-  if (!expected) {
-    return { ok: false, response: unauthorized("Passcode not configured") };
-  }
-  if (!passcode || passcode !== expected) {
-    return { ok: false, response: unauthorized() };
+  // Internal edge-to-edge calls use the service-role key directly.
+  if (token === serviceKey) {
+    return { ok: true, internal: true, userId: null };
   }
 
-  // Passcode auth is single-owner; interactive user id is not available here.
-  // Platform connect flows that need a real auth.users id should set OWNER_USER_ID.
-  const ownerId = Deno.env.get("OWNER_USER_ID");
-  return { ok: true, internal: false, userId: ownerId ?? null };
+  const admin = createClient(supabaseUrl, serviceKey);
+  const { data, error } = await admin.auth.getUser(token);
+  const user = data?.user;
+  if (error || !user) return { ok: false, response: unauthorized() };
+
+  const { data: member, error: memberError } = await admin
+    .from("app_members")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (memberError || !member) {
+    return { ok: false, response: unauthorized("Not an app member") };
+  }
+
+  return { ok: true, internal: false, userId: user.id };
 }
