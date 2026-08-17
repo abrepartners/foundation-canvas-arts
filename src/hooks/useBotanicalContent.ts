@@ -81,6 +81,11 @@ export interface FacelessVisual {
   completed_at?: string | null;
   prediction_id?: string | null;
   provider?: "replicate" | "openai" | null;
+  model?: string | null;
+  model_version?: string | null;
+  prompt_version?: string | null;
+  settings?: Record<string, unknown> | null;
+  seed?: number | null;
 }
 
 export function normalizeVisual(visual: FacelessVisual, now = Date.now()): FacelessVisual {
@@ -126,12 +131,38 @@ export interface ContentWithId extends BotanicalContent {
   id: string;
 }
 
+export interface StillGenerationQuote {
+  image_provider: "replicate" | "openai";
+  model: string;
+  image_count: 6;
+  image_unit_usd: number;
+  images_usd: number;
+  text_model: string;
+  text_reserve_usd: number;
+  estimated_cost_usd: number;
+  prompt_version: string;
+  pricing_version: string;
+  per_run_limit_usd: number;
+  daily_limit_usd: number;
+  daily_reserved_usd: number;
+  daily_remaining_usd: number;
+  idempotency_key: string;
+  active_run: {
+    id: string;
+    status: string;
+    botanical_content_id?: string | null;
+    created_at: string;
+  } | null;
+}
+
 export function useBotanicalContent() {
   const [content, setContent] = useState<ContentWithId | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoResumeExhausted, setAutoResumeExhausted] = useState(false);
   const [isRetryingStuck, setIsRetryingStuck] = useState(false);
+  const [isQuoting, setIsQuoting] = useState(false);
+  const [isPackageActive, setIsPackageActive] = useState(false);
   const [activeContentId, setActiveContentId] = useState<string | null>(null);
   const [activeProvider, setActiveProvider] = useState<"replicate" | "openai">("replicate");
   const { toast } = useToast();
@@ -142,6 +173,7 @@ export function useBotanicalContent() {
     contentId: string,
     imageProvider: "replicate" | "openai" = "replicate",
   ) => {
+    setIsPackageActive(true);
     const INTERVAL_MS = 2000;
     const MAX_POLLS = 450; // ~15 min ceiling
     const RESUME_AFTER_POLLS = 300; // wait ~10 min before one recovery attempt
@@ -183,7 +215,10 @@ export function useBotanicalContent() {
         visuals.every(
           (v) => v.status === "done" || v.status === "error" || v.image_url || v.error,
         );
-      if (allSettled) return;
+      if (allSettled) {
+        setIsPackageActive(false);
+        return;
+      }
 
       const now = Date.now();
       const hasStuckSlot = visuals.some((v) => {
@@ -209,6 +244,39 @@ export function useBotanicalContent() {
         }
       }
     }
+    setIsPackageActive(false);
+  };
+
+  const getGenerationQuote = async (
+    imageProvider: "replicate" | "openai" = "replicate",
+  ): Promise<StillGenerationQuote | null> => {
+    setIsQuoting(true);
+    try {
+      const { data, error: fnError } = await invokeFn<{
+        success: boolean;
+        quote: StillGenerationQuote;
+      }>("generate-botanical-content", {
+        body: { action: "quote", image_provider: imageProvider },
+      });
+      if (fnError) throw new Error(await invokeErrorMessage(fnError));
+      if (!data?.success || !data.quote) throw new Error("Could not load the generation cost.");
+      if (data.quote.active_run) {
+        toast({
+          title: "Generation already active",
+          description: "Finish or recover the current six-image package before starting another.",
+          variant: "destructive",
+        });
+        return null;
+      }
+      return data.quote;
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "Unknown error";
+      const { title, message } = formatGatewayError(raw, "Could not review generation cost");
+      toast({ title, description: message, variant: "destructive" });
+      return null;
+    } finally {
+      setIsQuoting(false);
+    }
   };
 
   const retryStuck = async () => {
@@ -229,15 +297,36 @@ export function useBotanicalContent() {
     }
   };
 
-  const generate = async (imageProvider: "replicate" | "openai" = "replicate") => {
+  const generate = async (
+    imageProvider: "replicate" | "openai" = "replicate",
+    quote?: StillGenerationQuote,
+  ) => {
+    if (!quote) {
+      toast({
+        title: "Cost confirmation required",
+        description: "Review the package cost before generation starts.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsLoading(true);
+    setIsPackageActive(true);
     setError(null);
     setAutoResumeExhausted(false);
 
     try {
       const { data, error: fnError } = await invokeFn(
         "generate-botanical-content",
-        { body: { image_provider: imageProvider } }
+        {
+          body: {
+            image_provider: imageProvider,
+            cost_confirmation: {
+              idempotency_key: quote.idempotency_key,
+              pricing_version: quote.pricing_version,
+              estimated_cost_usd: quote.estimated_cost_usd,
+            },
+          },
+        }
       );
 
       if (fnError) throw new Error(await invokeErrorMessage(fnError));
@@ -259,6 +348,7 @@ export function useBotanicalContent() {
       pollForImages(data.content_id, imageProvider);
 
     } catch (err) {
+      setIsPackageActive(false);
       const raw = err instanceof Error ? err.message : "Unknown error";
       const { title, message } = formatGatewayError(raw, "Generation failed");
       setError(message);
@@ -452,7 +542,10 @@ export function useBotanicalContent() {
   return {
     content,
     isLoading,
+    isQuoting,
+    isPackageActive,
     error,
+    getGenerationQuote,
     generate,
     reset,
     loadFromHistory,

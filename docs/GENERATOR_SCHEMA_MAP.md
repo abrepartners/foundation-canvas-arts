@@ -9,6 +9,8 @@ flowchart TD
   A[PIN login] --> B[Owner session]
   B --> C[Generate package]
   C --> D[Replicate text model]
+  C --> K[still_generation_runs]
+  K --> D
   D --> E[botanical_content]
   E --> F[Six image slots]
   F --> G[Replicate image model]
@@ -22,6 +24,8 @@ flowchart TD
 | Resource | Purpose | Key links |
 |---|---|---|
 | `botanical_content` | One complete content package | Primary key `id`; owns script, caption, thumbnail prompt, Part 2 hook, and six visual slots |
+| `still_generation_runs` | One cost-confirmed six-image package attempt | `idempotency_key` prevents duplicate packages; `botanical_content_id` links the completed package; one active row per owner |
+| `cost_events` | Provider submission and cost ledger | `generation_run_id` and `operation` uniquely identify text and each of the six still jobs |
 | `app_members` | Authorizes the private owner session | `user_id` links to `auth.users.id` |
 | `app_auth_settings` | Stores the hashed PIN | Singleton row; never stores the readable PIN |
 | `app_secrets` | Stores encrypted private API credentials | `REPLICATE_API_KEY` is encrypted with AES-GCM |
@@ -35,6 +39,7 @@ flowchart TD
 | Field | Stored value | Used by |
 |---|---|---|
 | `id` | UUID created before image generation | History, storage paths, retries, publishing |
+| `generation_run_id` | Package-level spending and idempotency record | Active-run lock, cost ledger, model and prompt versions |
 | `plant_name` | Scientific and common name | Header and every image prompt |
 | `verified_fact` | Core factual premise | Script and package summary |
 | `script` | Structured JSON string | Hook, Dangle 1, Re-hook, Dangle 2, Payoff, Verified Truth, Close |
@@ -71,6 +76,11 @@ Each object inside `script_visuals` uses these fields:
 | `completed_at` | Success or failure completion time |
 | `prediction_id` | Replicate prediction identifier when available |
 | `provider` | `replicate` or the optional Replicate-hosted OpenAI image model |
+| `model` | Exact Replicate model identifier selected for the slot |
+| `model_version` | Version returned when Replicate accepts the prediction |
+| `prompt_version` | Immutable version of the botanical study-plate prompt contract |
+| `settings` | Aspect ratio, quality, format, safety, and prompt-upsample settings |
+| `seed` | Reproducibility seed when supported; otherwise `null` |
 | `image_url` | Permanent Supabase Storage URL |
 | `error` | Retryable failure reason |
 | `history` | Up to five prior image versions with prompt and timestamp |
@@ -92,6 +102,11 @@ stateDiagram-v2
 - A permanent image URL is authoritative. If a migrated status is incorrect but an image exists, the slot is normalized to `done`.
 - Replicate retries are bounded. The UI never presents an abandoned historical job as active.
 - The history query is capped at the ten most recent retained packages.
+- Direct still generation requires a fresh server quote and confirmation before any Replicate request.
+- A database claim allows only one active six-image package per owner and makes every request idempotent.
+- The current hard ceilings are $1 per package and $5 per Central Time calendar day.
+- Daily accounting is conservative: an unknown provider outcome reserves its estimate instead of assuming a zero charge.
+- Every package records the model, returned model version, prompt version, pricing version, and seven cost events: one text request plus six image slots.
 
 ## Future TikTok link
 

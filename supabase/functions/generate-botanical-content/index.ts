@@ -10,6 +10,14 @@ import {
   type TrackedImageResult,
 } from "../_shared/trackedReplicate.ts";
 import { getReplicateApiKey } from "../_shared/secrets.ts";
+import {
+  STILL_DAILY_LIMIT_USD,
+  STILL_PER_RUN_LIMIT_USD,
+  STILL_PROMPT_VERSION,
+  STILL_TEXT_RESERVE_USD,
+  stillPackageQuote,
+  type StillImageProvider,
+} from "../_shared/pricing.ts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = any;
@@ -45,7 +53,7 @@ async function runReplicatePrediction(
   model: string, // e.g. "black-forest-labs/flux-1.1-pro" or "openai/gpt-image-2"
   input: Record<string, unknown>,
   replicateApiKey: string,
-  onPredictionId?: (predictionId: string) => Promise<void>,
+  onPredictionId?: (predictionId: string, modelVersion: string | null) => Promise<void>,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
   const authHeaders = {
@@ -81,7 +89,10 @@ async function runReplicatePrediction(
   const pred = await createRes.json();
   const predId = pred.id;
   if (!predId) throw new Error("Replicate: no prediction id");
-  await onPredictionId?.(predId);
+  await onPredictionId?.(
+    predId,
+    typeof pred.version === "string" ? pred.version : null,
+  );
   return pollReplicatePrediction(predId, replicateApiKey);
 }
 
@@ -92,6 +103,7 @@ async function runReplicateTextCompletion(
     supabase: SupabaseClient;
     animationRowId: string;
   },
+  onPredictionId?: (predictionId: string, modelVersion: string | null) => Promise<void>,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
   const model = "google/gemini-2.5-flash";
@@ -120,6 +132,10 @@ async function runReplicateTextCompletion(
   const pred = await createRes.json();
   const predId = pred.id;
   if (!predId) throw new Error("Replicate text: no prediction id");
+  await onPredictionId?.(
+    predId,
+    typeof pred.version === "string" ? pred.version : null,
+  );
 
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2500));
@@ -154,7 +170,7 @@ async function generateImageBytes(
     animationRowId: string;
     jobKey: string;
   },
-  onPredictionId?: (predictionId: string) => Promise<void>,
+  onPredictionId?: (predictionId: string, modelVersion: string | null) => Promise<void>,
   existingPredictionId?: string,
 ): Promise<{ bytes: Uint8Array; jobId?: string }> {
   if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
@@ -402,6 +418,20 @@ Return ONLY this exact JSON structure:
   ]
 }`;
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function jsonResponse(
+  body: Record<string, unknown>,
+  status: number,
+  headers: Record<string, string>,
+) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...headers, "Content-Type": "application/json" },
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
 
@@ -409,8 +439,10 @@ serve(async (req) => {
     const __auth = await requireAuthorized(req);
     if (!__auth.ok) return __auth.response;
 
+  let stillRunId: string | null = null;
+  let supabase: SupabaseClient | null = null;
+
   try {
-    const REPLICATE_API_KEY = await getReplicateApiKey();
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -418,23 +450,147 @@ serve(async (req) => {
       throw new Error("Supabase credentials not configured");
     }
 
-    // Default to Replicate Flux 1.1 Pro for photoreal output.
-    // The optional "openai" choice runs gpt-image-2 through Replicate.
+    supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
     const requestBody = await req.json().catch(() => ({}));
-    let imageProvider: "replicate" | "openai" = "replicate";
+    let imageProvider: StillImageProvider = "replicate";
     if (requestBody?.image_provider === "openai") imageProvider = "openai";
+    const quote = stillPackageQuote(imageProvider);
     const animationRowId = typeof requestBody?.animation_row_id === "string"
       ? requestBody.animation_row_id
       : null;
+
+    if (requestBody?.action === "quote") {
+      if (!__auth.userId) {
+        return jsonResponse({ success: false, error: "Owner session required" }, 401, corsHeaders);
+      }
+      const { data: todayRuns, error: todayError } = await supabase
+        .from("still_generation_runs")
+        .select("estimated_cost_usd,actual_cost_usd,status,created_at")
+        .eq("user_id", __auth.userId)
+        .gte("created_at", new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString());
+      if (todayError) throw todayError;
+
+      const chicagoDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Chicago",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+      const dailyReserved = (todayRuns ?? [])
+        .filter((run) =>
+          new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/Chicago",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(new Date(run.created_at)) === chicagoDate
+        )
+        .reduce(
+          (sum, run) => sum + Number(run.actual_cost_usd ?? run.estimated_cost_usd ?? 0),
+          0,
+        );
+      const { data: activeRun } = await supabase
+        .from("still_generation_runs")
+        .select("id,status,botanical_content_id,created_at")
+        .eq("user_id", __auth.userId)
+        .in("status", ["claimed", "generating_content", "generating_images"])
+        .maybeSingle();
+
+      return jsonResponse({
+        success: true,
+        quote: {
+          ...quote,
+          idempotency_key: crypto.randomUUID(),
+          daily_reserved_usd: +dailyReserved.toFixed(4),
+          daily_remaining_usd: +Math.max(0, STILL_DAILY_LIMIT_USD - dailyReserved).toFixed(4),
+          active_run: activeRun ?? null,
+        },
+      }, 200, corsHeaders);
+    }
+
+    // Internal animation calls retain their existing confirmed animation
+    // workflow. Direct still-package requests must cross the package-level
+    // cost and idempotency boundary below.
+    if (!animationRowId) {
+      if (!__auth.userId) {
+        return jsonResponse({ success: false, error: "Owner session required" }, 401, corsHeaders);
+      }
+      const confirmation = requestBody?.cost_confirmation;
+      const idempotencyKey = typeof confirmation?.idempotency_key === "string"
+        ? confirmation.idempotency_key
+        : "";
+      const confirmedEstimate = Number(confirmation?.estimated_cost_usd);
+      const pricingVersion = typeof confirmation?.pricing_version === "string"
+        ? confirmation.pricing_version
+        : "";
+
+      if (
+        !UUID_PATTERN.test(idempotencyKey) ||
+        pricingVersion !== quote.pricing_version ||
+        !Number.isFinite(confirmedEstimate) ||
+        Math.abs(confirmedEstimate - quote.estimated_cost_usd) > 0.0001
+      ) {
+        return jsonResponse({
+          success: false,
+          error_code: "COST_CONFIRMATION_REQUIRED",
+          error: "Review and confirm the current generation cost before starting.",
+          quote,
+        }, 402, corsHeaders);
+      }
+
+      const { data: claimRows, error: claimError } = await supabase.rpc(
+        "claim_still_generation_run",
+        {
+          _user_id: __auth.userId,
+          _idempotency_key: idempotencyKey,
+          _image_provider: imageProvider,
+          _model: quote.model,
+          _prompt_version: quote.prompt_version,
+          _pricing_version: quote.pricing_version,
+          _estimated_cost_usd: quote.estimated_cost_usd,
+          _confirmed_estimate_usd: confirmedEstimate,
+          _per_run_limit_usd: STILL_PER_RUN_LIMIT_USD,
+          _daily_limit_usd: STILL_DAILY_LIMIT_USD,
+        },
+      );
+      if (claimError) throw claimError;
+      const claim = claimRows?.[0];
+      if (!claim?.claimed) {
+        const code = claim?.rejection_code ?? "DUPLICATE_REQUEST";
+        const message = code === "ACTIVE_RUN"
+          ? "Another six-image package is already generating."
+          : code === "DAILY_LIMIT"
+          ? "The $5 daily generation limit has been reached."
+          : code === "PER_RUN_LIMIT"
+          ? "This package exceeds the $1 per-run limit."
+          : "This generation request was already accepted.";
+        return jsonResponse({
+          success: false,
+          error_code: code,
+          error: message,
+          run_id: claim?.run_id ?? null,
+          content_id: claim?.content_id ?? null,
+          run_status: claim?.run_status ?? null,
+          daily_reserved_usd: Number(claim?.daily_reserved_usd ?? 0),
+        }, code === "DAILY_LIMIT" || code === "PER_RUN_LIMIT" ? 402 : 409, corsHeaders);
+      }
+      stillRunId = claim.run_id;
+      await supabase.from("still_generation_runs").update({
+        status: "generating_content",
+        updated_at: new Date().toISOString(),
+      }).eq("id", stillRunId);
+    } else if (!__auth.internal) {
+      return jsonResponse({ success: false, error: "Internal animation request required" }, 403, corsHeaders);
+    }
+
+    const REPLICATE_API_KEY = await getReplicateApiKey();
     if (!REPLICATE_API_KEY) {
       throw new Error(
         "REPLICATE_API_KEY not configured — required for Replicate-hosted generation",
       );
     }
     console.log(`Image provider: ${imageProvider}`);
-
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     if (animationRowId && await isStopped(supabase, animationRowId)) {
       throw new Error("Animation run was stopped before content generation");
@@ -485,6 +641,17 @@ Repetition is NOT allowed.
     const systemPrompt = buildSystemPrompt(PLANT_NOVELTY_BLOCK);
 
     console.log("Calling Replicate for text content generation...");
+    if (stillRunId) {
+      const { error: textCostError } = await supabase.from("cost_events").insert({
+        generation_run_id: stillRunId,
+        provider: "replicate",
+        model: quote.text_model,
+        operation: "content:text",
+        estimated_cost_usd: quote.text_reserve_usd,
+        status: "confirmed",
+      });
+      if (textCostError) throw textCostError;
+    }
     const rawContent = await runReplicateTextCompletion(
       {
         system_instruction: systemPrompt,
@@ -495,7 +662,28 @@ Repetition is NOT allowed.
       },
       REPLICATE_API_KEY,
       animationRowId ? { supabase, animationRowId } : undefined,
+      stillRunId
+        ? async (predictionId, modelVersion) => {
+            await supabase.from("cost_events").update({
+              status: "submitted",
+              provider_job_id: predictionId,
+            }).eq("generation_run_id", stillRunId).eq("operation", "content:text");
+            if (modelVersion) {
+              await supabase.from("still_generation_runs").update({
+                text_model_version: modelVersion,
+                updated_at: new Date().toISOString(),
+              }).eq("id", stillRunId);
+            }
+          }
+        : undefined,
     );
+
+    if (stillRunId) {
+      await supabase.from("cost_events").update({
+        status: "succeeded",
+        actual_cost_usd: STILL_TEXT_RESERVE_USD,
+      }).eq("generation_run_id", stillRunId).eq("operation", "content:text");
+    }
 
     if (!rawContent) {
       throw new Error("No content received from AI");
@@ -643,6 +831,23 @@ Repetition is NOT allowed.
         prompt: v.prompt,
         image_url: null as string | null,
         status: "queued" as "queued" | "generating" | "done" | "error",
+        provider: imageProvider,
+        model: quote.model,
+        model_version: null as string | null,
+        prompt_version: STILL_PROMPT_VERSION,
+        settings: imageProvider === "openai"
+          ? {
+              quality: "high",
+              aspect_ratio: "9:16",
+              output_format: "jpeg",
+            }
+          : {
+              aspect_ratio: "9:16",
+              output_format: "jpeg",
+              safety_tolerance: 2,
+              prompt_upsampling: false,
+            },
+        seed: null as number | null,
       }));
 
     // INSERT content to DB immediately (with empty image_urls)
@@ -658,6 +863,7 @@ Repetition is NOT allowed.
         part2_hook: parsed.part2_hook,
         script_visuals: JSON.stringify(visualsInitial),
         raw_content: rawContent,
+        generation_run_id: stillRunId,
       })
       .select("id")
       .single();
@@ -670,6 +876,30 @@ Repetition is NOT allowed.
     const contentId = insertedRow.id;
     console.log("Content saved with ID:", contentId);
 
+    if (stillRunId) {
+      const { error: linkRunError } = await supabase.from("still_generation_runs").update({
+        botanical_content_id: contentId,
+        status: "generating_images",
+        updated_at: new Date().toISOString(),
+      }).eq("id", stillRunId);
+      if (linkRunError) throw linkRunError;
+
+      const imageCostRows = visualsInitial.map((visual) => ({
+        botanical_content_id: contentId,
+        generation_run_id: stillRunId,
+        provider: "replicate",
+        model: quote.model,
+        operation: `still:${visual.moment}`,
+        estimated_cost_usd: quote.image_unit_usd,
+        status: "confirmed",
+      }));
+      const { error: imageCostError } = await supabase.from("cost_events").insert(imageCostRows);
+      if (imageCostError) throw imageCostError;
+      await supabase.from("cost_events").update({ botanical_content_id: contentId })
+        .eq("generation_run_id", stillRunId)
+        .eq("operation", "content:text");
+    }
+
     // Re-read latest row and patch a single visual, preserving siblings' progress
     const mergeVisual = async (
       moment: string,
@@ -681,6 +911,11 @@ Repetition is NOT allowed.
         completed_at?: string | null;
         prediction_id?: string | null;
         provider?: "replicate" | "openai" | null;
+        model?: string | null;
+        model_version?: string | null;
+        prompt_version?: string | null;
+        settings?: Record<string, unknown> | null;
+        seed?: number | null;
       },
     ) => {
       // Auto-stamp started_at whenever we transition to "generating"
@@ -719,12 +954,26 @@ Repetition is NOT allowed.
                 jobKey: `still:${visual.moment}`,
               }
             : undefined,
-          async (predictionId) => {
+          async (predictionId, modelVersion) => {
             submittedPredictionId = predictionId;
             await mergeVisual(visual.moment, {
               prediction_id: predictionId,
               provider: imageProvider,
+              model: quote.model,
+              model_version: modelVersion,
+              prompt_version: STILL_PROMPT_VERSION,
             });
+            if (stillRunId) {
+              await supabase.from("cost_events").update({
+                status: "submitted",
+                provider_job_id: predictionId,
+              }).eq("generation_run_id", stillRunId)
+                .eq("operation", `still:${visual.moment}`);
+              await supabase.from("still_generation_runs").update({
+                model_version: modelVersion,
+                updated_at: new Date().toISOString(),
+              }).eq("id", stillRunId);
+            }
           },
           existingPredictionId,
         );
@@ -764,6 +1013,16 @@ Repetition is NOT allowed.
           status: "done",
           completed_at: new Date().toISOString(),
         });
+        if (stillRunId) {
+          await supabase.from("cost_events").update({
+            status: "succeeded",
+            actual_cost_usd: quote.image_unit_usd,
+          }).eq("generation_run_id", stillRunId)
+            .eq("operation", `still:${visual.moment}`);
+          await supabase.from("still_generation_runs").update({
+            updated_at: new Date().toISOString(),
+          }).eq("id", stillRunId);
+        }
         return { ok: true };
       } catch (err) {
         return {
@@ -774,15 +1033,15 @@ Repetition is NOT allowed.
       }
     };
 
-    const generateOne = async (visual: (typeof visualsInitial)[number]) => {
+    const generateOne = async (visual: (typeof visualsInitial)[number]): Promise<boolean> => {
       await mergeVisual(visual.moment, { status: "generating", error: null });
       const first = await generateOneAttempt(visual);
-      if (first.ok) return;
-      if (first.msg === "stopped") return;
+      if (first.ok) return true;
+      if (first.msg === "stopped") return false;
       console.warn(`Retrying ${visual.moment} after error:`, first.msg);
       await new Promise((r) => setTimeout(r, 4000));
       const second = await generateOneAttempt(visual, first.predictionId);
-      if (second.ok) return;
+      if (second.ok) return true;
       console.error(`Image error for ${visual.moment} after retry:`, second.msg);
       await mergeVisual(visual.moment, {
         image_url: null,
@@ -790,44 +1049,91 @@ Repetition is NOT allowed.
         status: "error",
         completed_at: new Date().toISOString(),
       });
+      if (stillRunId) {
+        const failedPrediction = /prediction failed/i.test(second.msg);
+        const canceledPrediction = /prediction canceled/i.test(second.msg);
+        await supabase.from("cost_events").update({
+          status: failedPrediction ? "failed" : canceledPrediction ? "canceled" : "submitted",
+          actual_cost_usd: failedPrediction ? 0 : null,
+        }).eq("generation_run_id", stillRunId)
+          .eq("operation", `still:${visual.moment}`);
+        await supabase.from("still_generation_runs").update({
+          updated_at: new Date().toISOString(),
+        }).eq("id", stillRunId);
+      }
+      return false;
     };
 
     const runWithConcurrency = async (
       items: typeof visualsInitial,
       limit: number,
-    ) => {
+    ): Promise<boolean[]> => {
       let idx = 0;
+      const results: boolean[] = [];
       const runners = Array.from(
         { length: Math.min(limit, items.length) },
         async () => {
           while (idx < items.length) {
             const i = idx++;
-            await generateOne(items[i]);
+            results.push(await generateOne(items[i]));
           }
         },
       );
       await Promise.all(runners);
+      return results;
     };
 
     const generateAllImages = async () => {
-      console.log(
-        `Background: generating ${visualsInitial.length} images via ${imageProvider}...`,
-      );
-      if (imageProvider === "replicate") {
-        // Replicate enforces ~6/min — stagger starts 12s apart.
-        const STAGGER_MS = 12000;
-        await Promise.all(
-          visualsInitial.map((visual, i) =>
-            new Promise((resolve) => setTimeout(resolve, i * STAGGER_MS)).then(
-              () => generateOne(visual),
-            ),
-          ),
+      try {
+        console.log(
+          `Background: generating ${visualsInitial.length} images via ${imageProvider}...`,
         );
-      } else if (imageProvider === "openai") {
-        // gpt-image-2 HQ is slow + tightly rate-limited — cap at 2 concurrent.
-        await runWithConcurrency(visualsInitial, 2);
+        let results: boolean[] = [];
+        if (imageProvider === "replicate") {
+          // Keep starts conservative for low-credit Replicate accounts.
+          const STAGGER_MS = 12000;
+          results = await Promise.all(
+            visualsInitial.map((visual, i) =>
+              new Promise((resolve) => setTimeout(resolve, i * STAGGER_MS)).then(
+                () => generateOne(visual),
+              ),
+            ),
+          );
+        } else if (imageProvider === "openai") {
+          // gpt-image-2 HQ is slow, so cap at 2 concurrent predictions.
+          results = await runWithConcurrency(visualsInitial, 2);
+        }
+
+        if (stillRunId) {
+          const { data: costRows } = await supabase.from("cost_events")
+            .select("estimated_cost_usd,actual_cost_usd")
+            .eq("generation_run_id", stillRunId);
+          const accountedCost = (costRows ?? []).reduce(
+            (sum, row) => sum + Number(row.actual_cost_usd ?? row.estimated_cost_usd ?? 0),
+            0,
+          );
+          const allSucceeded = results.length === visualsInitial.length && results.every(Boolean);
+          await supabase.from("still_generation_runs").update({
+            status: allSucceeded ? "succeeded" : "partial_failed",
+            actual_cost_usd: +accountedCost.toFixed(4),
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", stillRunId);
+        }
+        console.log(`Background image generation complete for ${contentId}`);
+      } catch (backgroundError) {
+        if (stillRunId) {
+          await supabase.from("still_generation_runs").update({
+            status: "failed",
+            error: backgroundError instanceof Error
+              ? backgroundError.message.slice(0, 500)
+              : String(backgroundError).slice(0, 500),
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", stillRunId);
+        }
+        throw backgroundError;
       }
-      console.log(`Background image generation complete for ${contentId}`);
     };
 
     // Fire and forget via EdgeRuntime.waitUntil (keeps function alive)
@@ -858,6 +1164,14 @@ Repetition is NOT allowed.
   } catch (error: unknown) {
     console.error("Error in generate-botanical-content:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
+    if (stillRunId && supabase) {
+      await supabase.from("still_generation_runs").update({
+        status: "failed",
+        error: message.slice(0, 500),
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", stillRunId);
+    }
     const isCredit = /CREDIT_LIMIT/i.test(message);
     const isRate = /RATE_LIMIT/i.test(message);
     return new Response(

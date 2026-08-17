@@ -13,6 +13,7 @@ export type ImageProvider = "replicate" | "openai";
 interface GenerateButtonProps {
   onClick: () => void;
   isLoading: boolean;
+  disabled?: boolean;
   provider: ImageProvider;
   onProviderChange: (provider: ImageProvider) => void;
 }
@@ -20,6 +21,7 @@ interface GenerateButtonProps {
 export function GenerateButton({
   onClick,
   isLoading,
+  disabled = false,
   provider,
   onProviderChange,
 }: GenerateButtonProps) {
@@ -27,7 +29,7 @@ export function GenerateButton({
     <div className="flex flex-col items-center gap-3">
       <Button
         onClick={onClick}
-        disabled={isLoading}
+        disabled={disabled || isLoading}
         size="lg"
         className="bg-botanical hover:bg-botanical/90 text-botanical-foreground font-body px-8 py-6 text-base"
       >
@@ -52,7 +54,7 @@ export function GenerateButton({
           <Select
             value={provider}
             onValueChange={(v) => onProviderChange?.(v as ImageProvider)}
-            disabled={isLoading}
+            disabled={disabled || isLoading}
           >
             <SelectTrigger className="h-8 w-[240px] text-xs">
               <SelectValue />
@@ -65,12 +67,12 @@ export function GenerateButton({
         </div>
         {provider === "replicate" && (
           <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
-            ~$0.24 per package, billed directly to Replicate.
+            ~$0.24 for six images. Final confirmation includes a small text reserve.
           </p>
         )}
         {provider === "openai" && (
           <p className="text-[10px] text-muted-foreground font-body max-w-[280px] text-center">
-            ~$0.77 per six-image package, billed directly to Replicate (runs gpt-image-2 high quality). Output is 2:3 (1024×1536).
+            ~$0.77 for six images. Final confirmation includes a small text reserve. Output is 2:3 (1024×1536).
           </p>
         )}
       </div>
