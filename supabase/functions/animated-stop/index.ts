@@ -7,6 +7,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
 import { cancelReplicatePrediction, updateJob } from "../_shared/providerJobs.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
@@ -27,8 +28,7 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE = "";
-    const REPLICATE = Deno.env.get("REPLICATE_API_KEY");
+    const REPLICATE = await getReplicateApiKey();
     const supabase = createClient(SUPABASE_URL, SERVICE);
 
     // Atomically set stop flag. Only stop if not already terminal.
@@ -96,7 +96,7 @@ serve(async (req) => {
         continue;
       }
       try {
-        const r = await cancelReplicatePrediction(j.prediction_id, LOVABLE, REPLICATE);
+        const r = await cancelReplicatePrediction(j.prediction_id, REPLICATE);
         if (r.ok) {
           await supabase
             .from("animation_provider_jobs")

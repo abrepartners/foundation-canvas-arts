@@ -1,73 +1,43 @@
-# Welcome to your Lovable project
+# Botanical Studio
 
-## Project info
+Private botanical image and caption generator with optional TikTok draft delivery.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Production
 
-## How can I edit this code?
+- Site: https://foundation-canvas-arts.vercel.app
+- Hosting: Vercel
+- Backend: owner-controlled Supabase project `thxkzaazwkdtacfvdiyn`
+- AI generation: Replicate
 
-There are several ways of editing your application.
+The application intentionally exposes only the Botanical Content Generator, its latest 10 records, private Settings, and the TikTok draft action attached to a completed content package.
 
-**Use Lovable**
+## Local development
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+Requirements: Node.js 20 or newer and npm.
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The frontend requires these environment variables:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```sh
+VITE_SUPABASE_PROJECT_ID=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+VITE_SUPABASE_URL=
+```
 
-**Use GitHub Codespaces**
+## Security
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+- The browser never receives the database service-role key or Replicate token.
+- PIN verification occurs in a Supabase Edge Function with rate limiting.
+- The stored PIN is a bcrypt hash.
+- Successful PIN verification creates a real Supabase Auth session.
+- Row-level security limits browser reads to the single application owner.
+- Database mutations and provider calls run through authenticated Edge Functions.
+- Replicate and publishing credentials must be configured as backend secrets and must never be committed.
 
-## What technologies are used for this project?
+## Deployment
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Push changes through GitHub and deploy the connected Vercel project. Database changes live in the consolidated owner-only migration under `supabase/migrations`.

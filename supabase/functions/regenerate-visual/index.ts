@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 // Architectural Botanical Study Plate — locked style. Same style across all six plates;
 // only the per-moment composition / storytelling purpose changes.
@@ -220,7 +221,7 @@ serve(async (req) => {
           ? "openai"
           : "replicate";
 
-    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
+    const REPLICATE_API_KEY = await getReplicateApiKey();
     if (!REPLICATE_API_KEY) {
       throw new Error(
         "REPLICATE_API_KEY not configured — required for Replicate-hosted image models",
@@ -316,7 +317,7 @@ serve(async (req) => {
 
 
     // Versioned storage path so previous renders remain reachable.
-    // Replicate outputs jpg (TikTok-compatible); Lovable/Gemini returns png.
+    // Replicate outputs jpg, which is compatible with the publishing workflow.
     const ext = outputExt;
     const timestamp = Date.now();
     const filePath = storagePrefix

@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/api/functions/:name",
-      "destination": "https://pswlaczoevrclemhjjpw.supabase.co/functions/v1/:name"
+      "destination": "https://thxkzaazwkdtacfvdiyn.supabase.co/functions/v1/:name"
     },
     {
       "source": "/(.*)",

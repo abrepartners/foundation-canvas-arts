@@ -1,4 +1,4 @@
-import { invokeFn } from "@/lib/invokeFn";
+import { invokeFn, readFnError } from "@/lib/invokeFn";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -7,21 +7,40 @@ export function formatGatewayError(
   raw: string,
   fallbackTitle: string,
 ): { title: string; message: string } {
-  if (/CREDIT_LIMIT/i.test(raw) || /credit_limit_reached/i.test(raw)) {
+  if (/REPLICATE_API_KEY not configured|replicate.*not connected/i.test(raw)) {
     return {
-      title: "Workspace credit limit reached",
-      message:
-        "The workspace owner needs to raise the monthly member credit limit in Settings → Workspace (or Settings → People for a specific member), or add top-up credits in Settings → Plans & credits.",
+      title: "Replicate is not connected",
+      message: "Open Settings, connect your Replicate API token, then try again.",
+    };
+  }
+  if (/payment required|insufficient.*credit|\b402\b/i.test(raw)) {
+    return {
+      title: "Replicate billing needs attention",
+      message: "Add billing or credit to your Replicate account, then try again.",
+    };
+  }
+  if (/unauthorized|invalid.*token|\b401\b|\b403\b/i.test(raw)) {
+    return {
+      title: "Reconnect Replicate",
+      message: "The Replicate token was rejected. Replace it in Settings and try again.",
     };
   }
   if (/RATE_LIMIT/i.test(raw) || /\b429\b/.test(raw)) {
     return {
-      title: "Rate limited",
-      message:
-        "The AI Gateway is throttling requests. Wait a minute and try again.",
+      title: "Replicate rate limit reached",
+      message: "Wait a minute, then try again. Existing image jobs will continue to be checked.",
     };
   }
-  return { title: fallbackTitle, message: raw.replace(/^CREDIT_LIMIT:\s*/, "") };
+  return { title: fallbackTitle, message: raw };
+}
+
+async function invokeErrorMessage(error: unknown): Promise<string> {
+  const detail = await readFnError(error);
+  if (detail.body && typeof detail.body === "object" && "error" in detail.body) {
+    const message = (detail.body as { error?: unknown }).error;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return error instanceof Error ? error.message : "Unknown error";
 }
 
 export interface ScriptStructure {
@@ -168,7 +187,7 @@ export function useBotanicalContent() {
       const { error: fnError } = await invokeFn("generate-botanical-resume", {
         body: { content_id: activeContentId, image_provider: activeProvider },
       });
-      if (fnError) throw new Error(fnError.message);
+      if (fnError) throw new Error(await invokeErrorMessage(fnError));
       toast({ title: "Retrying stuck images", description: "Kicked off a fresh attempt for pending slots." });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -189,7 +208,7 @@ export function useBotanicalContent() {
         { body: { image_provider: imageProvider } }
       );
 
-      if (fnError) throw new Error(fnError.message);
+      if (fnError) throw new Error(await invokeErrorMessage(fnError));
       if (!data.success) throw new Error(data.error || "Failed to generate content");
 
       const generatedContent: ContentWithId = {
@@ -207,9 +226,6 @@ export function useBotanicalContent() {
 
       pollForImages(data.content_id, imageProvider);
 
-      // Fire-and-forget virality scoring + hook rewrites.
-      invokeFn("score-content", { body: { content_id: data.content_id } })
-        .catch((e) => console.warn("score-content failed", e));
     } catch (err) {
       const raw = err instanceof Error ? err.message : "Unknown error";
       const { title, message } = formatGatewayError(raw, "Generation failed");
@@ -258,7 +274,7 @@ export function useBotanicalContent() {
         }
       );
 
-      if (fnError) throw new Error(fnError.message);
+      if (fnError) throw new Error(await invokeErrorMessage(fnError));
       if (!data.success) throw new Error(data.error || "Failed to regenerate image");
 
       setContent((prev) => {
@@ -321,7 +337,7 @@ export function useBotanicalContent() {
           },
         }
       );
-      if (fnError) throw new Error(fnError.message);
+      if (fnError) throw new Error(await invokeErrorMessage(fnError));
       if (!data.success) throw new Error(data.error || "Failed to restore version");
 
       setContent((prev) => {
@@ -379,7 +395,7 @@ export function useBotanicalContent() {
         "regenerate-caption",
         { body: { table: "botanical_content", id: content.id } },
       );
-      if (fnError) throw new Error(fnError.message);
+      if (fnError) throw new Error(await invokeErrorMessage(fnError));
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       const newCaption = (data as { caption?: string })?.caption ?? "";
       if (!newCaption) throw new Error("Empty caption");
@@ -424,7 +440,7 @@ export function useContentHistory() {
       .from("botanical_content")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(10);
 
     if (error) {
       console.error("Failed to fetch history:", error);

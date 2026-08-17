@@ -18,7 +18,6 @@ interface TrackedImageOptions {
   jobKey: string;
   model: string;
   input: Record<string, unknown>;
-  lovableApiKey: string;
   replicateApiKey: string;
   pollLimit?: number;
   pollIntervalMs?: number;
@@ -35,7 +34,6 @@ interface TrackedTextOptions {
   jobKey: string;
   model: string;
   input: Record<string, unknown>;
-  lovableApiKey: string;
   replicateApiKey: string;
   pollLimit?: number;
 }
@@ -73,7 +71,6 @@ export async function generateTrackedReplicateImage(
     jobKey,
     model,
     input,
-    lovableApiKey,
     replicateApiKey,
     pollLimit = 90,
     pollIntervalMs = 3_000,
@@ -133,7 +130,6 @@ export async function generateTrackedReplicateImage(
       rowId,
       job.id,
       predictionId,
-      lovableApiKey,
       replicateApiKey,
     )) {
       throw new Error("stopped");
@@ -200,7 +196,6 @@ export async function generateTrackedReplicateText(
     jobKey,
     model,
     input,
-    lovableApiKey,
     replicateApiKey,
     pollLimit = 90,
   } = options;
@@ -258,7 +253,6 @@ export async function generateTrackedReplicateText(
       rowId,
       job.id,
       predictionId,
-      lovableApiKey,
       replicateApiKey,
     )) throw new Error("stopped");
   } else {

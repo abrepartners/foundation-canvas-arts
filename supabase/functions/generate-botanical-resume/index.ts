@@ -7,6 +7,7 @@ import {
   generateTrackedReplicateImage,
   type TrackedImageResult,
 } from "../_shared/trackedReplicate.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = any;
@@ -16,7 +17,6 @@ const STALE_GENERATING_MS = 60_000;
 async function runReplicatePrediction(
   model: string,
   input: Record<string, unknown>,
-  lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
@@ -62,7 +62,6 @@ async function runReplicatePrediction(
 async function generateImageBytes(
   provider: "openai" | "replicate",
   prompt: string,
-  lovableApiKey: string,
   replicateApiKey: string | undefined,
   tracking?: {
     supabase: SupabaseClient;
@@ -83,14 +82,13 @@ async function generateImageBytes(
         jobKey: tracking.jobKey,
         model,
         input,
-        lovableApiKey,
         replicateApiKey,
         pollLimit: 45,
       });
       return result;
     }
 
-    const url = await runReplicatePrediction(model, input, lovableApiKey, replicateApiKey);
+    const url = await runReplicatePrediction(model, input, replicateApiKey);
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 30_000);
     try {
@@ -120,8 +118,7 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE = "";
-    const REPLICATE = Deno.env.get("REPLICATE_API_KEY") ?? undefined;
+    const REPLICATE = (await getReplicateApiKey()) ?? undefined;
     const supabase = createClient(SUPABASE_URL, SERVICE);
 
     const body = await req.json().catch(() => ({}));
@@ -201,7 +198,6 @@ serve(async (req) => {
           const imageResult = await generateImageBytes(
             provider,
             v.prompt,
-            LOVABLE,
             REPLICATE,
             animationRowId
               ? {
@@ -211,7 +207,7 @@ serve(async (req) => {
                 }
               : undefined,
           );
-          const ext = provider === "lovable" ? "png" : "jpg";
+          const ext = "jpg";
           const path = `${contentId}/${v.moment}.${ext}`;
           const { error: upErr } = await supabase.storage
             .from("botanical-faceless-visuals")

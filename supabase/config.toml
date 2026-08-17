@@ -1,4 +1,10 @@
-project_id = "pswlaczoevrclemhjjpw"
+project_id = "thxkzaazwkdtacfvdiyn"
+
+[functions.pin-login]
+verify_jwt = false
+
+[functions.configure-replicate]
+verify_jwt = true
 
 [functions.generate-botanical-content]
 verify_jwt = true
@@ -6,16 +12,10 @@ verify_jwt = true
 [functions.generate-botanical-resume]
 verify_jwt = true
 
-[functions.generate-trend-content]
-verify_jwt = true
-
 [functions.regenerate-visual]
 verify_jwt = true
 
 [functions.regenerate-caption]
-verify_jwt = true
-
-[functions.score-content]
 verify_jwt = true
 
 [functions.queue-moderation]
@@ -27,44 +27,5 @@ verify_jwt = true
 [functions.tiktok-send-status]
 verify_jwt = true
 
-[functions.tiktok-publish-status]
-verify_jwt = true
-
-[functions.tiktok-trend-suggestions]
-verify_jwt = true
-
 [functions.tiktok-oauth]
 verify_jwt = false
-
-[functions.animated-start]
-verify_jwt = true
-
-[functions.animated-start-resume]
-verify_jwt = true
-
-[functions.animated-animate-all]
-verify_jwt = true
-
-[functions.animated-stitch]
-verify_jwt = true
-
-[functions.animated-finalize]
-verify_jwt = true
-
-[functions.animated-pricing]
-verify_jwt = true
-
-[functions.animated-stop]
-verify_jwt = true
-
-[functions.animated-prompt-lab]
-verify_jwt = true
-
-[functions.youtube-oauth]
-verify_jwt = false
-
-[functions.youtube-upload]
-verify_jwt = true
-
-[functions.platform-insights]
-verify_jwt = true

@@ -5,10 +5,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeFn, readFnError } from "@/lib/invokeFn";
+
+interface PinLoginResponse {
+  success?: boolean;
+  session?: {
+    access_token?: string;
+    refresh_token?: string;
+  };
+  error?: string;
+}
 
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const location = useLocation();
@@ -21,19 +30,33 @@ export default function Login() {
     event.preventDefault();
     setError(null);
     setBusy(true);
-    const { error: err } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: `${window.location.origin}/`,
-      },
-    });
-    setBusy(false);
-    if (err) {
-      setError(err.message);
-      return;
+    try {
+      const { data, error: fnError } = await invokeFn<PinLoginResponse>("pin-login", {
+        body: { pin },
+      });
+      if (fnError) {
+        const detail = await readFnError(fnError);
+        if (detail.status === 429) {
+          throw new Error("Too many attempts. Wait 15 minutes and try again.");
+        }
+        throw new Error("That PIN is incorrect.");
+      }
+      const accessToken = data?.session?.access_token;
+      const refreshToken = data?.session?.refresh_token;
+      if (!data?.success || !accessToken || !refreshToken) {
+        throw new Error(data?.error || "Unable to start a secure session.");
+      }
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (sessionError) throw sessionError;
+    } catch (err) {
+      setPin("");
+      setError(err instanceof Error ? err.message : "Unable to sign in.");
+    } finally {
+      setBusy(false);
     }
-    setSent(true);
   };
 
   return (
@@ -45,34 +68,30 @@ export default function Login() {
         <div className="space-y-1">
           <h1 className="text-2xl font-serif">Botanical Studio</h1>
           <p className="text-sm text-muted-foreground">
-            Sign in with the approved owner email.
+            Enter your six-digit access PIN.
           </p>
         </div>
-        {sent ? (
-          <p className="text-sm text-muted-foreground">
-            Check your inbox for the sign-in link. You can close this tab once it opens.
-          </p>
-        ) : (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoFocus
-                placeholder="you@example.com"
-              />
-              {error && <p className="text-sm text-destructive">{error}</p>}
-            </div>
-            <Button type="submit" className="w-full" disabled={busy || !email.trim()}>
-              {busy ? "Sending…" : "Send sign-in link"}
-            </Button>
-          </>
-        )}
+        <div className="space-y-2">
+          <Label htmlFor="pin">PIN code</Label>
+          <Input
+            id="pin"
+            type="password"
+            inputMode="numeric"
+            autoComplete="current-password"
+            pattern="[0-9]{6}"
+            minLength={6}
+            maxLength={6}
+            required
+            value={pin}
+            onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+            autoFocus
+            aria-describedby={error ? "pin-error" : undefined}
+          />
+          {error && <p id="pin-error" className="text-sm text-destructive">{error}</p>}
+        </div>
+        <Button type="submit" className="w-full" disabled={busy || pin.length !== 6}>
+          {busy ? "Unlocking…" : "Unlock studio"}
+        </Button>
       </form>
     </main>
   );

@@ -9,6 +9,7 @@ import {
   generateTrackedReplicateText,
   type TrackedImageResult,
 } from "../_shared/trackedReplicate.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = any;
@@ -17,7 +18,6 @@ type SupabaseClient = any;
 async function runReplicatePrediction(
   model: string, // e.g. "black-forest-labs/flux-1.1-pro" or "openai/gpt-image-2"
   input: Record<string, unknown>,
-  lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
@@ -78,7 +78,6 @@ async function runReplicatePrediction(
 
 async function runReplicateTextCompletion(
   input: Record<string, unknown>,
-  lovableApiKey: string,
   replicateApiKey: string,
   tracking?: {
     supabase: SupabaseClient;
@@ -94,7 +93,6 @@ async function runReplicateTextCompletion(
       jobKey: "content:text",
       model,
       input,
-      lovableApiKey,
       replicateApiKey,
     });
   }
@@ -141,7 +139,6 @@ async function runReplicateTextCompletion(
 async function generateImageBytes(
   provider: "replicate" | "openai",
   prompt: string,
-  lovableApiKey: string,
   replicateApiKey: string | undefined,
   tracking?: {
     supabase: SupabaseClient;
@@ -176,13 +173,12 @@ async function generateImageBytes(
         jobKey: tracking.jobKey,
         model,
         input,
-        lovableApiKey,
         replicateApiKey,
       });
       return result;
     }
 
-    const url = await runReplicatePrediction(model, input, lovableApiKey, replicateApiKey);
+    const url = await runReplicatePrediction(model, input, replicateApiKey);
     const imgRes = await fetch(url);
     if (!imgRes.ok)
       throw new Error(`Replicate image fetch failed: ${imgRes.status}`);
@@ -396,8 +392,7 @@ serve(async (req) => {
     if (!__auth.ok) return __auth.response;
 
   try {
-    const LOVABLE_API_KEY = "";
-    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
+    const REPLICATE_API_KEY = await getReplicateApiKey();
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -406,7 +401,7 @@ serve(async (req) => {
     }
 
     // Default to Replicate Flux 1.1 Pro for photoreal output.
-    // Accept "lovable" (Gemini) or "openai" (gpt-image-2) overrides.
+    // The optional "openai" choice runs gpt-image-2 through Replicate.
     const requestBody = await req.json().catch(() => ({}));
     let imageProvider: "replicate" | "openai" = "replicate";
     if (requestBody?.image_provider === "openai") imageProvider = "openai";
@@ -480,7 +475,6 @@ Repetition is NOT allowed.
         max_output_tokens: 8000,
         thinking_budget: 0,
       },
-      LOVABLE_API_KEY,
       REPLICATE_API_KEY,
       animationRowId ? { supabase, animationRowId } : undefined,
     );
@@ -708,7 +702,6 @@ Repetition is NOT allowed.
         const imageResult = await generateImageBytes(
           imageProvider,
           visual.prompt,
-          LOVABLE_API_KEY,
           REPLICATE_API_KEY,
           animationRowId
             ? {
@@ -804,9 +797,6 @@ Repetition is NOT allowed.
       } else if (imageProvider === "openai") {
         // gpt-image-2 HQ is slow + tightly rate-limited — cap at 2 concurrent.
         await runWithConcurrency(visualsInitial, 2);
-      } else {
-        // Lovable / Gemini has no tight limit — full parallel.
-        await Promise.all(visualsInitial.map((v) => generateOne(v)));
       }
       console.log(`Background image generation complete for ${contentId}`);
     };

@@ -727,7 +727,7 @@ export function ContentDisplay({ content, onReset, onRegenerateVisual, onRegener
     }
     setSendPhase("timeout");
     setSendDetail(
-      "TikTok has not returned a final status yet. Check drafts before sending again, or review the Approval Queue for the job record.",
+      "TikTok has not returned a final status yet. Check drafts before sending again.",
     );
   };
 

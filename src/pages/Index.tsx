@@ -113,7 +113,7 @@ const Index = () => {
         />
 
         {/* Main content */}
-        <main className="flex-1 overflow-auto pb-20 md:pb-0">
+        <main className="flex-1 overflow-auto">
           <div className="container py-6 md:py-8">
             {!content ? (
               <div className="flex flex-col items-center justify-center py-12 md:py-16 space-y-8">

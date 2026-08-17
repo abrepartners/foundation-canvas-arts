@@ -1,10 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 async function fallbackViaGemini(
   subject: string,
-  lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string[]> {
   const sys = `You return ONLY a JSON array of 8 short trending TikTok-style topic keywords (2-5 words each) related to the user subject. No markdown, no commentary, no object — just the array.`;
@@ -75,8 +75,7 @@ serve(async (req) => {
     if (!__auth.ok) return __auth.response;
 
   try {
-    const LOVABLE_API_KEY = "";
-    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
+    const REPLICATE_API_KEY = await getReplicateApiKey();
     if (!REPLICATE_API_KEY) throw new Error("REPLICATE_API_KEY not configured");
 
     let subject = "";
@@ -91,7 +90,7 @@ serve(async (req) => {
     const source = "gemini";
 
     if (!topics || topics.length === 0) {
-      topics = await fallbackViaGemini(subject, LOVABLE_API_KEY, REPLICATE_API_KEY);
+      topics = await fallbackViaGemini(subject, REPLICATE_API_KEY);
     }
 
     return new Response(
