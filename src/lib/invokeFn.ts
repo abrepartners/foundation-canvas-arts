@@ -2,11 +2,51 @@ import { supabase } from "@/integrations/supabase/client";
 
 type InvokeOptions = Parameters<typeof supabase.functions.invoke>[1];
 
-// Authorization is carried by the Supabase session JWT that supabase-js
-// attaches automatically. No client-side shared secret is sent.
+class ProxyFunctionsError extends Error {
+  context: Response;
+
+  constructor(response: Response, body: string) {
+    super(`Edge Function returned ${response.status}`);
+    this.name = "FunctionsHttpError";
+    this.context = new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function invokeFn<T = any>(name: string, options: InvokeOptions = {}) {
-  return supabase.functions.invoke<T>(name, options);
+export async function invokeFn<T = any>(name: string, options: InvokeOptions = {}) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const headers = new Headers(options.headers as HeadersInit | undefined);
+  headers.set("Content-Type", "application/json");
+  if (sessionData.session?.access_token) {
+    headers.set("Authorization", `Bearer ${sessionData.session.access_token}`);
+  }
+
+  try {
+    const response = await fetch(`/api/functions/${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+    const text = await response.text();
+    let data: T | null = null;
+    if (text) {
+      try {
+        data = JSON.parse(text) as T;
+      } catch {
+        data = text as T;
+      }
+    }
+    if (!response.ok) {
+      return { data: null, error: new ProxyFunctionsError(response, text) };
+    }
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error : new Error(String(error)) };
+  }
 }
 
 // supabase-js hides the response body on non-2xx status in its `error` object.
