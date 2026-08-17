@@ -10,6 +10,7 @@ import { Terms, Privacy } from "./pages/Legal";
 import { RequireAuth } from "@/lib/auth";
 import { AuthProvider } from "@/lib/auth";
 import Settings from "./pages/Settings";
+import AdaptiveReuseBenchmark from "./pages/AdaptiveReuseBenchmark";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
           <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+          <Route path="/adaptive-reuse-benchmark" element={<RequireAuth><AdaptiveReuseBenchmark /></RequireAuth>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
           </Routes>
