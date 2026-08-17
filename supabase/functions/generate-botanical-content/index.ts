@@ -432,6 +432,51 @@ function jsonResponse(
   });
 }
 
+function extractJsonObject(raw: string): string {
+  const trimmed = raw.trim();
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    // Continue to a balanced-object scan. Models sometimes add a prose line
+    // or a fenced-code marker even when the prompt requires raw JSON.
+  }
+
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < raw.length; index++) {
+    const char = raw[index];
+    if (start < 0) {
+      if (char === "{") {
+        start = index;
+        depth = 1;
+      }
+      continue;
+    }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") depth++;
+    if (char === "}") {
+      depth--;
+      if (depth === 0) return raw.slice(start, index + 1);
+    }
+  }
+  throw new Error("No complete JSON object found");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeadersFor(req) });
 
@@ -697,18 +742,7 @@ Repetition is NOT allowed.
     // Parse JSON
     let parsed;
     try {
-      let cleanedContent = rawContent.trim();
-      if (cleanedContent.startsWith("```json")) {
-        cleanedContent = cleanedContent.slice(7);
-      } else if (cleanedContent.startsWith("```")) {
-        cleanedContent = cleanedContent.slice(3);
-      }
-      if (cleanedContent.endsWith("```")) {
-        cleanedContent = cleanedContent.slice(0, -3);
-      }
-      cleanedContent = cleanedContent.trim();
-
-      parsed = JSON.parse(cleanedContent);
+      parsed = JSON.parse(extractJsonObject(rawContent));
       console.log("JSON parsed successfully, keys:", Object.keys(parsed));
     } catch (e) {
       console.error("JSON parse failed:", e);
@@ -1165,9 +1199,17 @@ Repetition is NOT allowed.
     console.error("Error in generate-botanical-content:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     if (stillRunId && supabase) {
+      const { data: costRows } = await supabase.from("cost_events")
+        .select("estimated_cost_usd,actual_cost_usd")
+        .eq("generation_run_id", stillRunId);
+      const accountedCost = (costRows ?? []).reduce(
+        (sum, row) => sum + Number(row.actual_cost_usd ?? row.estimated_cost_usd ?? 0),
+        0,
+      );
       await supabase.from("still_generation_runs").update({
         status: "failed",
         error: message.slice(0, 500),
+        actual_cost_usd: +accountedCost.toFixed(4),
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", stillRunId);
