@@ -1,49 +1,50 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { APP_PASSCODE } from "./passcode";
-
-const AUTH_KEY = "botanical:passcode_auth";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AuthState {
-  authenticated: boolean;
+  session: Session | null;
   loading: boolean;
-  signInWithPasscode: (pin: string) => boolean;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState>({
-  authenticated: false,
+  session: null,
   loading: true,
-  signInWithPasscode: () => false,
-  signOut: () => {},
+  signOut: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [authenticated, setAuthenticated] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem(AUTH_KEY);
-    setAuthenticated(stored === "1");
-    setLoading(false);
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setSession(data.session);
+      setLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next);
+      setLoading(false);
+    });
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   const value = useMemo(
     () => ({
-      authenticated,
+      session,
       loading,
-      signInWithPasscode: (pin: string) => {
-        if (pin.trim() !== APP_PASSCODE) return false;
-        sessionStorage.setItem(AUTH_KEY, "1");
-        setAuthenticated(true);
-        return true;
-      },
-      signOut: () => {
-        sessionStorage.removeItem(AUTH_KEY);
-        setAuthenticated(false);
+      signOut: async () => {
+        await supabase.auth.signOut();
       },
     }),
-    [authenticated, loading],
+    [session, loading],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -56,11 +57,11 @@ export function useAuth() {
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const { authenticated, loading } = useAuth();
+  const { session, loading } = useAuth();
   if (loading) {
     return <main className="min-h-screen grid place-items-center text-sm text-muted-foreground">Checking session…</main>;
   }
-  if (!authenticated) {
+  if (!session) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   return <>{children}</>;

@@ -1,6 +1,7 @@
 // Shared owner guard for protected Edge Functions.
-// Accepts the app passcode header from the client, or the service-role key for
+// Accepts an approved app member's Supabase JWT, or the service-role key for
 // internal edge-to-edge invocations.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "./cors.ts";
 
 export type AuthResult =
@@ -17,6 +18,7 @@ export async function requireAuthorized(req: Request): Promise<AuthResult> {
 
   const authHeader = req.headers.get("Authorization") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
 
   if (serviceKey && authHeader.startsWith("Bearer ")) {
     const token = authHeader.slice("Bearer ".length).trim();
@@ -25,17 +27,24 @@ export async function requireAuthorized(req: Request): Promise<AuthResult> {
     }
   }
 
-  const passcode = req.headers.get("x-app-passcode");
-  const expected = Deno.env.get("APP_PASSCODE");
-  if (!expected) {
-    return { ok: false, response: unauthorized("Passcode not configured") };
-  }
-  if (!passcode || passcode !== expected) {
+  if (!serviceKey || !supabaseUrl || !authHeader.startsWith("Bearer ")) {
     return { ok: false, response: unauthorized() };
   }
 
-  // Passcode auth is single-owner; interactive user id is not available here.
-  // Platform connect flows that need a real auth.users id should set OWNER_USER_ID.
-  const ownerId = Deno.env.get("OWNER_USER_ID");
-  return { ok: true, internal: false, userId: ownerId ?? null };
+  const token = authHeader.slice("Bearer ".length).trim();
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: userData, error: userError } = await admin.auth.getUser(token);
+  if (userError || !userData.user) return { ok: false, response: unauthorized() };
+
+  const { data: member } = await admin
+    .from("app_members")
+    .select("user_id")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+  if (!member) {
+    return { ok: false, response: unauthorized("Account is not approved for this app") };
+  }
+  return { ok: true, internal: false, userId: userData.user.id };
 }

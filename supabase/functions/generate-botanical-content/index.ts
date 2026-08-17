@@ -200,6 +200,73 @@ const REQUIRED_MOMENTS = [
   "close",
 ] as const;
 
+type RequiredMoment = (typeof REQUIRED_MOMENTS)[number];
+
+type GeneratedPackage = {
+  plant_name: string;
+  verified_fact: string;
+  script: Record<"hook" | "dangle_1" | "rehook" | "dangle_2" | "payoff" | "verified_truth" | "close", string>;
+  thumbnail_prompt: { mode: "light"; prompt: string };
+  caption: string;
+  part2_hook: string;
+  faceless_visuals: Array<{ moment: RequiredMoment; prompt: string }>;
+};
+
+const requireNonEmptyString = (value: unknown, field: string): string => {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`AI response field ${field} must be a non-empty string`);
+  }
+  return value;
+};
+
+function validateGeneratedPackage(value: unknown): GeneratedPackage {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("AI response must be a JSON object");
+  }
+  const candidate = value as Record<string, unknown>;
+  const script = candidate.script as Record<string, unknown> | null;
+  const thumbnail = candidate.thumbnail_prompt as Record<string, unknown> | null;
+  if (!script || typeof script !== "object" || Array.isArray(script)) {
+    throw new Error("AI response field script must be an object");
+  }
+  if (!thumbnail || typeof thumbnail !== "object" || Array.isArray(thumbnail)) {
+    throw new Error("AI response field thumbnail_prompt must be an object");
+  }
+  if (thumbnail.mode !== "light") {
+    throw new Error('AI response field thumbnail_prompt.mode must be "light"');
+  }
+
+  const scriptKeys = [
+    "hook",
+    "dangle_1",
+    "rehook",
+    "dangle_2",
+    "payoff",
+    "verified_truth",
+    "close",
+  ] as const;
+  const validatedScript = Object.fromEntries(
+    scriptKeys.map((key) => [key, requireNonEmptyString(script[key], `script.${key}`)]),
+  ) as GeneratedPackage["script"];
+
+  if (!Array.isArray(candidate.faceless_visuals)) {
+    throw new Error("AI response field faceless_visuals must be an array");
+  }
+
+  return {
+    plant_name: requireNonEmptyString(candidate.plant_name, "plant_name"),
+    verified_fact: requireNonEmptyString(candidate.verified_fact, "verified_fact"),
+    script: validatedScript,
+    thumbnail_prompt: {
+      mode: "light",
+      prompt: requireNonEmptyString(thumbnail.prompt, "thumbnail_prompt.prompt"),
+    },
+    caption: requireNonEmptyString(candidate.caption, "caption"),
+    part2_hook: requireNonEmptyString(candidate.part2_hook, "part2_hook"),
+    faceless_visuals: candidate.faceless_visuals as GeneratedPackage["faceless_visuals"],
+  };
+}
+
 const buildSystemPrompt = (
   noveltyBlock: string,
 ) => `You are a zero-memory botanical discovery engine.
@@ -406,7 +473,7 @@ serve(async (req) => {
     }
 
     // Default to Replicate Flux 1.1 Pro for photoreal output.
-    // Accept "lovable" (Gemini) or "openai" (gpt-image-2) overrides.
+    // Accept the Replicate-hosted OpenAI gpt-image-2 override.
     const requestBody = await req.json().catch(() => ({}));
     let imageProvider: "replicate" | "openai" = "replicate";
     if (requestBody?.image_provider === "openai") imageProvider = "openai";
@@ -495,7 +562,7 @@ Repetition is NOT allowed.
     console.log("Raw AI response length:", rawContent.length);
 
     // Parse JSON
-    let parsed;
+    let parsed: GeneratedPackage;
     try {
       let cleanedContent = rawContent.trim();
       if (cleanedContent.startsWith("```json")) {
@@ -508,18 +575,12 @@ Repetition is NOT allowed.
       }
       cleanedContent = cleanedContent.trim();
 
-      parsed = JSON.parse(cleanedContent);
+      parsed = validateGeneratedPackage(JSON.parse(cleanedContent));
       console.log("JSON parsed successfully, keys:", Object.keys(parsed));
     } catch (e) {
       console.error("JSON parse failed:", e);
       console.error("Raw content preview:", rawContent.substring(0, 500));
       throw new Error("AI returned invalid JSON");
-    }
-
-    // Validate required fields
-    if (!parsed.plant_name || !parsed.script || !parsed.thumbnail_prompt) {
-      console.error("Missing required fields in parsed content");
-      throw new Error("AI response missing required fields");
     }
 
     // Validate faceless_visuals — must be exactly 6, one per required moment
@@ -538,9 +599,7 @@ Repetition is NOT allowed.
 
     const usedMoments = new Set<string>();
     for (const visual of parsed.faceless_visuals) {
-      if (!visual.moment || !visual.prompt) {
-        throw new Error("Each faceless_visual must have moment and prompt");
-      }
+      requireNonEmptyString(visual.prompt, `faceless_visuals.${visual.moment}.prompt`);
       if (!REQUIRED_MOMENTS.includes(visual.moment)) {
         throw new Error(`Invalid moment: ${visual.moment}`);
       }

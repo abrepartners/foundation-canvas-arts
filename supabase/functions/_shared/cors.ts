@@ -24,7 +24,7 @@ export function corsHeadersFor(req: Request): Record<string, string> {
     "Access-Control-Allow-Origin": allow,
     "Vary": "Origin",
     "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type, x-app-passcode",
+      "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
   };
 }

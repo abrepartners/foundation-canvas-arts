@@ -2,15 +2,12 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-// Botanical-specific names prevent legacy Lovable environment variables from
-// silently reconnecting this owned deployment to the retired backend. These
-// fallbacks are public browser credentials, not server secrets.
-const SUPABASE_URL =
-  import.meta.env.VITE_BOTANICAL_SUPABASE_URL ||
-  "https://pscwdryzcwgtwvliszpc.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY =
-  import.meta.env.VITE_BOTANICAL_SUPABASE_PUBLISHABLE_KEY ||
-  "sb_publishable_k1_pXe7e_cjhCOoLecidIA_NtcSkBWk";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  throw new Error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY");
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

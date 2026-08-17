@@ -23,8 +23,8 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const isActive = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
-  const handleSignOut = () => {
-    signOut();
+  const handleSignOut = async () => {
+    await signOut();
     navigate("/login", { replace: true });
   };
 
