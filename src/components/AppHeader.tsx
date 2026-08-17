@@ -23,10 +23,11 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const isActive = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
-  const handleSignOut = () => {
-    signOut();
+  const handleSignOut = async () => {
+    await signOut();
     navigate("/login", { replace: true });
   };
+
 
   const headerInner = (
     <div className="flex items-center gap-3 py-4">

@@ -517,10 +517,45 @@ Repetition is NOT allowed.
     }
 
     // Validate required fields
-    if (!parsed.plant_name || !parsed.script || !parsed.thumbnail_prompt) {
-      console.error("Missing required fields in parsed content");
-      throw new Error("AI response missing required fields");
+    // Validate required fields — every field must be present and non-empty
+    const nonEmpty = (v: unknown) => typeof v === "string" && v.trim().length > 0;
+    const missing: string[] = [];
+    if (!nonEmpty(parsed.plant_name)) missing.push("plant_name");
+    if (!nonEmpty(parsed.verified_fact)) missing.push("verified_fact");
+    if (!nonEmpty(parsed.caption)) missing.push("caption");
+    if (!nonEmpty(parsed.part2_hook)) missing.push("part2_hook");
+
+    const SCRIPT_KEYS = [
+      "hook",
+      "dangle_1",
+      "rehook",
+      "dangle_2",
+      "payoff",
+      "verified_truth",
+      "close",
+    ] as const;
+    if (!parsed.script || typeof parsed.script !== "object") {
+      missing.push("script");
+    } else {
+      for (const key of SCRIPT_KEYS) {
+        if (!nonEmpty(parsed.script[key])) missing.push(`script.${key}`);
+      }
     }
+
+    if (!parsed.thumbnail_prompt || typeof parsed.thumbnail_prompt !== "object") {
+      missing.push("thumbnail_prompt");
+    } else {
+      if (parsed.thumbnail_prompt.mode !== "light") {
+        missing.push('thumbnail_prompt.mode must be "light"');
+      }
+      if (!nonEmpty(parsed.thumbnail_prompt.prompt)) missing.push("thumbnail_prompt.prompt");
+    }
+
+    if (missing.length > 0) {
+      console.error("Missing/invalid fields in parsed content:", missing.join(", "));
+      throw new Error(`AI response invalid — missing fields: ${missing.join(", ")}`);
+    }
+
 
     // Validate faceless_visuals — must be exactly 6, one per required moment
     if (
