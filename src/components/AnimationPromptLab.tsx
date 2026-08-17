@@ -153,7 +153,7 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
 
   const active = !!job && ACTIVE.has(job.status);
 
-  // New Edge Functions can arrive after the frontend in Lovable deployments.
+  // New Edge Functions can arrive after the frontend during deployments.
   // Keep the lab fully hidden until its protected options contract responds,
   // so production never exposes a dead or partially wired paid control.
   if (backendAvailable !== true || !options) return null;

@@ -5,6 +5,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 const ALLOWED_TABLES = new Set(["botanical_content", "trend_content"]);
 
@@ -46,7 +47,6 @@ Return ONLY the caption text. No JSON, no code fences, no preamble, no explanati
 async function runReplicateCaption(
   systemInstruction: string,
   prompt: string,
-  lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
@@ -103,8 +103,7 @@ serve(async (req) => {
   if (!__auth.ok) return __auth.response;
 
   try {
-    const LOVABLE_API_KEY = "";
-    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
+    const REPLICATE_API_KEY = await getReplicateApiKey();
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!REPLICATE_API_KEY) throw new Error("REPLICATE_API_KEY not configured");
@@ -166,7 +165,6 @@ serve(async (req) => {
     let caption = await runReplicateCaption(
       CAPTION_SPEC,
       userPrompt,
-      LOVABLE_API_KEY,
       REPLICATE_API_KEY,
     );
     if (!caption) return json({ error: "Empty AI response" }, 502);

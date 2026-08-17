@@ -6,6 +6,7 @@ import { requireAuthorized } from "../_shared/auth.ts";
 import { mergeCost } from "../_shared/cost.ts";
 import { stitchCost } from "../_shared/pricing.ts";
 import { guardedUpdateAnimated } from "../_shared/guardedUpdate.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 import {
   cancelSubmittedPredictionIfStopped,
   claimJob,
@@ -43,8 +44,7 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE_API_KEY = "";
-    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY")!;
+    const REPLICATE_API_KEY = await getReplicateApiKey();
     if (!REPLICATE_API_KEY) throw new Error("REPLICATE_API_KEY not configured");
 
     const supabase = createClient(SUPABASE_URL, SERVICE);
@@ -129,7 +129,6 @@ serve(async (req) => {
             row_id,
             job.id,
             predId,
-            LOVABLE_API_KEY,
             REPLICATE_API_KEY,
           )) return;
         } else {

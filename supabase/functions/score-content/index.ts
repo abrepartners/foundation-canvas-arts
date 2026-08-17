@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 const SYSTEM = `You are a TikTok virality analyst for short-form educational/botanical content.
 
@@ -101,7 +102,7 @@ Verified fact: ${row.verified_fact ?? ""}
 Caption title: ${captionFirstLine}
 Plant: ${row.plant_name ?? ""}`;
 
-    const replicateKey = Deno.env.get("REPLICATE_API_KEY");
+    const replicateKey = await getReplicateApiKey();
     if (!replicateKey) throw new Error("REPLICATE_API_KEY missing");
     const raw = await scoreWithReplicate(replicateKey, userPrompt);
     let parsed: Record<string, unknown>;

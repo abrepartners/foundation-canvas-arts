@@ -2,11 +2,71 @@ import { supabase } from "@/integrations/supabase/client";
 
 type InvokeOptions = Parameters<typeof supabase.functions.invoke>[1];
 
-// Authorization is carried by the Supabase session JWT that supabase-js
-// attaches automatically. No client-side shared secret is sent.
+class ProxyFunctionsError extends Error {
+  context: Response;
+
+  constructor(response: Response, body: string) {
+    super(`Edge Function returned ${response.status}`);
+    this.name = "FunctionsHttpError";
+    this.context = new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function invokeFn<T = any>(name: string, options: InvokeOptions = {}) {
-  return supabase.functions.invoke<T>(name, options);
+export async function invokeFn<T = any>(name: string, options: InvokeOptions = {}) {
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const endpoint = `${supabaseUrl}/functions/v1/${encodeURIComponent(name)}`;
+
+    const request = async (accessToken?: string | null) => {
+      const headers = new Headers(options.headers as HeadersInit | undefined);
+      headers.set("Content-Type", "application/json");
+      headers.set("apikey", publishableKey);
+      headers.set("Authorization", `Bearer ${accessToken || publishableKey}`);
+      return fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      });
+    };
+
+    let { data: sessionData } = await supabase.auth.getSession();
+    const expiresSoon = sessionData.session?.expires_at
+      ? sessionData.session.expires_at * 1000 <= Date.now() + 60_000
+      : false;
+    if (expiresSoon) {
+      const refreshed = await supabase.auth.refreshSession();
+      if (!refreshed.error) sessionData = refreshed.data;
+    }
+
+    let response = await request(sessionData.session?.access_token);
+    if (response.status === 401 && sessionData.session?.refresh_token) {
+      const refreshed = await supabase.auth.refreshSession();
+      if (!refreshed.error && refreshed.data.session?.access_token) {
+        response = await request(refreshed.data.session.access_token);
+      }
+    }
+    const text = await response.text();
+    let data: T | null = null;
+    if (text) {
+      try {
+        data = JSON.parse(text) as T;
+      } catch {
+        data = text as T;
+      }
+    }
+    if (!response.ok) {
+      return { data: null, error: new ProxyFunctionsError(response, text) };
+    }
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error : new Error(String(error)) };
+  }
 }
 
 // supabase-js hides the response body on non-2xx status in its `error` object.

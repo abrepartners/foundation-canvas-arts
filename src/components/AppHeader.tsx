@@ -1,21 +1,13 @@
 import { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Leaf, TrendingUp, Film, ListChecks, LogOut, BarChart3 } from "lucide-react";
+import { Leaf, LogOut, Settings } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-
-const TABS = [
-  { to: "/", label: "Plants", icon: Leaf },
-  { to: "/trends", label: "Trends", icon: TrendingUp },
-  { to: "/animated", label: "Animated", icon: Film },
-  { to: "/queue", label: "Queue", icon: ListChecks },
-  { to: "/insights", label: "Insights", icon: BarChart3 },
-];
 
 interface AppHeaderProps {
   title: string;
   subtitle?: string;
   leading?: ReactNode;
-  contained?: boolean; // wrap in .container (Queue/Animated) vs full-width padded (Index/Trends)
+  contained?: boolean;
 }
 
 export function AppHeader({ title, subtitle, leading, contained = false }: AppHeaderProps) {
@@ -44,19 +36,29 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
       </div>
       {/* Desktop nav */}
       <nav className="hidden md:flex items-center gap-1 text-sm font-body flex-shrink-0">
-        {TABS.map((t) => (
-          <Link
-            key={t.to}
-            to={t.to}
-            className={`px-3 py-1.5 rounded-md ${
-              isActive(t.to)
-                ? "bg-secondary text-foreground"
-                : "hover:bg-secondary text-muted-foreground"
-            }`}
-          >
-            {t.label}
-          </Link>
-        ))}
+        <Link
+          to="/"
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md ${
+            isActive("/")
+              ? "bg-secondary text-foreground"
+              : "hover:bg-secondary text-muted-foreground"
+          }`}
+        >
+          <Leaf className="h-4 w-4" />
+          Generator
+        </Link>
+        <Link
+          to="/settings"
+          className={`ml-1 px-2 py-1.5 rounded-md ${
+            isActive("/settings")
+              ? "bg-secondary text-foreground"
+              : "hover:bg-secondary text-muted-foreground"
+          }`}
+          aria-label="Settings"
+          title="Settings"
+        >
+          <Settings className="h-4 w-4" />
+        </Link>
         <button
           type="button"
           onClick={handleSignOut}
@@ -67,46 +69,39 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
           <LogOut className="h-4 w-4" />
         </button>
       </nav>
+      <div className="md:hidden flex items-center gap-1">
+        <Link
+          to="/settings"
+          className={`p-2 rounded-md ${
+            isActive("/settings")
+              ? "bg-secondary text-foreground"
+              : "text-muted-foreground hover:bg-secondary"
+          }`}
+          aria-label="Settings"
+          title="Settings"
+        >
+          <Settings className="h-4 w-4" />
+        </Link>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="p-2 rounded-md hover:bg-secondary text-muted-foreground"
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 
   return (
-    <>
-      <header className="border-b border-border">
-        {contained ? (
-          <div className="container">{headerInner}</div>
-        ) : (
-          <div className="px-4">{headerInner}</div>
-        )}
-      </header>
-
-      {/* Mobile bottom tab bar */}
-      <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur border-t border-border"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <ul className="grid grid-cols-5">
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const active = isActive(t.to);
-            return (
-              <li key={t.to}>
-                <Link
-                  to={t.to}
-                  className={`flex flex-col items-center justify-center gap-1 h-16 text-[11px] font-body ${
-                    active ? "text-foreground" : "text-muted-foreground"
-                  }`}
-                >
-                  <Icon
-                    className={`h-5 w-5 ${active ? "text-foreground" : "text-muted-foreground"}`}
-                  />
-                  <span className={active ? "font-medium" : ""}>{t.label}</span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
-    </>
+    <header className="border-b border-border">
+      {contained ? (
+        <div className="container">{headerInner}</div>
+      ) : (
+        <div className="px-4">{headerInner}</div>
+      )}
+    </header>
   );
 }

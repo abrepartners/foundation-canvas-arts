@@ -149,7 +149,6 @@ export async function hasActiveProviderJobs(supabase: SB, rowId: string): Promis
 // Best-effort provider-side cancel via Replicate's cancel endpoint.
 export async function cancelReplicatePrediction(
   predictionId: string,
-  lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<{ ok: boolean; status: number; body: string }> {
   const url = `https://api.replicate.com/v1/predictions/${predictionId}/cancel`;
@@ -171,14 +170,12 @@ export async function cancelSubmittedPredictionIfStopped(
   rowId: string,
   jobId: string,
   predictionId: string,
-  lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<boolean> {
   if (!await isStopped(supabase, rowId)) return false;
 
   const result = await cancelReplicatePrediction(
     predictionId,
-    lovableApiKey,
     replicateApiKey,
   );
   if (result.ok) {

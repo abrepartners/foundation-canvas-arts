@@ -3,12 +3,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { requireAuthorized } from "../_shared/auth.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 // Run a Replicate prediction for any official model, return output URL.
 async function runReplicatePrediction(
   model: string,
   input: Record<string, unknown>,
-  lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
@@ -66,7 +66,6 @@ async function runReplicatePrediction(
 
 async function runReplicateTextCompletion(
   input: Record<string, unknown>,
-  lovableApiKey: string,
   replicateApiKey: string,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
@@ -114,7 +113,6 @@ async function runReplicateTextCompletion(
 async function generateImageBytes(
   provider: "replicate" | "openai",
   prompt: string,
-  lovableApiKey: string,
   replicateApiKey: string | undefined,
 ): Promise<Uint8Array> {
   if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
@@ -140,7 +138,6 @@ async function generateImageBytes(
     const url = await runReplicatePrediction(
       model,
       input,
-      lovableApiKey,
       replicateApiKey,
     );
     const imgRes = await fetch(url);
@@ -352,8 +349,7 @@ serve(async (req) => {
     if (!__auth.ok) return __auth.response;
 
   try {
-    const LOVABLE_API_KEY = "";
-    const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY");
+    const REPLICATE_API_KEY = await getReplicateApiKey();
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -425,7 +421,6 @@ Rules:
         max_output_tokens: 8000,
         thinking_budget: 0,
       },
-      LOVABLE_API_KEY,
       REPLICATE_API_KEY,
     );
     if (!rawContent) throw new Error("No content received from AI");
@@ -551,7 +546,6 @@ Rules:
         const imageBuffer = await generateImageBytes(
           imageProvider,
           visual.prompt,
-          LOVABLE_API_KEY,
           REPLICATE_API_KEY,
         );
         const ext = "jpg";

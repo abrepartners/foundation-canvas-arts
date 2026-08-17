@@ -7,17 +7,48 @@ import {
   generateTrackedReplicateImage,
   type TrackedImageResult,
 } from "../_shared/trackedReplicate.ts";
+import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SupabaseClient = any;
 
-const STALE_GENERATING_MS = 60_000;
+const STALE_GENERATING_MS = 10 * 60_000;
+
+async function pollReplicatePrediction(
+  predictionId: string,
+  replicateApiKey: string,
+): Promise<string> {
+  const headers = {
+    Authorization: `Bearer ${replicateApiKey}`,
+    "Content-Type": "application/json",
+  };
+  for (let i = 0; i < 45; i++) {
+    await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 3000));
+    const pollRes = await fetch(
+      `https://api.replicate.com/v1/predictions/${predictionId}`,
+      { headers },
+    );
+    if (!pollRes.ok) continue;
+    const prediction = await pollRes.json();
+    if (prediction.status === "succeeded") {
+      const url = Array.isArray(prediction.output)
+        ? prediction.output[0]
+        : prediction.output;
+      if (typeof url !== "string") throw new Error("Replicate: invalid output");
+      return url;
+    }
+    if (prediction.status === "failed" || prediction.status === "canceled") {
+      throw new Error(`Replicate prediction ${prediction.status}: ${prediction.error ?? ""}`);
+    }
+  }
+  throw new Error("Replicate timed out (resume)");
+}
 
 async function runReplicatePrediction(
   model: string,
   input: Record<string, unknown>,
-  lovableApiKey: string,
   replicateApiKey: string,
+  onPredictionId?: (predictionId: string, modelVersion: string | null) => Promise<void>,
 ): Promise<string> {
   const GW = "https://api.replicate.com/v1";
   const headers = {
@@ -41,41 +72,29 @@ async function runReplicatePrediction(
   const pred = await createRes.json();
   const predId = pred.id;
   if (!predId) throw new Error("Replicate: no prediction id");
-
-  for (let i = 0; i < 45; i++) {
-    await new Promise((r) => setTimeout(r, i < 5 ? 2000 : 3000));
-    const pollRes = await fetch(`${GW}/predictions/${predId}`, { headers });
-    if (!pollRes.ok) continue;
-    const p = await pollRes.json();
-    if (p.status === "succeeded") {
-      const url = Array.isArray(p.output) ? p.output[0] : p.output;
-      if (typeof url !== "string") throw new Error("Replicate: invalid output");
-      return url;
-    }
-    if (p.status === "failed" || p.status === "canceled") {
-      throw new Error(`Replicate prediction ${p.status}: ${p.error ?? ""}`);
-    }
-  }
-  throw new Error("Replicate timed out (resume)");
+  await onPredictionId?.(
+    predId,
+    typeof pred.version === "string" ? pred.version : null,
+  );
+  return pollReplicatePrediction(predId, replicateApiKey);
 }
 
 async function generateImageBytes(
-  provider: "openai" | "replicate",
+  model: "openai/gpt-image-2" | "black-forest-labs/flux-1.1-pro",
   prompt: string,
-  lovableApiKey: string,
+  settings: Record<string, unknown>,
   replicateApiKey: string | undefined,
   tracking?: {
     supabase: SupabaseClient;
     animationRowId: string;
     jobKey: string;
   },
+  onPredictionId?: (predictionId: string, modelVersion: string | null) => Promise<void>,
+  existingPredictionId?: string,
 ): Promise<{ bytes: Uint8Array; jobId?: string }> {
-  if (provider === "openai" || provider === "replicate") {
+  if (model === "openai/gpt-image-2" || model === "black-forest-labs/flux-1.1-pro") {
     if (!replicateApiKey) throw new Error("REPLICATE_API_KEY not configured");
-    const model = provider === "openai" ? "openai/gpt-image-2" : "black-forest-labs/flux-1.1-pro";
-    const input = provider === "openai"
-      ? { prompt, quality: "high", aspect_ratio: "9:16", output_format: "jpeg" }
-      : { prompt, aspect_ratio: "9:16", output_format: "jpeg", safety_tolerance: 2 };
+    const input = { ...settings, prompt };
     if (tracking) {
       const result: TrackedImageResult = await generateTrackedReplicateImage({
         supabase: tracking.supabase,
@@ -83,14 +102,15 @@ async function generateImageBytes(
         jobKey: tracking.jobKey,
         model,
         input,
-        lovableApiKey,
         replicateApiKey,
         pollLimit: 45,
       });
       return result;
     }
 
-    const url = await runReplicatePrediction(model, input, lovableApiKey, replicateApiKey);
+    const url = existingPredictionId
+      ? await pollReplicatePrediction(existingPredictionId, replicateApiKey)
+      : await runReplicatePrediction(model, input, replicateApiKey, onPredictionId);
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 30_000);
     try {
@@ -108,7 +128,50 @@ interface Visual {
   image_url?: string | null;
   status?: string;
   started_at?: string | null;
+  completed_at?: string | null;
+  prediction_id?: string | null;
+  provider?: "replicate" | "openai" | null;
+  model?: "openai/gpt-image-2" | "black-forest-labs/flux-1.1-pro" | null;
+  model_version?: string | null;
+  prompt_version?: string | null;
+  settings?: Record<string, unknown> | null;
+  seed?: number | null;
   error?: string | null;
+}
+
+function resolveModel(
+  visual: Visual,
+  legacyProvider: "openai" | "replicate",
+): "openai/gpt-image-2" | "black-forest-labs/flux-1.1-pro" {
+  if (visual.model === "openai/gpt-image-2" || visual.model === "black-forest-labs/flux-1.1-pro") {
+    return visual.model;
+  }
+  const provider = visual.provider ?? legacyProvider;
+  return provider === "openai" ? "openai/gpt-image-2" : "black-forest-labs/flux-1.1-pro";
+}
+
+function resolveSettings(
+  visual: Visual,
+  model: "openai/gpt-image-2" | "black-forest-labs/flux-1.1-pro",
+): Record<string, unknown> {
+  const defaults = model === "openai/gpt-image-2"
+    ? { quality: "high", aspect_ratio: "9:16", output_format: "jpeg" }
+    : {
+        aspect_ratio: "9:16",
+        output_format: "jpeg",
+        safety_tolerance: 2,
+        prompt_upsampling: false,
+      };
+  const saved = visual.settings;
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) return defaults;
+  const allowed = model === "openai/gpt-image-2"
+    ? ["quality", "aspect_ratio", "output_format"]
+    : ["aspect_ratio", "output_format", "safety_tolerance", "prompt_upsampling", "seed"];
+  const settings: Record<string, unknown> = { ...defaults };
+  for (const key of allowed) {
+    if (saved[key] !== undefined) settings[key] = saved[key];
+  }
+  return settings;
 }
 
 serve(async (req) => {
@@ -120,13 +183,12 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE = "";
-    const REPLICATE = Deno.env.get("REPLICATE_API_KEY") ?? undefined;
+    const REPLICATE = (await getReplicateApiKey()) ?? undefined;
     const supabase = createClient(SUPABASE_URL, SERVICE);
 
     const body = await req.json().catch(() => ({}));
     const contentId: string | undefined = body?.content_id;
-    const provider: "openai" | "replicate" = body?.image_provider === "openai" ? "openai" : "replicate";
+    const legacyProvider: "openai" | "replicate" = body?.image_provider === "openai" ? "openai" : "replicate";
     // Optional: parent animation row id so future provider-job tracking for
     // stills can attribute retries/costs to the correct animation run.
     const animationRowId: string | null = typeof body?.animation_row_id === "string"
@@ -174,19 +236,12 @@ serve(async (req) => {
     console.log(`resume ${contentId}: retrying ${stuck.length} — ${stuck.map((v) => v.moment).join(", ")}`);
 
     const mergeVisual = async (moment: string, patch: Partial<Visual>) => {
-      const { data: cur } = await supabase
-        .from("botanical_content").select("script_visuals").eq("id", contentId).single();
-      let arr: Visual[] = visuals;
-      if (cur?.script_visuals) {
-        try {
-          arr = typeof cur.script_visuals === "string"
-            ? JSON.parse(cur.script_visuals as string)
-            : (cur.script_visuals as Visual[]);
-        } catch { /* keep */ }
-      }
-      const next = arr.map((v) => v.moment === moment ? { ...v, ...patch } : v);
-      await supabase.from("botanical_content")
-        .update({ script_visuals: JSON.stringify(next) }).eq("id", contentId);
+      const { error: patchError } = await supabase.rpc("patch_botanical_visual", {
+        _content_id: contentId,
+        _moment: moment,
+        _patch: patch,
+      });
+      if (patchError) throw new Error(`visual status update failed: ${patchError.message}`);
     };
 
     const bg = async () => {
@@ -198,10 +253,13 @@ serve(async (req) => {
           started_at: new Date().toISOString(),
         });
         try {
+          const model = resolveModel(v, legacyProvider);
+          const provider = model === "openai/gpt-image-2" ? "openai" : "replicate";
+          const settings = resolveSettings(v, model);
           const imageResult = await generateImageBytes(
-            provider,
+            model,
             v.prompt,
-            LOVABLE,
+            settings,
             REPLICATE,
             animationRowId
               ? {
@@ -210,8 +268,19 @@ serve(async (req) => {
                   jobKey: `still:${v.moment}`,
                 }
               : undefined,
+            async (predictionId, modelVersion) => {
+              await mergeVisual(v.moment, {
+                prediction_id: predictionId,
+                provider,
+                model,
+                model_version: modelVersion,
+                prompt_version: v.prompt_version ?? "legacy-saved-prompt",
+                settings,
+              });
+            },
+            v.prediction_id ?? undefined,
           );
-          const ext = provider === "lovable" ? "png" : "jpg";
+          const ext = "jpg";
           const path = `${contentId}/${v.moment}.${ext}`;
           const { error: upErr } = await supabase.storage
             .from("botanical-faceless-visuals")
@@ -229,13 +298,25 @@ serve(async (req) => {
               error: null,
             });
           }
-          await mergeVisual(v.moment, { image_url: u.publicUrl, status: "done", error: null });
+          await mergeVisual(v.moment, {
+            image_url: u.publicUrl,
+            status: "done",
+            error: null,
+            completed_at: new Date().toISOString(),
+            provider,
+            model,
+            prompt_version: v.prompt_version ?? "legacy-saved-prompt",
+            settings,
+          });
           console.log(`resume: done ${v.moment}`);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.error(`resume: error ${v.moment}:`, msg);
           await mergeVisual(v.moment, {
-            image_url: null, status: "error", error: msg.slice(0, 240),
+            image_url: null,
+            status: "error",
+            error: msg.slice(0, 240),
+            completed_at: new Date().toISOString(),
           });
         }
       }

@@ -4,10 +4,62 @@
 export const PRICING_VERSION = "2026-07-17-b";
 
 export const PRICING = {
+  "black-forest-labs/flux-1.1-pro": { unit_usd: 0.04 },
   "openai/gpt-image-2": { unit_usd: 0.128 },
   "kwaivgi/kling-v2.1": { std_usd_per_sec: 0.05, pro_usd_per_sec: 0.09 },
   "fofr/video-concat": { flat_usd: 0.02 },
 } as const;
+
+export const STILL_PRICING_VERSION = "2026-08-17-a";
+export const STILL_PROMPT_VERSION = "botanical-study-plate-v1";
+export const STILL_IMAGE_COUNT = 6;
+export const STILL_TEXT_RESERVE_USD = 0.05;
+export const STILL_PER_RUN_LIMIT_USD = 1;
+export const STILL_DAILY_LIMIT_USD = 5;
+
+export type StillImageProvider = "replicate" | "openai";
+
+export type StillImageModel =
+  | "black-forest-labs/flux-1.1-pro"
+  | "openai/gpt-image-2";
+
+export function stillImageQuote(model: StillImageModel) {
+  const provider: StillImageProvider = model === "openai/gpt-image-2"
+    ? "openai"
+    : "replicate";
+  return {
+    image_provider: provider,
+    model,
+    image_count: 1 as const,
+    image_unit_usd: PRICING[model].unit_usd,
+    estimated_cost_usd: PRICING[model].unit_usd,
+    pricing_version: STILL_PRICING_VERSION,
+    per_run_limit_usd: STILL_PER_RUN_LIMIT_USD,
+    daily_limit_usd: STILL_DAILY_LIMIT_USD,
+  };
+}
+
+export function stillPackageQuote(provider: StillImageProvider) {
+  const model = provider === "openai"
+    ? "openai/gpt-image-2"
+    : "black-forest-labs/flux-1.1-pro";
+  const imageUnitUsd = PRICING[model].unit_usd;
+  const imagesUsd = +(imageUnitUsd * STILL_IMAGE_COUNT).toFixed(4);
+  return {
+    image_provider: provider,
+    model,
+    image_count: STILL_IMAGE_COUNT,
+    image_unit_usd: imageUnitUsd,
+    images_usd: imagesUsd,
+    text_model: "google/gemini-2.5-flash",
+    text_reserve_usd: STILL_TEXT_RESERVE_USD,
+    estimated_cost_usd: +(imagesUsd + STILL_TEXT_RESERVE_USD).toFixed(4),
+    prompt_version: STILL_PROMPT_VERSION,
+    pricing_version: STILL_PRICING_VERSION,
+    per_run_limit_usd: STILL_PER_RUN_LIMIT_USD,
+    daily_limit_usd: STILL_DAILY_LIMIT_USD,
+  };
+}
 
 // Fixed animation shape used by animated-animate-all: 6 clips × 10s in Kling
 // v2.1 Pro, plus one stitch. Any change requires bumping PRICING_VERSION.
