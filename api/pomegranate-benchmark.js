@@ -6,16 +6,16 @@ export default async function handler(req, res) {
 
   const body = { action };
   if (action === "status" && typeof req.query?.ids === "string") {
-    body.ids = req.query.ids.split(",").map((id) => id.trim()).filter(Boolean).slice(0, 4);
+    body.ids = req.query.ids.split(",").map((id) => id.trim()).filter(Boolean).slice(0, 2);
   }
 
   const response = await fetch(
-    "https://thxkzaazwkdtacfvdiyn.functions.supabase.co/adaptive-reuse-stageb-replicate-oneshot",
+    "https://thxkzaazwkdtacfvdiyn.functions.supabase.co/adaptive-reuse-staged-seedance-benchmark",
     {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-benchmark-key": "stageb-rp-4f3e9d1c-20260817",
+        "x-benchmark-key": "staged-seedance-rp-20260817-v1",
       },
       body: JSON.stringify(body),
     },
