@@ -165,6 +165,24 @@ export type Database = {
           },
         ]
       }
+      app_auth_settings: {
+        Row: {
+          passcode_hash: string
+          singleton: boolean
+          updated_at: string
+        }
+        Insert: {
+          passcode_hash: string
+          singleton?: boolean
+          updated_at?: string
+        }
+        Update: {
+          passcode_hash?: string
+          singleton?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       app_members: {
         Row: {
           created_at: string
@@ -314,6 +332,27 @@ export type Database = {
         }
         Relationships: []
       }
+      pin_login_attempts: {
+        Row: {
+          attempted_at: string
+          id: number
+          ip_hash: string
+          succeeded: boolean
+        }
+        Insert: {
+          attempted_at?: string
+          id?: never
+          ip_hash: string
+          succeeded?: boolean
+        }
+        Update: {
+          attempted_at?: string
+          id?: never
+          ip_hash?: string
+          succeeded?: boolean
+        }
+        Relationships: []
+      }
       tiktok_send_jobs: {
         Row: {
           content_id: string | null
@@ -430,6 +469,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      authenticate_app_pin: {
+        Args: { _ip_hash: string; _passcode: string }
+        Returns: string
+      }
       claim_provider_job: {
         Args: {
           _job_key: string
