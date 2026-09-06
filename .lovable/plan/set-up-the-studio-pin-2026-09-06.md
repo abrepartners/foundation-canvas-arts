@@ -15,7 +15,9 @@ More importantly, the live backend has no PIN set up at all right now: the table
 
 ## What I need from you
 
-The six-digit PIN you want. If you don't name one, I'll set `080100` and tell you afterwards so you can change it.
+The six-digit PIN you want. If you don't name one, I'll set `080100` and tell you afterwards so you can change it.   
+  
+Make the pin 080120
 
 ## Technical notes
 
