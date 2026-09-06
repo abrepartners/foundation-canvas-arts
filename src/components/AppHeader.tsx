@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Leaf, LogOut, Settings } from "lucide-react";
+import { Clapperboard, Leaf, LogOut, Settings } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 interface AppHeaderProps {
@@ -48,6 +48,17 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
           Generator
         </Link>
         <Link
+          to="/episodes"
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md ${
+            isActive("/episodes")
+              ? "bg-secondary text-foreground"
+              : "hover:bg-secondary text-muted-foreground"
+          }`}
+        >
+          <Clapperboard className="h-4 w-4" />
+          Episodes
+        </Link>
+        <Link
           to="/settings"
           className={`ml-1 px-2 py-1.5 rounded-md ${
             isActive("/settings")
@@ -70,6 +81,18 @@ export function AppHeader({ title, subtitle, leading, contained = false }: AppHe
         </button>
       </nav>
       <div className="md:hidden flex items-center gap-1">
+        <Link
+          to="/episodes"
+          className={`p-2 rounded-md ${
+            isActive("/episodes")
+              ? "bg-secondary text-foreground"
+              : "text-muted-foreground hover:bg-secondary"
+          }`}
+          aria-label="Episodes"
+          title="Episodes"
+        >
+          <Clapperboard className="h-4 w-4" />
+        </Link>
         <Link
           to="/settings"
           className={`p-2 rounded-md ${

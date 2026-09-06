@@ -11,6 +11,12 @@ Private botanical image and caption generator with optional TikTok draft deliver
 
 The application intentionally exposes only the Botanical Content Generator, its latest 10 records, private Settings, and the TikTok draft action attached to a completed content package.
 
+## Botanical episode planning
+
+Authenticated users can open `/episodes` to compile a no-spend, 13-shot production plan for a curated botanical topic. The planner can reuse compatible images from an existing generated package, identifies missing continuity keyframes, routes physical changes to paired-frame video, and shows gate status plus a provisional generation count and budget before any provider work. It also carries restrained action-timed sound cues, an original narrator profile, shot-level review notes, and export-only TikTok/Reels/Shorts profiles with posting disabled. A current server-side quote is still required before generation.
+
+PR1 performs deterministic planning in the browser and does not generate or render media. See [docs/EPISODE_PIPELINE.md](docs/EPISODE_PIPELINE.md) for the recipe contract, routing rules, and later execution phases.
+
 ## Local development
 
 Requirements: Node.js 20 or newer and npm.
