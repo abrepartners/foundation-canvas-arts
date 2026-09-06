@@ -160,6 +160,8 @@ export const NarratorProfileSchema = z.object({
   pauseGuidance: z.string().min(1),
   originalityConstraint: z.string().min(1),
   routeName: z.string().min(1),
+  engine: z.literal("Kokoro-82M"),
+  voiceId: z.literal("bm_fable"),
 }).strict();
 
 export const ExportProfileSchema = z.object({
@@ -273,6 +275,7 @@ export const EpisodePlanSchema = z.object({
     continuityImageCount: z.number().int().nonnegative(),
     pairedFrameVideoCount: z.number().int().nonnegative(),
     totalCostUsd: z.number().nonnegative(),
+    initialTestBudgetUsd: z.literal(5),
   }).strict(),
   rules: z.object({
     captions: z.literal("single-track, one-to-three-word phrases"),

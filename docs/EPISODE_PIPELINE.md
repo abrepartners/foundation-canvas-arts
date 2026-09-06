@@ -12,7 +12,7 @@ The `/episodes` route compiles a reviewable production plan without calling an A
 - paired start/end frames for physical biological changes;
 - restrained editorial movement for holds, pans, traces, and comparisons;
 - restrained sound-design cues that begin and end with the visible action;
-- an original British natural-history narrator direction with measured pacing and deliberate room for visual comprehension;
+- the local Kokoro Fable British voice with measured pacing and deliberate room for visual comprehension;
 - a final endpoint that uses the same asset slot as the opening frame.
 
 PR1 is a planner and compiler. It does not render media or submit provider jobs.
@@ -50,7 +50,7 @@ The output is validated by `EpisodePlanSchema`. It includes:
 - export-only profiles for TikTok, Instagram Reels, and YouTube Shorts with posting disabled.
 - narration word count, estimated speech time, reserved pause time, and a clear timed-voice-check requirement.
 
-The default prices are provisional planning constants, not live quotes. Continuity images use a symbolic per-image allowance. Paired-frame video reserves the full planned shot duration at `$0.04 × output seconds`, so a five-second shot contributes `$0.20` to the provisional budget. A durable execution phase must obtain a current server-side quote and require confirmation before submission.
+Each initial episode has a hard `$5.00` testing allowance. The default prices remain provisional planning constants, not live quotes. Continuity images use a symbolic per-image allowance. Paired-frame video reserves the full planned shot duration at `$0.04 × output seconds`, so a five-second shot contributes `$0.20` to the provisional budget. A durable execution phase must obtain a current server-side quote and refuse submissions that would exceed the episode allowance.
 
 ## Curated topics and gates
 
@@ -69,7 +69,7 @@ PR1 may pass checks that are fully determined by the plan: curated fact-ledger a
 
 ## Narration, motion, and sound direction
 
-The narrator contract calls for an original British natural-history documentary performance: calm curiosity, intelligent warmth, precise diction, and a measured target of 135 words per minute. Short pauses follow reveals and precede cause-and-effect turns so viewers have time to understand the image. The compiler reserves five of the 52 seconds for those pauses, calculates the maximum narration words available at the target pace, and exposes a `fits_estimate` or `needs_trimming` status. Even a fitting script remains `readyToRecord: false` until a timed voice test confirms the real performance. The contract explicitly prohibits imitating or cloning any named person.
+The narrator contract uses the local Kokoro-82M `bm_fable` British voice with calm curiosity, intelligent warmth, precise diction, and a measured target of 135 words per minute. Short pauses follow reveals and precede cause-and-effect turns so viewers have time to understand the image. The compiler reserves five of the 52 seconds for those pauses, calculates the maximum narration words available at the target pace, and exposes a `fits_estimate` or `needs_trimming` status. Even a fitting script remains `readyToRecord: false` until a timed voice test confirms the real performance. The contract explicitly prohibits imitating or cloning any named person.
 
 Motion density is calculated for each compiled episode. Actions that change botanical state—open, grow, descend, enter, turn, swell, unfurl, ripen, and fill—route to paired-frame video. Pans, traces, and comparisons retain deliberate editorial movement. A static hold is labelled `intentional_hold` and is used only when movement would reduce anatomical clarity.
 

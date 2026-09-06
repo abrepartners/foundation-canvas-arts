@@ -49,7 +49,7 @@ export function EpisodePlanSummary({ plan }: { plan: EpisodePlan }) {
             <Metric label="Shots" value={String(plan.shots.length)} icon={Clapperboard} />
             <Metric label="Video moments" value={String(plan.estimates.pairedFrameVideoCount)} icon={Clapperboard} />
             <Metric label="Missing stills" value={String(plan.estimates.continuityImageCount)} icon={Image} />
-            <Metric label="Provisional budget" value={`$${plan.estimates.totalCostUsd.toFixed(2)}`} icon={WalletCards} />
+            <Metric label="Planned spend" value={`$${plan.estimates.totalCostUsd.toFixed(2)} / $${plan.estimates.initialTestBudgetUsd.toFixed(2)}`} icon={WalletCards} />
           </div>
 
           {plan.source && (
@@ -91,6 +91,7 @@ export function EpisodePlanSummary({ plan }: { plan: EpisodePlan }) {
               <p className="text-sm font-medium text-foreground">Narrator</p>
             </div>
             <p className="mt-2 text-sm text-foreground">{plan.narratorProfile.label}</p>
+            <p className="mt-1 text-xs font-medium text-botanical">Kokoro · Fable British voice</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{plan.narratorProfile.direction}</p>
             <p className="mt-2 text-xs text-muted-foreground">Target: {plan.narratorProfile.targetWordsPerMinute} words/minute</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{plan.narratorProfile.pauseGuidance}</p>

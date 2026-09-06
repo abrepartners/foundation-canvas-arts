@@ -41,6 +41,7 @@ describe("botanical-video-v2 compiler", () => {
       continuityImageCount: 0,
       pairedFrameVideoCount: 0,
       totalCostUsd: 0,
+      initialTestBudgetUsd: 5,
     });
   });
 
@@ -159,6 +160,8 @@ describe("botanical-video-v2 compiler", () => {
     const narratorText = Object.values(plan.narratorProfile).join(" ");
 
     expect(plan.narratorProfile.accent).toBe("British English");
+    expect(plan.narratorProfile.engine).toBe("Kokoro-82M");
+    expect(plan.narratorProfile.voiceId).toBe("bm_fable");
     expect(plan.narratorProfile.targetWordsPerMinute).toBe(135);
     expect(narratorText).not.toMatch(/attenborough|david/i);
     expect(plan.narratorProfile.originalityConstraint).toMatch(/original performance/i);
@@ -170,6 +173,7 @@ describe("botanical-video-v2 compiler", () => {
       "tiktok", "instagram_reels", "youtube_shorts",
     ]);
     expect(plan.exportProfiles.every((profile) => !profile.postingEnabled && profile.deliveryMode === "export-only")).toBe(true);
+    expect(plan.estimates.initialTestBudgetUsd).toBe(5);
   });
 
   it("represents shot-level keep/change/remove feedback without external writes", () => {

@@ -35,7 +35,11 @@ export const ORIGINAL_NARRATOR_PROFILE = {
   pauseGuidance: "Leave short, deliberate pockets after each reveal and before each cause-and-effect turn so the viewer can read the image.",
   originalityConstraint: "Use an original performance. Do not imitate or clone any named person.",
   routeName: "narration.original-natural-history",
+  engine: "Kokoro-82M" as const,
+  voiceId: "bm_fable" as const,
 };
+
+export const INITIAL_EPISODE_TEST_BUDGET_USD = 5 as const;
 
 export const SHORT_FORM_EXPORT_PROFILES = [
   { platform: "tiktok" as const, label: "TikTok", aspectRatio: "9:16" as const, resolution: "1080x1920" as const, frameRate: 30 as const, videoCodec: "H.264" as const, audioCodec: "AAC" as const, captionMode: "burned-in kinetic captions" as const, deliveryMode: "export-only" as const, postingEnabled: false as const },
@@ -174,7 +178,7 @@ function compileUnknown(input: EpisodeCompilerInput, config: EpisodeRouteConfig)
       detail: "Unknown topics cannot be marked ready and produce no paid generation routes.",
     }],
     generationJobs: [],
-    estimates: { paidGenerationCount: 0, continuityImageCount: 0, pairedFrameVideoCount: 0, totalCostUsd: 0 },
+    estimates: { paidGenerationCount: 0, continuityImageCount: 0, pairedFrameVideoCount: 0, totalCostUsd: 0, initialTestBudgetUsd: INITIAL_EPISODE_TEST_BUDGET_USD },
     rules: {
       captions: "single-track, one-to-three-word phrases",
       typography: "no headers or watermarks",
@@ -383,6 +387,7 @@ export function compileBotanicalEpisode(
       continuityImageCount: imageJobs.length,
       pairedFrameVideoCount: videoJobs.length,
       totalCostUsd,
+      initialTestBudgetUsd: INITIAL_EPISODE_TEST_BUDGET_USD,
     },
     rules: {
       captions: "single-track, one-to-three-word phrases",
