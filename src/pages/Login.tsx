@@ -39,7 +39,13 @@ export default function Login() {
         if (detail.status === 429) {
           throw new Error("Too many attempts. Wait 15 minutes and try again.");
         }
-        throw new Error("That PIN is incorrect.");
+        const backendError = detail.body && typeof detail.body === "object" && "error" in detail.body
+          ? detail.body.error
+          : undefined;
+        if (detail.status === 401 && backendError === "Invalid PIN") {
+          throw new Error("That PIN is incorrect.");
+        }
+        throw new Error("Studio sign-in is unavailable. Please try again shortly. Your PIN may still be correct.");
       }
       const accessToken = data?.session?.access_token;
       const refreshToken = data?.session?.refresh_token;
