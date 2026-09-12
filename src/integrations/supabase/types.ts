@@ -428,48 +428,76 @@ export type Database = {
       }
       content_publications: {
         Row: {
+          animated_id: string | null
           botanical_content_id: string | null
           caption: string | null
           created_at: string
+          delivered_at: string | null
           delivery_mode: string
           error: string | null
+          experiment: Json
           id: string
           idempotency_key: string
+          music_label: string | null
           platform: string
+          published_at: string | null
+          remote_content_id: string | null
           remote_publish_id: string | null
+          remote_url: string | null
           status: string
           title: string | null
           updated_at: string
         }
         Insert: {
+          animated_id?: string | null
           botanical_content_id?: string | null
           caption?: string | null
           created_at?: string
+          delivered_at?: string | null
           delivery_mode?: string
           error?: string | null
+          experiment?: Json
           id?: string
           idempotency_key: string
+          music_label?: string | null
           platform?: string
+          published_at?: string | null
+          remote_content_id?: string | null
           remote_publish_id?: string | null
+          remote_url?: string | null
           status?: string
           title?: string | null
           updated_at?: string
         }
         Update: {
+          animated_id?: string | null
           botanical_content_id?: string | null
           caption?: string | null
           created_at?: string
+          delivered_at?: string | null
           delivery_mode?: string
           error?: string | null
+          experiment?: Json
           id?: string
           idempotency_key?: string
+          music_label?: string | null
           platform?: string
+          published_at?: string | null
+          remote_content_id?: string | null
           remote_publish_id?: string | null
+          remote_url?: string | null
           status?: string
           title?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "content_publications_animated_id_fkey"
+            columns: ["animated_id"]
+            isOneToOne: false
+            referencedRelation: "botanical_animated"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "content_publications_botanical_content_id_fkey"
             columns: ["botanical_content_id"]
