@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { invokeFn, readFnError } from "@/lib/invokeFn";
 
 type ArchetypeKey = "growth_reveal" | "living_specimen" | "archival_evidence";
-type ModelKey = "seedance_1_5_pro" | "seedance_2_mini" | "kling_standard";
+type ModelKey = "wan_2_2_i2v_fast" | "seedance_1_5_pro" | "seedance_2_mini" | "kling_standard";
 
 interface LabOptions {
   pricing_version: string;
@@ -27,9 +27,10 @@ interface LabOptions {
     label: string;
     model: string;
     resolution: string;
-    cost_per_second_usd: number;
+    cost_per_second_usd?: number;
+    output_cost_usd?: number;
     supports_last_frame: boolean;
-    five_second_cost_usd: number;
+    test_cost_usd: number;
     note: string;
   }>;
   archetypes: Array<{
@@ -74,7 +75,7 @@ const ACTIVE = new Set(["queued", "preparing_start_frame", "submitting_video", "
 
 function statusLabel(job: LabJob): string {
   if (job.status === "queued") return "Queued safely";
-  if (job.status === "preparing_start_frame") return "Preparing matched seed-stage frame";
+  if (job.status === "preparing_start_frame") return "Preparing matched earlier-growth frame";
   if (job.status === "submitting_video") return "Submitting one video";
   if (job.status === "running") return "Generating one video";
   if (job.status === "succeeded") return "Test complete";
@@ -87,7 +88,7 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
   const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
   const [selectedStill, setSelectedStill] = useState(0);
   const [archetype, setArchetype] = useState<ArchetypeKey>("growth_reveal");
-  const [modelKey, setModelKey] = useState<ModelKey>("seedance_1_5_pro");
+  const [modelKey, setModelKey] = useState<ModelKey>("wan_2_2_i2v_fast");
   const [job, setJob] = useState<LabJob | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -142,7 +143,7 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
   const archetypeOption = options?.archetypes.find((item) => item.key === archetype) ?? null;
   const quote = useMemo(() => {
     if (!options || !model) return null;
-    const video = model.cost_per_second_usd * options.duration_seconds;
+    const video = model.test_cost_usd;
     const start = archetype === "growth_reveal" ? options.start_frame.cost_usd : 0;
     return {
       video,
@@ -339,7 +340,7 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
         >
           {options?.models.map((item) => (
             <option key={item.key} value={item.key} disabled={archetype === "growth_reveal" && !item.supports_last_frame}>
-              {item.label} · ${item.five_second_cost_usd.toFixed(2)} / 5s
+              {item.label} · ${item.test_cost_usd.toFixed(2)} / test
             </option>
           ))}
         </select>
@@ -348,12 +349,12 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
 
       <div className="rounded-md border border-border bg-background/75 p-3 text-sm font-body">
         <div className="flex justify-between gap-3">
-          <span>{options?.duration_seconds ?? 5}s {model?.label ?? "video"}, 720p, audio off</span>
+          <span>{options?.duration_seconds ?? 5}s {model?.label ?? "video"}, {model?.resolution ?? "video"}, audio off</span>
           <span className="tabular-nums">${quote?.video.toFixed(2) ?? "—"}</span>
         </div>
         {archetype === "growth_reveal" && (
           <div className="flex justify-between gap-3 text-muted-foreground">
-            <span>Matched seed-stage start frame</span>
+            <span>Matched earlier-growth start frame</span>
             <span className="tabular-nums">${quote?.start.toFixed(2) ?? "—"}</span>
           </div>
         )}
@@ -386,7 +387,7 @@ export function AnimationPromptLab({ animationRowId, plantName, stillUrls }: Pro
           {job.start_frame_url && (
             <div>
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-body mb-1">Generated start frame</p>
-              <img src={job.start_frame_url} alt="Generated seed-stage start frame" className="w-28 aspect-[9/16] object-cover rounded border border-border" />
+              <img src={job.start_frame_url} alt="Generated earlier-growth start frame" className="w-28 aspect-[9/16] object-cover rounded border border-border" />
             </div>
           )}
           {job.output_url && (
