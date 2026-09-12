@@ -201,6 +201,27 @@ export type Database = {
         }
         Relationships: []
       }
+      app_secrets: {
+        Row: {
+          ciphertext: string
+          iv: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          ciphertext: string
+          iv: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          ciphertext?: string
+          iv?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       botanical_animated: {
         Row: {
           caption: string | null
@@ -285,6 +306,7 @@ export type Database = {
         Row: {
           caption: string | null
           created_at: string
+          generation_run_id: string | null
           hook_variants: Json | null
           id: string
           part2_hook: string | null
@@ -301,6 +323,7 @@ export type Database = {
         Insert: {
           caption?: string | null
           created_at?: string
+          generation_run_id?: string | null
           hook_variants?: Json | null
           id?: string
           part2_hook?: string | null
@@ -317,6 +340,7 @@ export type Database = {
         Update: {
           caption?: string | null
           created_at?: string
+          generation_run_id?: string | null
           hook_variants?: Json | null
           id?: string
           part2_hook?: string | null
@@ -330,7 +354,82 @@ export type Database = {
           verified_fact?: string | null
           virality_score?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "botanical_content_generation_run_id_fkey"
+            columns: ["generation_run_id"]
+            isOneToOne: false
+            referencedRelation: "still_generation_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cost_events: {
+        Row: {
+          actual_cost_usd: number | null
+          animated_id: string | null
+          botanical_content_id: string | null
+          created_at: string
+          estimated_cost_usd: number
+          generation_run_id: string | null
+          id: string
+          model: string
+          operation: string
+          provider: string
+          provider_job_id: string | null
+          status: string
+        }
+        Insert: {
+          actual_cost_usd?: number | null
+          animated_id?: string | null
+          botanical_content_id?: string | null
+          created_at?: string
+          estimated_cost_usd: number
+          generation_run_id?: string | null
+          id?: string
+          model: string
+          operation: string
+          provider: string
+          provider_job_id?: string | null
+          status: string
+        }
+        Update: {
+          actual_cost_usd?: number | null
+          animated_id?: string | null
+          botanical_content_id?: string | null
+          created_at?: string
+          estimated_cost_usd?: number
+          generation_run_id?: string | null
+          id?: string
+          model?: string
+          operation?: string
+          provider?: string
+          provider_job_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_events_animated_id_fkey"
+            columns: ["animated_id"]
+            isOneToOne: false
+            referencedRelation: "botanical_animated"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cost_events_botanical_content_id_fkey"
+            columns: ["botanical_content_id"]
+            isOneToOne: false
+            referencedRelation: "botanical_content"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cost_events_generation_run_id_fkey"
+            columns: ["generation_run_id"]
+            isOneToOne: false
+            referencedRelation: "still_generation_runs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pin_login_attempts: {
         Row: {
@@ -352,6 +451,86 @@ export type Database = {
           succeeded?: boolean
         }
         Relationships: []
+      }
+      still_generation_runs: {
+        Row: {
+          actual_cost_usd: number | null
+          botanical_content_id: string | null
+          completed_at: string | null
+          confirmed_estimate_usd: number
+          created_at: string
+          daily_limit_usd: number
+          error: string | null
+          estimated_cost_usd: number
+          id: string
+          idempotency_key: string
+          image_count: number
+          image_provider: string
+          model: string
+          model_version: string | null
+          per_run_limit_usd: number
+          pricing_version: string
+          prompt_version: string
+          status: string
+          text_model_version: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          actual_cost_usd?: number | null
+          botanical_content_id?: string | null
+          completed_at?: string | null
+          confirmed_estimate_usd: number
+          created_at?: string
+          daily_limit_usd: number
+          error?: string | null
+          estimated_cost_usd: number
+          id?: string
+          idempotency_key: string
+          image_count?: number
+          image_provider: string
+          model: string
+          model_version?: string | null
+          per_run_limit_usd: number
+          pricing_version: string
+          prompt_version: string
+          status?: string
+          text_model_version?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          actual_cost_usd?: number | null
+          botanical_content_id?: string | null
+          completed_at?: string | null
+          confirmed_estimate_usd?: number
+          created_at?: string
+          daily_limit_usd?: number
+          error?: string | null
+          estimated_cost_usd?: number
+          id?: string
+          idempotency_key?: string
+          image_count?: number
+          image_provider?: string
+          model?: string
+          model_version?: string | null
+          per_run_limit_usd?: number
+          pricing_version?: string
+          prompt_version?: string
+          status?: string
+          text_model_version?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "still_generation_runs_botanical_content_id_fkey"
+            columns: ["botanical_content_id"]
+            isOneToOne: false
+            referencedRelation: "botanical_content"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tiktok_send_jobs: {
         Row: {
@@ -491,6 +670,28 @@ export type Database = {
           prediction_id: string
         }[]
       }
+      claim_still_generation_run: {
+        Args: {
+          _confirmed_estimate_usd: number
+          _daily_limit_usd: number
+          _estimated_cost_usd: number
+          _idempotency_key: string
+          _image_provider: string
+          _model: string
+          _per_run_limit_usd: number
+          _pricing_version: string
+          _prompt_version: string
+          _user_id: string
+        }
+        Returns: {
+          claimed: boolean
+          content_id: string
+          daily_reserved_usd: number
+          rejection_code: string
+          run_id: string
+          run_status: string
+        }[]
+      }
       consume_animation_retry: {
         Args: { _bucket: string; _limit_value: number; _row_id: string }
         Returns: {
@@ -508,6 +709,10 @@ export type Database = {
         Returns: boolean
       }
       is_app_member: { Args: never; Returns: boolean }
+      patch_botanical_visual: {
+        Args: { _content_id: string; _moment: string; _patch: Json }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
