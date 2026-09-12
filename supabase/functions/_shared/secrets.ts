@@ -52,9 +52,9 @@ export async function setStoredSecret(name: string, value: string): Promise<void
 }
 
 export async function getStoredSecret(name: string): Promise<string | null> {
-  const environmentValue = Deno.env.get(name);
-  if (environmentValue) return environmentValue;
-
+  // A token explicitly replaced in Studio Settings must override the original
+  // deployment environment value. Use the environment only as a bootstrap
+  // fallback until no encrypted replacement exists.
   const { client, serviceRoleKey } = adminClient();
   const { data, error } = await client
     .from("app_secrets")
@@ -62,7 +62,7 @@ export async function getStoredSecret(name: string): Promise<string | null> {
     .eq("name", name)
     .maybeSingle();
   if (error) throw new Error(`Unable to read ${name}`);
-  if (!data) return null;
+  if (!data) return Deno.env.get(name) ?? null;
 
   try {
     const decrypted = await crypto.subtle.decrypt(
