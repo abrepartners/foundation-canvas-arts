@@ -22,6 +22,20 @@
       "when": 1789206048466,
       "tag": "0002_create_content_publications",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789227183924,
+      "tag": "0003_add_platform_oauth_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789227222834,
+      "tag": "0004_extend_content_publications_columns",
+      "breakpoints": true
     }
   ]
 }

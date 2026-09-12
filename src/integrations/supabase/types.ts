@@ -364,50 +364,140 @@ export type Database = {
           },
         ]
       }
+      content_metrics: {
+        Row: {
+          average_view_duration_seconds: number | null
+          average_view_percentage: number | null
+          captured_at: string
+          comments: number | null
+          engaged_views: number | null
+          estimated_revenue_usd: number | null
+          id: string
+          likes: number | null
+          publication_id: string
+          raw: Json
+          saves: number | null
+          shares: number | null
+          subscribers_gained: number | null
+          views: number | null
+          watch_time_seconds: number | null
+        }
+        Insert: {
+          average_view_duration_seconds?: number | null
+          average_view_percentage?: number | null
+          captured_at?: string
+          comments?: number | null
+          engaged_views?: number | null
+          estimated_revenue_usd?: number | null
+          id?: string
+          likes?: number | null
+          publication_id: string
+          raw?: Json
+          saves?: number | null
+          shares?: number | null
+          subscribers_gained?: number | null
+          views?: number | null
+          watch_time_seconds?: number | null
+        }
+        Update: {
+          average_view_duration_seconds?: number | null
+          average_view_percentage?: number | null
+          captured_at?: string
+          comments?: number | null
+          engaged_views?: number | null
+          estimated_revenue_usd?: number | null
+          id?: string
+          likes?: number | null
+          publication_id?: string
+          raw?: Json
+          saves?: number | null
+          shares?: number | null
+          subscribers_gained?: number | null
+          views?: number | null
+          watch_time_seconds?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_metrics_publication_id_fkey"
+            columns: ["publication_id"]
+            isOneToOne: false
+            referencedRelation: "content_publications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_publications: {
         Row: {
+          animated_id: string | null
           botanical_content_id: string | null
           caption: string | null
           created_at: string
+          delivered_at: string | null
           delivery_mode: string
           error: string | null
+          experiment: Json
           id: string
           idempotency_key: string
+          music_label: string | null
           platform: string
+          published_at: string | null
+          remote_content_id: string | null
           remote_publish_id: string | null
+          remote_url: string | null
           status: string
           title: string | null
           updated_at: string
         }
         Insert: {
+          animated_id?: string | null
           botanical_content_id?: string | null
           caption?: string | null
           created_at?: string
+          delivered_at?: string | null
           delivery_mode?: string
           error?: string | null
+          experiment?: Json
           id?: string
           idempotency_key: string
+          music_label?: string | null
           platform?: string
+          published_at?: string | null
+          remote_content_id?: string | null
           remote_publish_id?: string | null
+          remote_url?: string | null
           status?: string
           title?: string | null
           updated_at?: string
         }
         Update: {
+          animated_id?: string | null
           botanical_content_id?: string | null
           caption?: string | null
           created_at?: string
+          delivered_at?: string | null
           delivery_mode?: string
           error?: string | null
+          experiment?: Json
           id?: string
           idempotency_key?: string
+          music_label?: string | null
           platform?: string
+          published_at?: string | null
+          remote_content_id?: string | null
           remote_publish_id?: string | null
+          remote_url?: string | null
           status?: string
           title?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "content_publications_animated_id_fkey"
+            columns: ["animated_id"]
+            isOneToOne: false
+            referencedRelation: "botanical_animated"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "content_publications_botanical_content_id_fkey"
             columns: ["botanical_content_id"]
@@ -502,6 +592,78 @@ export type Database = {
           id?: never
           ip_hash?: string
           succeeded?: boolean
+        }
+        Relationships: []
+      }
+      platform_connections: {
+        Row: {
+          access_token: string
+          account_id: string
+          account_name: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          metadata: Json
+          platform: string
+          refresh_token: string | null
+          scopes: string[]
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          account_id: string
+          account_name?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          metadata?: Json
+          platform: string
+          refresh_token?: string | null
+          scopes?: string[]
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          account_id?: string
+          account_name?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          metadata?: Json
+          platform?: string
+          refresh_token?: string | null
+          scopes?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      platform_oauth_states: {
+        Row: {
+          code_verifier: string | null
+          created_at: string
+          expires_at: string
+          platform: string
+          state_hash: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          code_verifier?: string | null
+          created_at?: string
+          expires_at: string
+          platform: string
+          state_hash: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          code_verifier?: string | null
+          created_at?: string
+          expires_at?: string
+          platform?: string
+          state_hash?: string
+          used_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
