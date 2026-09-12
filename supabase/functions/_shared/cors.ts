@@ -1,5 +1,10 @@
 // Per-request CORS headers restricted to this app's origins.
 const DEFAULT_ORIGIN = "https://foundation-canvas-arts.vercel.app";
+const ALLOWED_APP_HOSTS = new Set([
+  "foundation-canvas-arts.vercel.app",
+  "foundation-canvas-arts.lovable.app",
+  "id-preview--2dc683a5-50ba-401b-94db-7cc9b6c8ca80.lovable.app",
+]);
 
 function isAllowedOrigin(origin: string): boolean {
   if (!origin) return false;
@@ -7,7 +12,7 @@ function isAllowedOrigin(origin: string): boolean {
     const url = new URL(origin);
     const host = url.hostname;
     if (host === "localhost" || host === "127.0.0.1") return true;
-    if (host === "foundation-canvas-arts.vercel.app") return true;
+    if (ALLOWED_APP_HOSTS.has(host)) return true;
     return false;
   } catch {
     return false;
