@@ -6,14 +6,23 @@ import { corsHeadersFor } from "../_shared/cors.ts";
 import { getReplicateApiKey } from "../_shared/secrets.ts";
 
 const GATEWAY = "https://api.replicate.com/v1";
-const PRICING_VERSION = "2026-07-19-a";
-const PROMPT_VERSION = "botanical-motion-v1";
+const PRICING_VERSION = "2026-09-12-a";
+const PROMPT_VERSION = "botanical-motion-v2";
 const DURATION_SECONDS = 5;
 const START_FRAME_MODEL = "openai/gpt-image-2";
 const START_FRAME_COST_USD = 0.128;
 const ACTIVE_STATUSES = ["queued", "preparing_start_frame", "submitting_video", "running"];
+const VISUAL_MOMENTS = ["hook", "dangle_1", "rehook", "dangle_2", "verified_truth", "close"] as const;
 
 const MODELS = {
+  wan_2_2_i2v_fast: {
+    label: "Wan 2.2 I2V Fast",
+    model: "wan-video/wan-2.2-i2v-fast",
+    resolution: "480p",
+    output_cost_usd: 0.05,
+    supports_last_frame: true,
+    note: "Recommended micro-timelapse benchmark. 81 frames at 16 fps, safety checker enabled, no interpolation or LoRA.",
+  },
   seedance_1_5_pro: {
     label: "Seedance 1.5 Pro",
     model: "bytedance/seedance-1.5-pro",
@@ -46,7 +55,7 @@ type Archetype = "growth_reveal" | "living_specimen" | "archival_evidence";
 const ARCHETYPES: Record<Archetype, { label: string; description: string }> = {
   growth_reveal: {
     label: "Growth Reveal",
-    description: "A locked-camera time-lapse from a matched seed-stage plate to the selected mature specimen.",
+    description: "A locked-camera micro-timelapse from a matched earlier-growth plate to the selected final image.",
   },
   living_specimen: {
     label: "Living Specimen",
@@ -65,7 +74,10 @@ function roundCost(value: number): number {
 }
 
 function quote(modelKey: ModelKey, archetype: Archetype) {
-  const video = roundCost(MODELS[modelKey].cost_per_second_usd * DURATION_SECONDS);
+  const model = MODELS[modelKey];
+  const video = "output_cost_usd" in model
+    ? model.output_cost_usd
+    : roundCost(model.cost_per_second_usd * DURATION_SECONDS);
   const startFrame = archetype === "growth_reveal" ? START_FRAME_COST_USD : 0;
   return {
     video_usd: video,
@@ -80,7 +92,7 @@ function buildPrompt(archetype: Archetype, plantName: string): string {
     "All printed text and diagrams remain perfectly still and readable. Do not invent or rewrite text. No extra plants, hands, people, logos, camera shake, cuts, or subject morphing.";
 
   if (archetype === "growth_reveal") {
-    return `Locked-camera botanical time-lapse of ${plantName}. Begin on the provided seed-stage plate. Animate only plausible biological growth: germination, a stem emerging, leaves unfurling, and the mature specimen developing naturally into the exact provided final frame. ${shared} Finish exactly on the supplied last frame and hold in complete stillness.`;
+    return `Locked-camera botanical micro-timelapse of ${plantName}. Begin on the provided earlier-growth plate. Animate only botanically plausible development that fits the depicted plant part and composition. Preserve identity and spatial continuity while the subject develops naturally into the exact supplied final frame. ${shared} Finish exactly on the supplied last frame and hold in complete stillness.`;
   }
   if (archetype === "living_specimen") {
     return `Bring the ${plantName} specimen almost imperceptibly to life. Leaves and stems respond to one soft breath of air, tendrils slowly curl, and a few tiny pollen or dust particles drift through the light. Camera remains locked. Motion is calm, botanical, photoreal, and physically plausible. ${shared} End close to the original pose and hold.`;
@@ -88,8 +100,16 @@ function buildPrompt(archetype: Archetype, plantName: string): string {
   return `Treat this ${plantName} plate as a priceless museum specimen under glass. Keep the camera locked while a narrow warm examination light travels slowly across only the central plant, revealing surface texture and casting a restrained moving shadow. A few fine archival dust motes drift in the light. ${shared} No zoom, pan, rotation, or animated writing. End on the original lighting.`;
 }
 
-function buildStartFramePrompt(plantName: string): string {
-  return `Edit this exact vertical botanical plate into a matching seed-stage first frame for a growth time-lapse of ${plantName}. Preserve the entire black background, crop, borders, typography, labels, measurement lines, scientific diagrams, and page layout in their exact original positions. Replace only the mature central plant specimen with one small botanically plausible seed at a thin soil line and the first tiny emerging sprout. Match the original museum-photograph lighting, muted green palette, realism, and engraving aesthetic. Do not add, remove, rewrite, or distort any printed text or diagram.`;
+function buildStartFramePrompt(plantName: string, moment: typeof VISUAL_MOMENTS[number]): string {
+  const earlierState: Record<typeof VISUAL_MOMENTS[number], string> = {
+    hook: "Show the same complete specimen as a much younger seedling at the same position and silhouette center.",
+    dangle_1: "Show the same macro feature at an earlier developmental stage, such as a tightly closed bud, younger tissue, or an immature surface, with the exact same crop and focal plane.",
+    rehook: "Show the same diagonal subject as a younger shoot, tendril, or developing organ following the exact same 45-degree path.",
+    dangle_2: "Keep the same top-down dissection layout, but show botanically corresponding earlier-stage cross sections and immature internal anatomy in every position.",
+    verified_truth: "Keep the same ordered evidence-board positions, but show younger botanically corresponding versions of each separated plant part.",
+    close: "Show one smaller early-stage version of the same specimen, centered in the exact same location with the same negative space.",
+  };
+  return `Edit this exact vertical botanical plate into a matched earlier-growth first frame for a micro-timelapse of ${plantName}. ${earlierState[moment]} Preserve the black background, camera, crop, borders, typography, labels, measurement lines, scientific diagrams, lighting, palette, and page layout in their exact original positions. Change only the biological age of the depicted specimen or plant parts. Keep the same species and specimen identity. Do not add, remove, rewrite, or distort any printed text or diagram.`;
 }
 
 function publicJob(job: Record<string, unknown> | null) {
@@ -157,7 +177,7 @@ serve(async (req) => {
       models: Object.entries(MODELS).map(([key, value]) => ({
         key,
         ...value,
-        five_second_cost_usd: quote(key as ModelKey, "living_specimen").video_usd,
+        test_cost_usd: quote(key as ModelKey, "living_specimen").video_usd,
       })),
       archetypes: Object.entries(ARCHETYPES).map(([key, value]) => ({ key, ...value })),
     });
@@ -403,7 +423,7 @@ serve(async (req) => {
         await checkStopped();
         await update({ status: "preparing_start_frame", provider_status: "submitting", error: null });
         const startPredictionId = await createPrediction(START_FRAME_MODEL, {
-          prompt: buildStartFramePrompt(animated.plant_name ?? "the selected plant"),
+          prompt: buildStartFramePrompt(animated.plant_name ?? "the selected plant", VISUAL_MOMENTS[stillIndex]),
           input_images: [stillUrl],
           aspect_ratio: "9:16",
           quality: "high",
@@ -420,7 +440,19 @@ serve(async (req) => {
       await checkStopped();
       await update({ status: "submitting_video", provider_status: "submitting", error: null });
       let videoInput: Record<string, unknown>;
-      if (modelKey === "kling_standard") {
+      if (modelKey === "wan_2_2_i2v_fast") {
+        videoInput = {
+          image: firstFrame,
+          ...(archetype === "growth_reveal" ? { last_image: stillUrl } : {}),
+          prompt,
+          num_frames: 81,
+          resolution: "480p",
+          frames_per_second: 16,
+          interpolate_output: false,
+          go_fast: true,
+          sample_shift: 12,
+        };
+      } else if (modelKey === "kling_standard") {
         videoInput = {
           start_image: firstFrame,
           prompt,
