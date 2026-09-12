@@ -364,6 +364,59 @@ export type Database = {
           },
         ]
       }
+      content_publications: {
+        Row: {
+          botanical_content_id: string | null
+          caption: string | null
+          created_at: string
+          delivery_mode: string
+          error: string | null
+          id: string
+          idempotency_key: string
+          platform: string
+          remote_publish_id: string | null
+          status: string
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          botanical_content_id?: string | null
+          caption?: string | null
+          created_at?: string
+          delivery_mode?: string
+          error?: string | null
+          id?: string
+          idempotency_key: string
+          platform?: string
+          remote_publish_id?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          botanical_content_id?: string | null
+          caption?: string | null
+          created_at?: string
+          delivery_mode?: string
+          error?: string | null
+          id?: string
+          idempotency_key?: string
+          platform?: string
+          remote_publish_id?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_publications_botanical_content_id_fkey"
+            columns: ["botanical_content_id"]
+            isOneToOne: false
+            referencedRelation: "botanical_content"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cost_events: {
         Row: {
           actual_cost_usd: number | null
@@ -539,6 +592,7 @@ export type Database = {
           fail_reason: string | null
           id: string
           phase: string
+          publication_id: string | null
           publish_id: string | null
           raw: Json | null
           tiktok_status: string | null
@@ -550,6 +604,7 @@ export type Database = {
           fail_reason?: string | null
           id?: string
           phase?: string
+          publication_id?: string | null
           publish_id?: string | null
           raw?: Json | null
           tiktok_status?: string | null
@@ -561,12 +616,21 @@ export type Database = {
           fail_reason?: string | null
           id?: string
           phase?: string
+          publication_id?: string | null
           publish_id?: string | null
           raw?: Json | null
           tiktok_status?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tiktok_send_jobs_publication_id_fkey"
+            columns: ["publication_id"]
+            isOneToOne: false
+            referencedRelation: "content_publications"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tiktok_tokens: {
         Row: {
