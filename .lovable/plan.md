@@ -1,26 +1,24 @@
-# TikTok approval didn't land — finish the connection
+# TikTok is alive again — one permission still missing for the live feed
 
-## What the check shows
+## What the checks show (all read-only, no posting, no spend)
 
-Your approval never came back to the app:
+- Your TikTok login refreshed successfully at 10:49 CT — TikTok accepted it. Sending drafts and send-status will work again.
+- Read directly from TikTok: your "Verified Botanical" profile answers, and your recent video list loads (peanut and strawberry posts are there).
+- But the in-app Insights feed still can't show it: the login saved inside the app only carries "profile + upload drafts". The "read my video list" permission is still missing from the stored approval.
 
-- The one-time handshake started at 10:34 CT and was never completed; it expired ten minutes later at 10:44.
-- The TikTok callback in this app received no requests at all — TikTok never returned to us.
-- The stored TikTok login is still the old one: expired on July 20, and still missing the "read my video list" permission the live feed needs.
+## Why
 
-So the connection is unchanged. Most likely causes, in order: the approval screen was closed or timed out, or this app's callback address isn't registered in your TikTok developer app, which makes TikTok stop with a redirect error before returning.
+The re-authorization handshake never completed. The one-time approval link started at 10:34 CT expired unused at 10:44, and the app's TikTok callback received no new approval — no fresh authorization was ever saved. What happened at 10:49 was a refresh of the old login, which restores sending but can't add new permissions.
 
-## What to do next
+## What I'll do
 
-1. Start a fresh link from the Insights page (the old one has expired — a new one is required each time) and complete the TikTok approval in one go, leaving every requested permission checked.
-2. If TikTok shows a redirect error instead of the approval screen, that confirms the callback address is missing. I'll give you the exact address to paste into your TikTok developer app's login-kit redirect list, then you retry.
-3. Once the approval returns, I confirm without posting or spending: the new login is stored with the video-list permission and a future expiry, your profile and recent videos load in the live feed, and a pending send resolves to a real TikTok status.
+1. Generate one fresh connect link and have you complete the TikTok approval in a single pass, leaving every requested permission checked — including the video-list one.
+2. Verify afterwards, with no posting and no spend: the stored approval shows the video-list permission, your profile and recent videos appear in the app's live feed, and a pending send resolves to a real TikTok status.
+3. If TikTok instead shows a redirect error, that means the callback address isn't registered in your developer app — I'll give you the exact address to paste, then we retry.
 
 Nothing changes in your saved content, images, PIN, owner login, or send history. Posting stays drafts only.
 
 ## Technical notes
 
-- No code or schema changes needed; the repair from the previous plan is already applied and deployed.
-- Evidence: `platform_oauth_states` newest row `used_at = null`, expired; `tiktok_tokens` unchanged (`scope = user.info.basic,video.upload`, `expires_at 2026-07-20`); `tiktok-oauth` has no invocation logs.
-- Scopes requested: `user.info.basic`, `video.upload`, `video.list`. Redirect URI stays `${SUPABASE_URL}/functions/v1/tiktok-oauth`; client key/secret unchanged.
-- State rows expire after 10 minutes, so each attempt needs a newly generated link.
+- Evidence: `tiktok_tokens` updated 15:49 (fresh `expires_at` 2026-09-13) but `scope = user.info.basic,video.upload`; `platform_oauth_states` newest row `used_at = null`, expired 15:44; gateway reads of `user/info/` and `video/list/` both returned 200.
+- Scopes requested on re-auth: `user.info.basic`, `video.upload`, `video.list`. Redirect URI stays `${SUPABASE_URL}/functions/v1/tiktok-oauth`; client key/secret unchanged. Links expire after 10 minutes, so each attempt needs a newly generated link.
